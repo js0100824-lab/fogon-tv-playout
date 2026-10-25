@@ -7,7 +7,7 @@ import {
   doc, getDoc, setDoc, addDoc, deleteDoc, updateDoc, getDocs, collection, query, orderBy, limit, serverTimestamp
 } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore.js";
 import { ref as sRef, uploadBytesResumable, getDownloadURL, deleteObject } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-storage.js";
-import { parseDuration, fmtDuration, buildCycle, cycleLength, locate } from "./engine.js";
+import { parseDuration, fmtDuration, youtubeId, buildCycle, cycleLength, locate } from "./engine.js";
 
 const $ = (id) => document.getElementById(id);
 const views = ["config-warning", "login-view", "denied-view", "panel-view"];
@@ -151,10 +151,17 @@ async function detectDuration(url) {
 }
 async function addItem(e) {
   e.preventDefault();
-  const url = $("lib-url").value.trim();
+  let url = $("lib-url").value.trim();
+  // Si solo escribes el nombre del archivo (video1.mp4), se busca en la carpeta media del sitio.
+  if (!/^https?:\/\//i.test(url)) url = new URL(`../media/${encodeURIComponent(url.replace(/^\/?(media\/)?/, ""))}`, location.href).href;
+  const yt = youtubeId(url);
   let duration = parseDuration($("lib-dur").value);
-  if (!(duration > 0)) duration = await detectDuration(url);
-  if (!(duration > 0)) { toast("No pude detectar la duración. Escríbela (por ejemplo 3:25).", "error"); return; }
+  if (!(duration > 0) && !yt) duration = await detectDuration(url);
+  if (!(duration > 0)) {
+    toast(yt ? "Para YouTube escribe la duración (por ejemplo 3:25)."
+      : "No se pudo abrir ese video. Revisa: 1) que el archivo ya esté en la carpeta media de GitHub y el flujo de Actions esté en verde; 2) que el nombre esté bien escrito; 3) que sea .mp4 H.264. Si todo está bien, escribe la duración a mano.", "error");
+    return;
+  }
   try {
     await saveItem({ title: $("lib-title").value.trim(), kind: $("lib-kind").value, url, duration });
     $("lib-form").reset(); toast("Contenido guardado.", "ok");

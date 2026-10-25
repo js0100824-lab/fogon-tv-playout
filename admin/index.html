@@ -8,7 +8,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&display=swap">
-<link rel="stylesheet" href="../css/app.css?v=5">
+<link rel="stylesheet" href="../css/app.css?v=6">
 </head>
 <body>
 
@@ -75,7 +75,7 @@
           <summary>Añadir por enlace (YouTube o .mp4)</summary>
           <form id="lib-form">
             <input id="lib-title" placeholder="Título" required maxlength="120">
-            <input id="lib-url" type="url" placeholder="https://" required>
+            <input id="lib-url" type="text" placeholder="Solo el nombre (video1.mp4) o enlace de YouTube" required>
             <select id="lib-kind"><option value="programa">Es un programa</option><option value="comercial">Es un comercial</option></select>
             <input id="lib-dur" placeholder="Duración mm:ss (solo YouTube)">
             <button class="btn small" type="submit">Guardar enlace</button>
@@ -157,6 +157,6 @@
   </div>
 </div>
 
-<script type="module" src="../js/admin.js?v=5"></script>
+<script type="module" src="../js/admin.js?v=6"></script>
 </body>
 </html>
