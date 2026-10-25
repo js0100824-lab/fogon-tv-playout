@@ -272,18 +272,45 @@ async function publish() {
     toast("Emisión publicada. El reproductor se actualiza solo.", "ok");
   } catch (err) { fail(err); }
 }
+let tlKey = "";
+const hms = (ms) => new Date(ms).toLocaleTimeString("es", { hour12: false });
 function renderNow() {
-  $("clock").textContent = new Date().toLocaleTimeString("es");
+  const now = Date.now();
+  $("clock").textContent = hms(now);
   const c = state.channel;
-  const loc = c?.items?.length ? locate(c.items, c.epoch, Date.now()) : null;
+  const loc = c?.items?.length ? locate(c.items, c.epoch, now) : null;
   $("onair").classList.toggle("off", !loc);
   $("onair").querySelector("b").textContent = loc ? "AL AIRE" : "FUERA DEL AIRE";
-  if (!loc) { $("now-title").textContent = "—"; $("next-title").textContent = "—"; $("now-left").textContent = "--:--"; $("now-bar").style.width = "0"; return; }
-  const next = c.items[(loc.index + 1) % c.items.length];
+  if (!loc) {
+    ["now-title", "next-title"].forEach((k) => ($(k).textContent = "—"));
+    $("now-left").textContent = "--:--"; $("next-start").textContent = "--:--:--"; $("now-bar").style.width = "0";
+    $("live-body").innerHTML = ""; $("timeline").innerHTML = ""; tlKey = ""; return;
+  }
+  const items = c.items, n = items.length;
+  const next = items[(loc.index + 1) % n];
   $("now-title").textContent = `${loc.item.type === "comercial" ? "[Comercial] " : ""}${loc.item.title}`;
   $("next-title").textContent = next.title;
   $("now-left").textContent = fmtDuration(loc.remaining);
   $("now-bar").style.width = `${(loc.offset / loc.item.duration) * 100}%`;
+  $("next-start").textContent = hms(now + loc.remaining * 1000);
+
+  // Línea de tiempo del ciclo con cabezal
+  const total = cycleLength(items), key = `${c.epoch}:${n}:${total}`;
+  if (key !== tlKey) {
+    tlKey = key;
+    $("timeline").innerHTML = items.map((i) => `<i class="${i.type === "comercial" ? "ad" : ""}" style="flex:${i.duration}" title="${esc(i.title)}"></i>`).join("") + "<u></u>";
+  }
+  let before = 0; for (let k = 0; k < loc.index; k++) before += items[k].duration;
+  const head = $("timeline").querySelector("u"); if (head) head.style.left = `${((before + loc.offset) / total) * 100}%`;
+
+  // Tabla de emisión con horas reales
+  let t = now - loc.offset * 1000, rows = "";
+  for (let k = 0; k < Math.min(n * 2, 14); k++) {
+    const it = items[(loc.index + k) % n];
+    rows += `<tr class="${k === 0 ? "cur" : it.type === "comercial" ? "ad" : "prog"}"><td>${hms(t)}</td><td>${esc(it.title)}</td><td>${it.type}</td><td>${fmtDuration(it.duration)}</td></tr>`;
+    t += it.duration * 1000;
+  }
+  $("live-body").innerHTML = rows;
 }
 
 /* Personalización */
