@@ -95,6 +95,8 @@ t("formato compacto: ida y vuelta y tamaño razonable", () => {
   assert.deepEqual(back.map((i) => [i.id, i.type, i.startAt, i.duration]), cyc.map((i) => [i.id, i.type, i.startAt, i.duration]));
   const bytes = JSON.stringify(compactChannel(cyc)).length;
   assert.ok(bytes < 400_000, "cabe en un documento de Firestore (1 MB): " + bytes + " bytes");
+  const noNested = (v, inArr = false) => Array.isArray(v) ? (inArr ? false : v.every((x) => noNested(x, true))) : (v && typeof v === "object" ? Object.values(v).every((x) => noNested(x, false)) : v !== undefined);
+  assert.ok(noNested(compactChannel(cyc)), "Firestore no admite listas dentro de listas ni valores undefined");
   assert.deepEqual(expandChannel({ items: [{ id: "x" }] }), [{ id: "x" }], "acepta el formato antiguo");
 });
 

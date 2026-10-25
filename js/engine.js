@@ -137,7 +137,8 @@ export function compactChannel(items) {
   const media = {}, seq = [];
   for (const i of items) {
     if (!media[i.id]) media[i.id] = { t: i.title, s: i.src, r: i.ref };
-    seq.push([i.id, i.type === "comercial" ? 1 : 0, Math.round((i.startAt || 0) * 1000) / 1000, Math.round(i.duration * 1000) / 1000, i.part || 0, i.parts || 0, i.breakNo || 0]);
+    // Cada tramo es un texto "id|esAnuncio|inicio|duración|parte|partes|corte" (Firestore no admite listas dentro de listas).
+    seq.push([i.id, i.type === "comercial" ? 1 : 0, Math.round((i.startAt || 0) * 1000) / 1000, Math.round(i.duration * 1000) / 1000, i.part || 0, i.parts || 0, i.breakNo || 0].join("|"));
   }
   return { media, seq };
 }
@@ -145,9 +146,9 @@ export function expandChannel(ch) {
   if (!ch) return [];
   if (Array.isArray(ch.items)) return ch.items;
   const media = ch.media || {};
-  return (ch.seq || []).filter((r) => media[r[0]]).map(([id, ad, startAt, duration, part, parts, breakNo]) => ({
-    id, type: ad ? "comercial" : "programa", title: media[id].t, src: media[id].s, ref: media[id].r,
-    startAt, duration, ...(part ? { part, parts } : {}), ...(breakNo ? { breakNo } : {})
+  return (ch.seq || []).map((row) => String(row).split("|")).filter((r) => media[r[0]]).map(([id, ad, startAt, duration, part, parts, breakNo]) => ({
+    id, type: Number(ad) ? "comercial" : "programa", title: media[id].t, src: media[id].s, ref: media[id].r,
+    startAt: Number(startAt), duration: Number(duration), ...(Number(part) ? { part: Number(part), parts: Number(parts) } : {}), ...(Number(breakNo) ? { breakNo: Number(breakNo) } : {})
   }));
 }
 
