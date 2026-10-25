@@ -216,6 +216,7 @@ function renderLibrary() {
       if (it.path) { try { await deleteObject(sRef(storage, it.path)); } catch {} }
       state.lib = state.lib.filter((x) => x.id !== it.id);
       await savePlan(); renderAll();
+      if (state.channel?.items?.some((x) => x.id === it.id)) { await publish(true); }
     } catch (err) { fail(err); }
   }));
 }
@@ -286,9 +287,9 @@ async function toggleLive() {
 }
 
 /* Publicar */
-async function publish() {
+async function publish(auto) {
   const items = buildCycle(state.lib, state.plan);
-  if (!items.length) { toast("Añade al menos un programa a la parrilla antes de publicar.", "error"); return; }
+  if (!items.length && !auto && !confirm("La parrilla está vacía. ¿Publicar sin programación? El público verá “Sin programación”.")) return;
   const epoch = state.channel?.epoch || Date.now();
   try {
     await savePlan();
