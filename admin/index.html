@@ -8,7 +8,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&display=swap">
-<link rel="stylesheet" href="../css/app.css?v=3">
+<link rel="stylesheet" href="../css/app.css?v=4">
 </head>
 <body>
 
@@ -48,7 +48,8 @@
     <div class="brand">Fogón TV <span>Studio</span></div>
     <div id="onair" class="onair off"><i></i><b>FUERA DEL AIRE</b></div>
     <div class="grow"></div>
-    <button class="btn" id="publish-btn" type="button">Publicar emisión</button>
+    <button class="btn" id="publish-btn" type="button">Publicar cambios</button>
+    <button class="btn danger" id="live-btn" type="button">Cortar emisión</button>
     <a class="btn secondary" id="player-link" href="../player/" target="_blank" rel="noopener">Abrir reproductor ↗</a>
     <span id="user-email" class="who"></span>
     <button class="btn secondary" id="logout-btn" type="button">Salir</button>
@@ -65,25 +66,21 @@
     <section class="col" aria-label="Biblioteca">
       <h2 class="col-h">Biblioteca</h2>
       <div class="col-b">
-        <label class="drop" id="drop">
-          <input id="lib-file" type="file" accept="video/*" multiple hidden>
-          <b>Subir videos</b>
-          <span>Arrastra archivos aquí o haz clic</span>
-        </label>
+        <div class="drops">
+          <label class="drop" data-kind="programa"><input type="file" accept="video/*" multiple hidden><b>+ Programa</b><span>Subir video</span></label>
+          <label class="drop ad" data-kind="comercial"><input type="file" accept="video/*" multiple hidden><b>+ Comercial</b><span>Subir video</span></label>
+        </div>
         <div id="uploads"></div>
         <details class="link-add">
           <summary>Añadir por enlace (YouTube o .mp4)</summary>
           <form id="lib-form">
             <input id="lib-title" placeholder="Título" required maxlength="120">
             <input id="lib-url" type="url" placeholder="https://" required>
+            <select id="lib-kind"><option value="programa">Es un programa</option><option value="comercial">Es un comercial</option></select>
             <input id="lib-dur" placeholder="Duración mm:ss (solo YouTube)">
             <button class="btn small" type="submit">Guardar enlace</button>
           </form>
         </details>
-        <div class="seg" role="group" aria-label="Tipo para lo que subas">
-          <span>Lo que subas es:</span>
-          <select id="lib-kind"><option value="programa">Programa</option><option value="comercial">Comercial</option></select>
-        </div>
         <div id="lib-list"></div>
       </div>
     </section>
@@ -117,6 +114,9 @@
         </section>
 
         <section id="tab-comercial" class="tab hidden">
+          <div class="help"><b>Cómo funcionan los cortes</b>
+            <p>1. Sube tus anuncios con el botón <b>+ Comercial</b> de la biblioteca.<br>2. Aquí decide cada cuántos programas hay un corte y cuántos anuncios pasan en él.<br>3. Marca abajo cuáles anuncios están activos. Rotan en orden.<br>4. Pulsa <b>Publicar cambios</b>.</p>
+            <p>Ejemplo: “cada 2 programas, 3 comerciales” → programa, programa, 3 anuncios, y se repite.</p></div>
           <label class="field"><span>Corte cada N programas (0 = sin cortes)</span><input id="plan-every" type="number" min="0" max="20"></label>
           <label class="field"><span>Comerciales por corte</span><input id="plan-count" type="number" min="0" max="20"></label>
           <button class="btn small" id="plan-save-com" type="button">Guardar</button>
@@ -128,7 +128,9 @@
           <form id="brand-form">
             <label class="field"><span>Nombre del canal</span><input id="b-name" maxlength="60"></label>
             <label class="field"><span>Color de acento</span><input id="b-accent" type="color"></label>
-            <label class="field"><span>Logotipo (URL)</span><input id="b-logo" type="url" placeholder="https://"></label>
+            <div class="field"><span>Logotipo</span>
+              <div class="logo-row"><img id="b-logo-prev" alt="" class="hidden"><input id="b-logo-file" type="file" accept="image/*">
+              <button class="btn secondary small hidden" id="b-logo-rm" type="button">Quitar logo</button></div></div>
             <label class="field"><span>Rótulo inferior</span><input id="b-ticker" maxlength="200"></label>
             <button class="btn" type="submit">Guardar y publicar</button>
           </form>
@@ -155,6 +157,6 @@
   </div>
 </div>
 
-<script type="module" src="../js/admin.js?v=3"></script>
+<script type="module" src="../js/admin.js?v=4"></script>
 </body>
 </html>

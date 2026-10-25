@@ -30,6 +30,7 @@ else {
   onSnapshot(doc(db, "public", "channel"), (s) => {
     channel = s.exists() ? s.data() : null;
     if (!channel?.items?.length) { stop(); say("Sin programación publicada por ahora."); return; }
+    if (channel.live === false) { stop(); say("Transmisión en pausa. Volvemos pronto."); return; }
     tick(true);
   }, () => say("No se pudo conectar con la emisión."));
 }
@@ -51,6 +52,7 @@ function stop() {
 // Decide qué toca ahora según el reloj; vuelve a decidir exactamente al terminar el elemento.
 function tick(force) {
   clearTimeout(timer);
+  if (!channel?.items?.length || channel.live === false) return;
   const loc = locate(channel.items, channel.epoch, Date.now());
   if (!loc) return;
   const key = `${loc.index}:${loc.item.id}:${channel.epoch}`;

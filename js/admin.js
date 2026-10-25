@@ -92,11 +92,16 @@ async function initPanel() {
   document.querySelectorAll("#nav button").forEach((b) => b.addEventListener("click", () => openTab(b.dataset.tab)));
   $("lib-form").addEventListener("submit", addItem);
   $("monitor").src = new URL("../player/?embed=1", location.href).href;
-  const drop = $("drop"), file = $("lib-file");
-  file.addEventListener("change", () => { uploadFiles([...file.files]); file.value = ""; });
-  ["dragenter", "dragover"].forEach((ev) => drop.addEventListener(ev, (e) => { e.preventDefault(); drop.classList.add("over"); }));
-  ["dragleave", "drop"].forEach((ev) => drop.addEventListener(ev, (e) => { e.preventDefault(); drop.classList.remove("over"); }));
-  drop.addEventListener("drop", (e) => uploadFiles([...e.dataTransfer.files].filter((f) => f.type.startsWith("video/"))));
+  document.querySelectorAll(".drop").forEach((drop) => {
+    const kind = drop.dataset.kind, input = drop.querySelector("input");
+    input.addEventListener("change", () => { uploadFiles([...input.files], kind); input.value = ""; });
+    ["dragenter", "dragover"].forEach((ev) => drop.addEventListener(ev, (e) => { e.preventDefault(); drop.classList.add("over"); }));
+    ["dragleave", "drop"].forEach((ev) => drop.addEventListener(ev, (e) => { e.preventDefault(); drop.classList.remove("over"); }));
+    drop.addEventListener("drop", (e) => uploadFiles([...e.dataTransfer.files].filter((f) => f.type.startsWith("video/")), kind));
+  });
+  $("live-btn").addEventListener("click", toggleLive);
+  $("b-logo-file").addEventListener("change", onLogoFile);
+  $("b-logo-rm").addEventListener("click", () => { state.brand.logo = ""; renderBrand(); saveBrand(true); });
   $("plan-save-com").addEventListener("click", savePlanFromCommercial);
   $("order-add-btn").addEventListener("click", () => {
     const id = $("order-add").value; if (!id) return;
@@ -162,7 +167,7 @@ async function saveItem(d) {
   state.lib.sort((a, b) => a.title.localeCompare(b.title));
   renderAll();
 }
-async function uploadFiles(files) {
+async function uploadFiles(files, kind) {
   for (const f of files) {
     const row = document.createElement("div"); row.className = "up";
     row.innerHTML = `<div>${esc(f.name)}</div><progress max="100" value="0"></progress><small></small>`;
@@ -174,17 +179,21 @@ async function uploadFiles(files) {
       if (!(duration > 0)) throw new Error("No se pudo leer la duración del video (¿formato no compatible? usa .mp4).");
       const path = `media/${Date.now()}-${f.name.replace(/[^\w.-]+/g, "_")}`;
       const task = uploadBytesResumable(sRef(storage, path), f);
-      await new Promise((res, rej) => {
-        task.on("state_changed", (s) => { const p = Math.round(s.bytesTransferred / s.totalBytes * 100); bar.value = p; note.textContent = `${p}%`; }, rej, res);
-      });
+      let moved = 0;
+      const stall = setTimeout(() => { if (!moved) task.cancel(); }, 20000);
+      try {
+        await new Promise((res, rej) => {
+          task.on("state_changed", (s) => { moved = s.bytesTransferred; const p = Math.round(s.bytesTransferred / s.totalBytes * 100); bar.value = p; note.textContent = `${p}%`; }, rej, res);
+        });
+      } finally { clearTimeout(stall); }
       const url = await getDownloadURL(task.snapshot.ref);
-      await saveItem({ title: f.name.replace(/\.[^.]+$/, ""), kind: $("lib-kind").value, url, duration, path });
+      await saveItem({ title: f.name.replace(/\.[^.]+$/, ""), kind, url, duration, path });
       note.textContent = "Listo"; setTimeout(() => row.remove(), 3000);
     } catch (err) {
       bar.remove();
       note.className = "msg error";
-      note.textContent = /unauthorized|object-not-found|bucket|retry-limit|storage\//.test(err.code || "")
-        ? "Firebase Storage no está activado o no tiene reglas. Mira el aviso en el README (Storage requiere plan Blaze)."
+      note.textContent = /canceled|unauthorized|object-not-found|bucket|retry-limit|storage\//.test(err.code || "")
+        ? "La subida no avanza: Firebase Storage no está activado (requiere plan Blaze) o sus reglas no están publicadas. Mientras tanto usa “Añadir por enlace”."
         : (err.message || "Error al subir.");
     }
   }
@@ -195,7 +204,7 @@ function renderLibrary() {
   el.innerHTML = state.lib.map((i) => `<div class="item"><div class="grow"><b>${esc(i.title)}</b><small>${esc(i.url)}</small></div>
     <span class="tag">${esc(i.kind)}</span><span>${fmtDuration(i.duration)}</span>
     ${i.kind === "programa" ? `<button class="btn secondary small" data-add="${esc(i.id)}" type="button" title="Añadir a la parrilla">+</button>` : ""}
-    <button class="btn secondary small" data-del="${esc(i.id)}" type="button">Eliminar</button></div>`).join("");
+    <button class="btn del small" data-del="${esc(i.id)}" type="button" title="Eliminar de la biblioteca">🗑 Eliminar</button></div>`).join("");
   el.querySelectorAll("[data-add]").forEach((b) => b.addEventListener("click", () => {
     state.plan.order.push(b.dataset.add); savePlan().then(renderAll).catch(fail); toast("Añadido a la parrilla.", "ok");
   }));
@@ -258,6 +267,24 @@ function renderCycle() {
   $("st-cycle").textContent = state.channel?.items?.length ? `${state.channel.items.length} elementos` : "Sin publicar";
 }
 
+/* Cortar / reanudar emisión */
+function renderLive() {
+  const live = state.channel?.live !== false;
+  const b = $("live-btn");
+  b.textContent = live ? "Cortar emisión" : "Reanudar emisión";
+  b.classList.toggle("resume", !live);
+}
+async function toggleLive() {
+  if (!state.channel) { toast("Aún no hay emisión publicada.", "error"); return; }
+  const live = state.channel.live === false;
+  if (!live && !confirm("¿Cortar la emisión? El público verá un aviso de pausa.")) return;
+  try {
+    await updateDoc(doc(db, "public", "channel"), { live });
+    state.channel.live = live; renderLive(); renderNow();
+    toast(live ? "Emisión reanudada." : "Emisión cortada. El público ve el aviso de pausa.", "ok");
+  } catch (err) { fail(err); }
+}
+
 /* Publicar */
 async function publish() {
   const items = buildCycle(state.lib, state.plan);
@@ -265,9 +292,10 @@ async function publish() {
   const epoch = state.channel?.epoch || Date.now();
   try {
     await savePlan();
-    const channel = { epoch, items, updatedAt: serverTimestamp() };
+    const live = state.channel?.live !== false;
+    const channel = { epoch, items, live, updatedAt: serverTimestamp() };
     await setDoc(doc(db, "public", "channel"), channel);
-    state.channel = { epoch, items };
+    state.channel = { epoch, items, live };
     renderCycle(); renderNow();
     toast("Emisión publicada. El reproductor se actualiza solo.", "ok");
   } catch (err) { fail(err); }
@@ -278,9 +306,11 @@ function renderNow() {
   const now = Date.now();
   $("clock").textContent = hms(now);
   const c = state.channel;
+  const paused = c?.live === false;
   const loc = c?.items?.length ? locate(c.items, c.epoch, now) : null;
-  $("onair").classList.toggle("off", !loc);
-  $("onair").querySelector("b").textContent = loc ? "AL AIRE" : "FUERA DEL AIRE";
+  $("onair").classList.toggle("off", !loc || paused);
+  $("onair").querySelector("b").textContent = paused ? "EMISIÓN CORTADA" : loc ? "AL AIRE" : "FUERA DEL AIRE";
+  renderLive();
   if (!loc) {
     ["now-title", "next-title"].forEach((k) => ($(k).textContent = "—"));
     $("now-left").textContent = "--:--"; $("next-start").textContent = "--:--:--"; $("now-bar").style.width = "0";
@@ -314,12 +344,26 @@ function renderNow() {
 }
 
 /* Personalización */
+function onLogoFile() {
+  const f = $("b-logo-file").files[0]; if (!f) return;
+  const img = new Image(), url = URL.createObjectURL(f);
+  img.onload = () => {
+    const sc = Math.min(1, 400 / Math.max(img.width, img.height));
+    const cv = document.createElement("canvas"); cv.width = Math.round(img.width * sc); cv.height = Math.round(img.height * sc);
+    cv.getContext("2d").drawImage(img, 0, 0, cv.width, cv.height);
+    state.brand.logo = cv.toDataURL("image/png"); URL.revokeObjectURL(url);
+    $("b-logo-file").value = ""; renderBrand(); toast("Logo cargado. Pulsa Guardar y publicar.", "ok");
+  };
+  img.onerror = () => toast("No se pudo leer esa imagen.", "error");
+  img.src = url;
+}
 function renderBrand() {
   $("b-name").value = state.brand.name || ""; $("b-accent").value = state.brand.accent || "#0E6B73";
-  $("b-logo").value = state.brand.logo || ""; $("b-ticker").value = state.brand.ticker || "";
+  $("b-logo-prev").src = state.brand.logo || ""; $("b-logo-prev").classList.toggle("hidden", !state.brand.logo);
+  $("b-logo-rm").classList.toggle("hidden", !state.brand.logo); $("b-ticker").value = state.brand.ticker || "";
 }
-async function saveBrand() {
-  state.brand = { name: $("b-name").value.trim() || "Fogón TV", accent: $("b-accent").value, logo: $("b-logo").value.trim(), ticker: $("b-ticker").value.trim() };
+async function saveBrand(keep) {
+  state.brand = { name: $("b-name").value.trim() || "Fogón TV", accent: $("b-accent").value, logo: state.brand.logo || "", ticker: $("b-ticker").value.trim() };
   try { await setDoc(doc(db, "public", "brand"), state.brand); toast("Personalización publicada.", "ok"); } catch (err) { fail(err); }
 }
 
