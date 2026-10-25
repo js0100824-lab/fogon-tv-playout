@@ -85,7 +85,7 @@ th,td{text-align:left;padding:.45rem .5rem;border-bottom:1px solid var(--line)}
 .studio input,.studio select{width:100%;padding:.5rem .6rem;border:1px solid var(--line);border-radius:var(--radius);background:var(--bg);color:var(--ink)}
 .studio input[type=color]{padding:.15rem;height:2.3rem}
 .studio .msg{position:fixed;right:1rem;top:3.5rem;z-index:10;max-width:360px;margin:0}
-.cols{flex:1;min-height:0;display:grid;grid-template-columns:340px minmax(0,1fr) 380px;gap:1px;background:var(--line)}
+.cols{flex:1;min-height:0;display:grid;grid-template-columns:clamp(220px,17vw,290px) minmax(0,1fr) clamp(250px,19vw,320px);gap:1px;background:var(--line)}
 .col{background:var(--bg);display:flex;flex-direction:column;min-height:0}
 .col-h{margin:0;padding:.55rem .9rem;font-size:.78rem;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);background:var(--surface);border-bottom:1px solid var(--line)}
 .col-b{padding:.8rem;overflow:auto;flex:1}
@@ -164,3 +164,8 @@ table.live tr.cur td{background:#a62f2a;color:#fff;font-weight:600}
 
 /* Vista previa grande y sin marco */
 .col.center .monitor{width:min(100%,calc(60vh*16/9));max-width:none;border:0;border-radius:0;margin:0 auto .5rem;background:#000}
+
+/* v13: columnas laterales más compactas */
+.col-b{padding:.6rem}
+.studio .item .btn.small{padding:.2rem .45rem;font-size:.75rem}
+.studio .item .grow{font-size:.85rem}
