@@ -6,7 +6,7 @@ import { spawnSync } from "node:child_process";
 const required = [
   "index.html", "admin/index.html", "player/index.html",
   "js/firebase-config.js", "js/firebase.js", "js/admin.js", "js/engine.js", "js/player.js", "scripts/test.mjs",
-  "firestore.rules", "storage.rules", "firebase.json", "README.md", ".gitignore"
+  "firestore.rules", "storage.rules", "firebase.json", "README.md", ".gitignore", "media/LEEME.txt"
 ];
 let failed = false;
 for (const f of required) {

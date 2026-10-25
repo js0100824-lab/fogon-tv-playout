@@ -1,0 +1,3 @@
+Pon aquí tus videos .mp4 (H.264), sin espacios ni tildes en el nombre.
+Dirección de cada uno: https://TU-USUARIO.github.io/fogon-tv-playout/media/NOMBRE.mp4
+Pégala en el panel, en "Añadir por enlace".
