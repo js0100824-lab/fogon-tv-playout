@@ -65,3 +65,49 @@ select,.field select{width:100%;padding:.6rem .75rem;border:1px solid var(--line
 table{width:100%;border-collapse:collapse}
 th,td{text-align:left;padding:.45rem .5rem;border-bottom:1px solid var(--line)}
 @media (max-width:720px){.grid{grid-template-columns:1fr}}
+
+/* ===== Studio (panel) ===== */
+.studio{--bg:#0E1013;--surface:#171A1F;--ink:#E8EBEF;--muted:#8A94A0;--line:#262B33;--accent:#2BB7C4;--accent-ink:#04181B;--danger:#FF6B62;--ok:#4CD08A;
+  height:100vh;display:flex;flex-direction:column;background:var(--bg);color:var(--ink)}
+.studio.hidden{display:none !important}
+.studio .top{display:flex;align-items:center;gap:.6rem;padding:.5rem .9rem;background:var(--surface);border-bottom:1px solid var(--line);flex-wrap:wrap}
+.studio .brand{font-weight:700}.studio .brand span{color:var(--accent);font-weight:500}
+.grow{flex:1}.clock{font-variant-numeric:tabular-nums;color:var(--muted)}
+.who{font-size:.8rem;color:var(--muted);max-width:180px;overflow:hidden;text-overflow:ellipsis}
+.onair{display:flex;align-items:center;gap:.4rem;padding:.2rem .6rem;border-radius:99px;font-size:.78rem;border:1px solid var(--line)}
+.onair i{width:9px;height:9px;border-radius:50%;background:var(--danger)}
+.onair:not(.off){border-color:var(--danger);color:var(--danger)}
+.onair:not(.off) i{animation:pulse 1.2s infinite}
+.onair.off i{background:var(--muted)}
+@keyframes pulse{50%{opacity:.25}}
+.studio .btn.small{padding:.3rem .65rem;font-size:.82rem}
+.studio .btn.secondary{border-color:var(--line);color:var(--ink)}
+.studio input,.studio select{width:100%;padding:.5rem .6rem;border:1px solid var(--line);border-radius:var(--radius);background:var(--bg);color:var(--ink)}
+.studio input[type=color]{padding:.15rem;height:2.3rem}
+.studio .msg{position:fixed;right:1rem;top:3.5rem;z-index:10;max-width:360px;margin:0}
+.cols{flex:1;min-height:0;display:grid;grid-template-columns:340px minmax(0,1fr) 380px;gap:1px;background:var(--line)}
+.col{background:var(--bg);display:flex;flex-direction:column;min-height:0}
+.col-h{margin:0;padding:.55rem .9rem;font-size:.78rem;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);background:var(--surface);border-bottom:1px solid var(--line)}
+.col-b{padding:.8rem;overflow:auto;flex:1}
+.drop{display:grid;gap:.15rem;place-items:center;text-align:center;padding:1.1rem;border:2px dashed var(--line);border-radius:8px;cursor:pointer;color:var(--muted);margin-bottom:.75rem}
+.drop b{color:var(--ink)}.drop:hover,.drop.over{border-color:var(--accent);background:var(--surface)}
+.link-add{margin-bottom:.75rem;font-size:.9rem}.link-add summary{cursor:pointer;color:var(--muted)}
+.link-add form{display:grid;gap:.4rem;margin-top:.5rem}
+.seg{display:flex;align-items:center;gap:.5rem;margin-bottom:.6rem;font-size:.85rem;color:var(--muted)}.seg select{width:auto}
+.up{padding:.4rem 0;font-size:.85rem}.up progress{width:100%;height:6px}
+.studio .item{padding:.45rem .2rem}
+.studio .item .grow small{font-size:.75rem}
+.monitor{aspect-ratio:16/9;background:#000;border:1px solid var(--line);border-radius:6px;overflow:hidden}
+.monitor iframe{width:100%;height:100%;border:0}
+.now{display:grid;grid-template-columns:1fr 1fr auto;gap:1rem;margin:.8rem 0 .5rem}
+.now small{display:block;color:var(--muted);font-size:.7rem;letter-spacing:.06em}.now b{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.now .time b{font-variant-numeric:tabular-nums;font-size:1.3rem}
+.bar{height:6px;background:var(--line);border-radius:3px;overflow:hidden}.bar div{height:100%;width:0;background:var(--accent);transition:width 1s linear}
+.tabs{display:flex;list-style:none;margin:0;padding:0;background:var(--surface);border-bottom:1px solid var(--line)}
+.tabs li{flex:1}
+.tabs button{all:unset;box-sizing:border-box;width:100%;text-align:center;padding:.6rem .2rem;font-size:.82rem;color:var(--muted);cursor:pointer;border-bottom:2px solid transparent}
+.tabs button.active{color:var(--ink);border-color:var(--accent)}
+.tabs button:focus-visible{outline:2px solid var(--accent)}
+.sub{margin:1.1rem 0 .4rem;font-size:.8rem;text-transform:uppercase;letter-spacing:.05em;color:var(--muted)}
+.studio .field span{font-size:.8rem}
+@media (max-width:1100px){.studio{height:auto;min-height:100vh}.cols{grid-template-columns:1fr}}

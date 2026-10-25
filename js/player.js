@@ -6,6 +6,21 @@ const $ = (id) => document.getElementById(id);
 const sid = (crypto.randomUUID?.() || String(Math.random()).slice(2)).replace(/-/g, "").slice(0, 32);
 let channel = null, current = null, timer = null, ytPlayer = null, ytReady = null, unmuted = false;
 let lastLogged = "";
+const embed = new URLSearchParams(location.search).has("embed");
+if (embed) document.body.classList.add("embed");
+let lowerT = null;
+$("fs").addEventListener("click", () => (document.fullscreenElement ? document.exitFullscreen() : document.documentElement.requestFullscreen()));
+setInterval(() => {
+  if (!channel?.items?.length) return;
+  const l = locate(channel.items, channel.epoch, Date.now());
+  if (l) $("prog").style.width = `${(l.offset / l.item.duration) * 100}%`;
+}, 1000);
+function lowerThird(item) {
+  const el = $("lower");
+  el.querySelector("small").textContent = item.type === "comercial" ? "PUBLICIDAD" : "AHORA";
+  el.querySelector("b").textContent = item.title;
+  el.classList.add("show"); clearTimeout(lowerT); lowerT = setTimeout(() => el.classList.remove("show"), 7000);
+}
 
 function say(t) { $("msg").textContent = t; $("msg").classList.toggle("hidden", !t); }
 
@@ -43,6 +58,7 @@ function tick(force) {
   if (force || !current || current.key !== key) {
     current = { key };
     play(loc.item, loc.offset);
+    lowerThird(loc.item);
     log(loc.item, key);
   } else {
     sync(loc);
@@ -74,14 +90,14 @@ function play(item, offset) {
   }
 }
 
-function needTap() { if (!unmuted) $("sound").classList.remove("hidden"); }
+function needTap() { if (!unmuted && !embed) $("sound").classList.remove("hidden"); }
 $("sound").addEventListener("click", () => {
   unmuted = true; $("sound").classList.add("hidden");
   const v = $("file"); v.muted = false; v.play().catch(() => {});
   ytPlayer?.unMute?.(); ytPlayer?.playVideo?.();
 });
 // Los navegadores bloquean autoplay con sonido: arranca en silencio y ofrece activar el sonido.
-setTimeout(() => { if (!unmuted && channel) $("sound").classList.remove("hidden"); }, 1500);
+setTimeout(() => { if (!unmuted && channel && !embed) $("sound").classList.remove("hidden"); }, 1500);
 
 function loadYT() {
   if (ytReady) return ytReady;
@@ -99,7 +115,7 @@ function loadYT() {
 }
 
 async function log(item, key) {
-  if (key === lastLogged) return; lastLogged = key;
+  if (embed || key === lastLogged) return; lastLogged = key;
   try { await addDoc(collection(db, "stats"), { at: serverTimestamp(), sid, title: String(item.title).slice(0, 200), type: item.type }); } catch {}
 }
 

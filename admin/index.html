@@ -43,107 +43,115 @@
   </div>
 </div>
 
-<div id="panel-view" class="shell hidden">
-  <aside class="side">
-    <div class="brand">Fogón TV Playout</div>
-    <ul class="nav" id="nav" aria-label="Secciones">
-      <li><button data-tab="estado" class="active">Estado del sistema</button></li>
-      <li><button data-tab="biblioteca">Biblioteca</button></li>
-      <li><button data-tab="comercial">Control comercial</button></li>
-      <li><button data-tab="programacion">Programación</button></li>
-      <li><button data-tab="personalizacion">Personalización</button></li>
-      <li><button data-tab="estadisticas">Estadísticas</button></li>
-    </ul>
-    <div style="margin-top:auto">
-      <p id="user-email" style="font-size:.85rem;color:var(--muted);word-break:break-all"></p>
-      <button class="btn secondary" id="logout-btn" type="button">Cerrar sesión</button>
-    </div>
-  </aside>
-  <main class="main">
-    <div id="toast" class="msg hidden" role="status"></div>
+<div id="panel-view" class="studio hidden">
+  <header class="top">
+    <div class="brand">Fogón TV <span>Studio</span></div>
+    <div id="onair" class="onair off"><i></i><b>FUERA DEL AIRE</b></div>
+    <div class="grow"></div>
+    <div id="clock" class="clock">--:--:--</div>
+    <button class="btn" id="publish-btn" type="button">Publicar emisión</button>
+    <a class="btn secondary" id="player-link" href="../player/" target="_blank" rel="noopener">Abrir reproductor ↗</a>
+    <span id="user-email" class="who"></span>
+    <button class="btn secondary" id="logout-btn" type="button">Salir</button>
+  </header>
+  <div id="toast" class="msg hidden" role="status"></div>
 
-    <section id="tab-estado" class="tab">
-      <h1>Estado del sistema</h1>
-      <div class="panel">
-        <ul class="status-list">
-          <li><span>Proyecto</span><b id="st-project">—</b></li>
-          <li><span>Sesión</span><b id="st-auth">—</b></li>
-          <li><span>Permiso de administrador</span><b id="st-admin">—</b></li>
-          <li><span>Escritura en Firestore</span><b id="st-write">Sin probar</b></li>
-          <li><span>Ciclo publicado</span><b id="st-cycle">—</b></li>
-        </ul>
-        <button class="btn" id="test-btn" type="button">Probar escritura</button>
-      </div>
-      <div class="panel">
-        <h2>Emisión</h2>
-        <p>Publica los cambios para que el reproductor público los use. El reproductor está en <a id="player-link" href="../player/" target="_blank" rel="noopener">../player/</a>.</p>
-        <button class="btn" id="publish-btn" type="button">Publicar emisión</button>
-        <p id="now-playing" style="margin-top:1rem;color:var(--muted)"></p>
-      </div>
-    </section>
-
-    <section id="tab-biblioteca" class="tab hidden">
-      <h1>Biblioteca de contenidos</h1>
-      <form id="lib-form" class="panel grid">
-        <h2 style="grid-column:1/-1">Agregar contenido</h2>
-        <label class="field"><span>Título</span><input id="lib-title" required maxlength="120"></label>
-        <label class="field"><span>Tipo</span><select id="lib-kind"><option value="programa">Programa</option><option value="comercial">Comercial</option></select></label>
-        <label class="field wide"><span>URL (enlace de YouTube o archivo de video .mp4 / .webm)</span><input id="lib-url" type="url" required placeholder="https://"></label>
-        <label class="field"><span>Duración (mm:ss o segundos)</span><input id="lib-dur" placeholder="3:25"></label>
-        <div class="field"><span>&nbsp;</span><button class="btn" type="submit">Guardar</button></div>
-        <p class="hint wide">Para archivos .mp4 la duración se detecta sola si lo dejas vacío. Para YouTube escríbela tú.</p>
-      </form>
-      <div class="panel"><h2>Contenidos</h2><div id="lib-list"></div></div>
-    </section>
-
-    <section id="tab-comercial" class="tab hidden">
-      <h1>Control comercial</h1>
-      <div class="panel grid">
-        <label class="field"><span>Corte cada N programas (0 = sin cortes)</span><input id="plan-every" type="number" min="0" max="20"></label>
-        <label class="field"><span>Comerciales por corte</span><input id="plan-count" type="number" min="0" max="20"></label>
-        <div class="field wide"><button class="btn" id="plan-save-com" type="button">Guardar</button></div>
-      </div>
-      <div class="panel"><h2>Comerciales activos</h2><p class="hint">Solo los activos entran en los cortes y rotan en orden.</p><div id="ads-list"></div></div>
-    </section>
-
-    <section id="tab-programacion" class="tab hidden">
-      <h1>Programación</h1>
-      <div class="panel">
-        <h2>Orden de emisión</h2>
-        <div id="order-list"></div>
-        <div class="row">
-          <select id="order-add"></select>
-          <button class="btn secondary" id="order-add-btn" type="button">Añadir al final</button>
+  <div class="cols">
+    <section class="col" aria-label="Biblioteca">
+      <h2 class="col-h">Biblioteca</h2>
+      <div class="col-b">
+        <label class="drop" id="drop">
+          <input id="lib-file" type="file" accept="video/*" multiple hidden>
+          <b>Subir videos</b>
+          <span>Arrastra archivos aquí o haz clic</span>
+        </label>
+        <div id="uploads"></div>
+        <details class="link-add">
+          <summary>Añadir por enlace (YouTube o .mp4)</summary>
+          <form id="lib-form">
+            <input id="lib-title" placeholder="Título" required maxlength="120">
+            <input id="lib-url" type="url" placeholder="https://" required>
+            <input id="lib-dur" placeholder="Duración mm:ss (solo YouTube)">
+            <button class="btn small" type="submit">Guardar enlace</button>
+          </form>
+        </details>
+        <div class="seg" role="group" aria-label="Tipo para lo que subas">
+          <span>Lo que subas es:</span>
+          <select id="lib-kind"><option value="programa">Programa</option><option value="comercial">Comercial</option></select>
         </div>
-      </div>
-      <div class="panel">
-        <h2>Ciclo resultante</h2>
-        <p id="cycle-total" class="hint"></p>
-        <ol id="cycle-list" class="cycle"></ol>
-        <button class="btn" id="publish-btn2" type="button">Guardar y publicar</button>
+        <div id="lib-list"></div>
       </div>
     </section>
 
-    <section id="tab-personalizacion" class="tab hidden">
-      <h1>Personalización</h1>
-      <form id="brand-form" class="panel grid">
-        <label class="field"><span>Nombre del canal</span><input id="b-name" maxlength="60"></label>
-        <label class="field"><span>Color de acento</span><input id="b-accent" type="color"></label>
-        <label class="field wide"><span>URL del logotipo (imagen)</span><input id="b-logo" type="url" placeholder="https://"></label>
-        <label class="field wide"><span>Texto del rótulo inferior (opcional)</span><input id="b-ticker" maxlength="200"></label>
-        <div class="field wide"><button class="btn" type="submit">Guardar y publicar</button></div>
-      </form>
+    <section class="col center" aria-label="Monitor">
+      <h2 class="col-h">Programa (lo que ve el público)</h2>
+      <div class="col-b">
+        <div class="monitor"><iframe id="monitor" title="Vista previa en vivo" allow="autoplay; fullscreen"></iframe></div>
+        <div class="now">
+          <div><small>AHORA</small><b id="now-title">—</b></div>
+          <div><small>SIGUIENTE</small><b id="next-title">—</b></div>
+          <div class="time"><small>RESTANTE</small><b id="now-left">--:--</b></div>
+        </div>
+        <div class="bar"><div id="now-bar"></div></div>
+        <p class="hint">El monitor está en silencio. Para escuchar, abre el reproductor.</p>
+      </div>
     </section>
 
-    <section id="tab-estadisticas" class="tab hidden">
-      <h1>Estadísticas</h1>
-      <div class="panel">
-        <button class="btn secondary" id="stats-refresh" type="button">Actualizar</button>
-        <ul class="status-list" id="stats-summary" style="margin-top:1rem"></ul>
+    <section class="col" aria-label="Control">
+      <ul class="tabs" id="nav" role="tablist">
+        <li><button data-tab="programacion" class="active">Parrilla</button></li>
+        <li><button data-tab="comercial">Comerciales</button></li>
+        <li><button data-tab="personalizacion">Marca</button></li>
+        <li><button data-tab="estadisticas">Stats</button></li>
+        <li><button data-tab="estado">Sistema</button></li>
+      </ul>
+      <div class="col-b">
+        <section id="tab-programacion" class="tab">
+          <div id="order-list"></div>
+          <div class="row"><select id="order-add"></select><button class="btn secondary small" id="order-add-btn" type="button">Añadir</button></div>
+          <h3 class="sub">Ciclo de emisión</h3>
+          <p id="cycle-total" class="hint"></p>
+          <ol id="cycle-list" class="cycle"></ol>
+          <button class="btn" id="publish-btn2" type="button">Guardar y publicar</button>
+        </section>
+
+        <section id="tab-comercial" class="tab hidden">
+          <label class="field"><span>Corte cada N programas (0 = sin cortes)</span><input id="plan-every" type="number" min="0" max="20"></label>
+          <label class="field"><span>Comerciales por corte</span><input id="plan-count" type="number" min="0" max="20"></label>
+          <button class="btn small" id="plan-save-com" type="button">Guardar</button>
+          <h3 class="sub">Comerciales activos</h3>
+          <div id="ads-list"></div>
+        </section>
+
+        <section id="tab-personalizacion" class="tab hidden">
+          <form id="brand-form">
+            <label class="field"><span>Nombre del canal</span><input id="b-name" maxlength="60"></label>
+            <label class="field"><span>Color de acento</span><input id="b-accent" type="color"></label>
+            <label class="field"><span>Logotipo (URL)</span><input id="b-logo" type="url" placeholder="https://"></label>
+            <label class="field"><span>Rótulo inferior</span><input id="b-ticker" maxlength="200"></label>
+            <button class="btn" type="submit">Guardar y publicar</button>
+          </form>
+        </section>
+
+        <section id="tab-estadisticas" class="tab hidden">
+          <button class="btn secondary small" id="stats-refresh" type="button">Actualizar</button>
+          <ul class="status-list" id="stats-summary" style="margin-top:.75rem"></ul>
+          <div id="stats-table"></div>
+        </section>
+
+        <section id="tab-estado" class="tab hidden">
+          <ul class="status-list">
+            <li><span>Proyecto</span><b id="st-project">—</b></li>
+            <li><span>Sesión</span><b id="st-auth">—</b></li>
+            <li><span>Administrador</span><b id="st-admin">—</b></li>
+            <li><span>Escritura</span><b id="st-write">Sin probar</b></li>
+            <li><span>Ciclo publicado</span><b id="st-cycle">—</b></li>
+          </ul>
+          <button class="btn secondary small" id="test-btn" type="button">Probar escritura</button>
+        </section>
       </div>
-      <div class="panel"><h2>Reproducciones por contenido</h2><div id="stats-table"></div></div>
     </section>
-  </main>
+  </div>
 </div>
 
 <script type="module" src="../js/admin.js"></script>

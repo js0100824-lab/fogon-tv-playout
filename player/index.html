@@ -15,6 +15,14 @@ html,body{margin:0;height:100%;background:#000;color:#fff;font-family:system-ui,
 #name{position:absolute;top:3%;left:3%;padding:.25rem .7rem;background:var(--accent);font-weight:700;border-radius:4px}
 #sound{position:absolute;inset:0;display:grid;place-items:center;background:rgba(0,0,0,.55);border:0;color:#fff;font-size:1.4rem;cursor:pointer}
 #sound span{padding:1rem 1.5rem;background:var(--accent);border-radius:8px}
+#lower{position:absolute;left:3%;bottom:12%;max-width:70%;padding:.7rem 1.1rem;background:rgba(0,0,0,.72);border-left:6px solid var(--accent);border-radius:4px;opacity:0;transform:translateY(12px);transition:.5s}
+#lower.show{opacity:1;transform:none}
+#lower small{display:block;color:var(--accent);font-weight:700;letter-spacing:.08em;font-size:.75rem}
+#lower b{font-size:clamp(1rem,2.4vw,1.8rem)}
+#prog{position:absolute;left:0;bottom:0;height:4px;width:0;background:var(--accent);transition:width 1s linear}
+#fs{position:absolute;right:1rem;bottom:1rem;border:0;border-radius:6px;padding:.5rem .8rem;background:rgba(0,0,0,.6);color:#fff;cursor:pointer;opacity:0;transition:.3s}
+body:hover #fs{opacity:1}
+body.embed #fs,body.embed #sound{display:none !important}
 #msg{position:absolute;inset:0;display:grid;place-items:center;text-align:center;padding:1rem;font-size:1.2rem}
 .hidden{display:none !important}
 </style>
@@ -26,6 +34,9 @@ html,body{margin:0;height:100%;background:#000;color:#fff;font-family:system-ui,
   <div id="name" class="hidden"></div>
   <img id="logo" class="hidden" alt="">
   <div id="ticker" class="hidden"></div>
+  <div id="lower"><small></small><b></b></div>
+  <div id="prog"></div>
+  <button id="fs" type="button">⛶ Pantalla completa</button>
   <div id="msg">Conectando…</div>
   <button id="sound" class="hidden" type="button"><span>▶ Toca para ver con sonido</span></button>
 </div>

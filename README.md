@@ -16,7 +16,12 @@ Canal de TV automatizado: biblioteca, parrilla, cortes comerciales, reproductor 
 ## Reglas
 Después de actualizar, **vuelve a pegar `firestore.rules` en Firebase → Firestore → Reglas → Publicar** (se añadió la colección `stats`).
 
+## Subir videos (Firebase Storage)
+El panel sube archivos a Firebase Storage. Google exige el plan **Blaze** (pago por uso, con cuota gratuita mensual y tarjeta requerida) para activarlo:
+1. Firebase → Storage → Comenzar (te pedirá cambiar a Blaze).
+2. Pestaña Reglas de Storage: pega el contenido de `storage.rules` y Publicar.
+Mientras tanto puedes usar enlaces (YouTube o .mp4 alojado en otro sitio).
+
 ## Límites
-- Los videos se enlazan por URL; subir archivos a Firebase Storage exige el plan de pago.
 - Los navegadores bloquean el sonido automático: el espectador toca una vez para activarlo.
 - La sincronización depende del reloj del dispositivo del espectador.

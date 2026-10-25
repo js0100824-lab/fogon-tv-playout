@@ -1,4 +1,4 @@
-import { auth, db, isConfigured } from "./firebase.js";
+import { auth, db, storage, isConfigured } from "./firebase.js";
 import { firebaseConfig } from "./firebase-config.js";
 import {
   signInWithEmailAndPassword, signOut, onAuthStateChanged
@@ -6,6 +6,7 @@ import {
 import {
   doc, getDoc, setDoc, addDoc, deleteDoc, updateDoc, getDocs, collection, query, orderBy, limit, serverTimestamp
 } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore.js";
+import { ref as sRef, uploadBytesResumable, getDownloadURL, deleteObject } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-storage.js";
 import { parseDuration, fmtDuration, buildCycle, cycleLength, locate } from "./engine.js";
 
 const $ = (id) => document.getElementById(id);
@@ -90,6 +91,12 @@ async function initPanel() {
   if (inited) return; inited = true;
   document.querySelectorAll("#nav button").forEach((b) => b.addEventListener("click", () => openTab(b.dataset.tab)));
   $("lib-form").addEventListener("submit", addItem);
+  $("monitor").src = new URL("../player/?embed=1", location.href).href;
+  const drop = $("drop"), file = $("lib-file");
+  file.addEventListener("change", () => { uploadFiles([...file.files]); file.value = ""; });
+  ["dragenter", "dragover"].forEach((ev) => drop.addEventListener(ev, (e) => { e.preventDefault(); drop.classList.add("over"); }));
+  ["dragleave", "drop"].forEach((ev) => drop.addEventListener(ev, (e) => { e.preventDefault(); drop.classList.remove("over"); }));
+  drop.addEventListener("drop", (e) => uploadFiles([...e.dataTransfer.files].filter((f) => f.type.startsWith("video/"))));
   $("plan-save-com").addEventListener("click", savePlanFromCommercial);
   $("order-add-btn").addEventListener("click", () => {
     const id = $("order-add").value; if (!id) return;
@@ -143,26 +150,61 @@ async function addItem(e) {
   let duration = parseDuration($("lib-dur").value);
   if (!(duration > 0)) duration = await detectDuration(url);
   if (!(duration > 0)) { toast("No pude detectar la duración. Escríbela (por ejemplo 3:25).", "error"); return; }
-  const kind = $("lib-kind").value;
-  const data = { title: $("lib-title").value.trim(), kind, url, duration, active: true, createdAt: serverTimestamp() };
   try {
-    const ref = await addDoc(collection(db, "library"), data);
-    state.lib.push({ id: ref.id, ...data });
-    state.lib.sort((a, b) => a.title.localeCompare(b.title));
-    $("lib-form").reset(); renderAll(); toast("Contenido guardado.", "ok");
+    await saveItem({ title: $("lib-title").value.trim(), kind: $("lib-kind").value, url, duration });
+    $("lib-form").reset(); toast("Contenido guardado.", "ok");
   } catch (err) { fail(err); }
+}
+async function saveItem(d) {
+  const data = { ...d, active: true, createdAt: serverTimestamp() };
+  const r = await addDoc(collection(db, "library"), data);
+  state.lib.push({ id: r.id, ...data });
+  state.lib.sort((a, b) => a.title.localeCompare(b.title));
+  renderAll();
+}
+async function uploadFiles(files) {
+  for (const f of files) {
+    const row = document.createElement("div"); row.className = "up";
+    row.innerHTML = `<div>${esc(f.name)}</div><progress max="100" value="0"></progress><small></small>`;
+    $("uploads").prepend(row);
+    const note = row.querySelector("small"), bar = row.querySelector("progress");
+    try {
+      const local = URL.createObjectURL(f);
+      const duration = await detectDuration(local); URL.revokeObjectURL(local);
+      if (!(duration > 0)) throw new Error("No se pudo leer la duración del video (¿formato no compatible? usa .mp4).");
+      const path = `media/${Date.now()}-${f.name.replace(/[^\w.-]+/g, "_")}`;
+      const task = uploadBytesResumable(sRef(storage, path), f);
+      await new Promise((res, rej) => {
+        task.on("state_changed", (s) => { const p = Math.round(s.bytesTransferred / s.totalBytes * 100); bar.value = p; note.textContent = `${p}%`; }, rej, res);
+      });
+      const url = await getDownloadURL(task.snapshot.ref);
+      await saveItem({ title: f.name.replace(/\.[^.]+$/, ""), kind: $("lib-kind").value, url, duration, path });
+      note.textContent = "Listo"; setTimeout(() => row.remove(), 3000);
+    } catch (err) {
+      bar.remove();
+      note.className = "msg error";
+      note.textContent = /unauthorized|object-not-found|bucket|retry-limit|storage\//.test(err.code || "")
+        ? "Firebase Storage no está activado o no tiene reglas. Mira el aviso en el README (Storage requiere plan Blaze)."
+        : (err.message || "Error al subir.");
+    }
+  }
 }
 function renderLibrary() {
   const el = $("lib-list");
   if (!state.lib.length) { el.innerHTML = '<p class="hint">Aún no hay contenidos.</p>'; return; }
   el.innerHTML = state.lib.map((i) => `<div class="item"><div class="grow"><b>${esc(i.title)}</b><small>${esc(i.url)}</small></div>
     <span class="tag">${esc(i.kind)}</span><span>${fmtDuration(i.duration)}</span>
+    ${i.kind === "programa" ? `<button class="btn secondary small" data-add="${esc(i.id)}" type="button" title="Añadir a la parrilla">+</button>` : ""}
     <button class="btn secondary small" data-del="${esc(i.id)}" type="button">Eliminar</button></div>`).join("");
+  el.querySelectorAll("[data-add]").forEach((b) => b.addEventListener("click", () => {
+    state.plan.order.push(b.dataset.add); savePlan().then(renderAll).catch(fail); toast("Añadido a la parrilla.", "ok");
+  }));
   el.querySelectorAll("[data-del]").forEach((b) => b.addEventListener("click", async () => {
     const it = state.lib.find((x) => x.id === b.dataset.del);
     if (!confirm(`¿Eliminar “${it.title}”?`)) return;
     try {
       await deleteDoc(doc(db, "library", it.id));
+      if (it.path) { try { await deleteObject(sRef(storage, it.path)); } catch {} }
       state.lib = state.lib.filter((x) => x.id !== it.id);
       await savePlan(); renderAll();
     } catch (err) { fail(err); }
@@ -231,9 +273,17 @@ async function publish() {
   } catch (err) { fail(err); }
 }
 function renderNow() {
+  $("clock").textContent = new Date().toLocaleTimeString("es");
   const c = state.channel;
   const loc = c?.items?.length ? locate(c.items, c.epoch, Date.now()) : null;
-  $("now-playing").textContent = loc ? `Al aire ahora: ${loc.item.title} (${fmtDuration(loc.offset)} / ${fmtDuration(loc.item.duration)})` : "Nada publicado todavía.";
+  $("onair").classList.toggle("off", !loc);
+  $("onair").querySelector("b").textContent = loc ? "AL AIRE" : "FUERA DEL AIRE";
+  if (!loc) { $("now-title").textContent = "—"; $("next-title").textContent = "—"; $("now-left").textContent = "--:--"; $("now-bar").style.width = "0"; return; }
+  const next = c.items[(loc.index + 1) % c.items.length];
+  $("now-title").textContent = `${loc.item.type === "comercial" ? "[Comercial] " : ""}${loc.item.title}`;
+  $("next-title").textContent = next.title;
+  $("now-left").textContent = fmtDuration(loc.remaining);
+  $("now-bar").style.width = `${(loc.offset / loc.item.duration) * 100}%`;
 }
 
 /* Personalización */
