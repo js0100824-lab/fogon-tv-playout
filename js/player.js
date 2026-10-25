@@ -104,7 +104,7 @@ function prime(slot, item, key) {
 }
 
 function playFile(loc, key) {
-  ytPlayer?.stopVideo?.(); $("yt").classList.add("hidden");
+  ytPlayer?.stopVideo?.(); $("yt").classList.add("hidden"); $("ytmask").classList.add("hidden");
   let slot = slots.find((x) => x.key === key);
   if (!slot) { slot = slots.find((x) => x !== active) || slots[0]; prime(slot, loc.item, key); }
   const previous = active;
@@ -137,7 +137,10 @@ function maybePreload(loc) {
 }
 
 /* ---------- YouTube ---------- */
+let ytMaskT = null;
 function playYT(loc) {
+  // YouTube muestra su título y canal al empezar: se oculta con una banda negra los primeros segundos.
+  $("ytmask").classList.remove("hidden"); clearTimeout(ytMaskT); ytMaskT = setTimeout(() => $("ytmask").classList.add("hidden"), 8000);
   for (const x of slots) { x.el.pause(); x.el.classList.add("hidden"); }
   active = null;
   $("yt").classList.remove("hidden");
@@ -154,7 +157,7 @@ function loadYT() {
     window.onYouTubeIframeAPIReady = () => {
       ytPlayer = new YT.Player("yt", {
         width: "100%", height: "100%",
-        playerVars: { autoplay: 1, controls: 0, disablekb: 1, rel: 0, modestbranding: 1, playsinline: 1, mute: 1 },
+        playerVars: { autoplay: 1, controls: 0, disablekb: 1, rel: 0, modestbranding: 1, playsinline: 1, mute: 1, iv_load_policy: 3, fs: 0, cc_load_policy: 0 },
         events: { onReady: () => resolve(), onError: () => say("No se pudo reproducir un video de YouTube.") }
       });
     };

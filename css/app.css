@@ -148,3 +148,16 @@ table.live tr.cur td{background:#a62f2a;color:#fff;font-weight:600}
 
 .row2{display:flex;gap:.5rem}.row2 input{flex:1;min-width:0}.row2 select{flex:none}
 #cut-summary p{margin:.25rem 0;font-size:.85rem}
+
+/* Barras de desplazamiento oscuras */
+*{scrollbar-width:thin;scrollbar-color:#3a4450 #12161b}
+::-webkit-scrollbar{width:10px;height:10px}::-webkit-scrollbar-track{background:#12161b}::-webkit-scrollbar-thumb{background:#3a4450;border-radius:6px}
+/* Casillas de selección a juego con el panel */
+.studio input[type=checkbox]{appearance:none;-webkit-appearance:none;width:18px !important;height:18px;padding:0;flex:none;border:1px solid #4a5561;border-radius:5px;background:#12161b;display:inline-grid;place-content:center;vertical-align:middle;cursor:pointer;margin:0 .45rem 0 0}
+.studio input[type=checkbox]:checked{background:var(--accent);border-color:var(--accent)}
+.studio input[type=checkbox]:checked::after{content:"";width:9px;height:5px;border:solid var(--accent-ink);border-width:0 0 2px 2px;transform:rotate(-45deg) translate(1px,-1px)}
+/* Intervalo del corte: el número se ve completo */
+.row2 input{flex:0 0 110px;width:110px !important}.row2 select{flex:1}
+/* La vista previa queda fija; solo se desplaza la parrilla de abajo */
+.col.center .col-b{display:flex;flex-direction:column;overflow:hidden}
+.live-wrap{flex:1;min-height:0;overflow:auto}

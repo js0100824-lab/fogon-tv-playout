@@ -180,6 +180,29 @@ async function detectDuration(url) {
     v.src = url;
   });
 }
+// Duración de un video de YouTube sin clave de API: se carga en silencio fuera de pantalla y se lee.
+function ytDuration(id) {
+  return new Promise((resolve) => {
+    const host = document.createElement("div"); host.style.cssText = "position:fixed;left:-9999px;top:0;width:200px;height:120px";
+    const inner = document.createElement("div"); host.appendChild(inner); document.body.appendChild(host);
+    let p = null, finished = false;
+    const done = (d) => { if (finished) return; finished = true; try { p?.destroy(); } catch { /* ya cerrado */ } host.remove(); resolve(d); };
+    const make = () => {
+      p = new YT.Player(inner, { videoId: id, playerVars: { controls: 0, mute: 1 }, events: {
+        onError: () => done(NaN),
+        onReady: () => {
+          p.mute(); p.playVideo(); let n = 0;
+          const iv = setInterval(() => { const d = p.getDuration?.(); if (d > 0) { clearInterval(iv); try { p.pauseVideo(); } catch { /* */ } done(Math.round(d)); } else if (++n > 50) { clearInterval(iv); done(NaN); } }, 250);
+        } } });
+    };
+    if (window.YT?.Player) make();
+    else {
+      const prev = window.onYouTubeIframeAPIReady; window.onYouTubeIframeAPIReady = () => { prev?.(); make(); };
+      if (!document.querySelector('script[src*="youtube.com/iframe_api"]')) { const sc = document.createElement("script"); sc.src = "https://www.youtube.com/iframe_api"; document.head.appendChild(sc); }
+    }
+    setTimeout(() => done(NaN), 15000);
+  });
+}
 async function addItem(e) {
   e.preventDefault();
   let url = $("lib-url").value.trim();
@@ -187,9 +210,9 @@ async function addItem(e) {
   if (!/^https?:\/\//i.test(url)) url = new URL(`../media/${encodeURIComponent(url.replace(/^\/?(media\/)?/, ""))}`, location.href).href;
   const yt = youtubeId(url);
   let duration = parseDuration($("lib-dur").value);
-  if (!(duration > 0) && !yt) duration = await detectDuration(url);
+  if (!(duration > 0)) { toast("Detectando la duración…", "ok"); duration = yt ? await ytDuration(yt) : await detectDuration(url); }
   if (!(duration > 0)) {
-    toast(yt ? "Para YouTube escribe la duración (por ejemplo 3:25)."
+    toast(yt ? "No pude detectar la duración de ese video de YouTube (puede tener la inserción bloqueada). Escríbela a mano, por ejemplo 3:25."
       : "No se pudo abrir ese video. Revisa: 1) que el archivo ya esté en la carpeta media de GitHub y el flujo de Actions esté en verde; 2) que el nombre esté bien escrito; 3) que sea .mp4 H.264. Si todo está bien, escribe la duración a mano.", "error");
     return;
   }
@@ -376,7 +399,6 @@ function renderLive() {
 async function toggleLive() {
   if (!state.channel) { toast("Aún no hay emisión publicada.", "error"); return; }
   const live = state.channel.live === false;
-  if (!live && !confirm("¿Cortar la emisión? El público verá un aviso de pausa.")) return;
   try {
     await updateDoc(doc(db, "public", "channel"), { live });
     state.channel.live = live; renderLive(); renderNow();
@@ -406,7 +428,7 @@ function renderNow() {
   $("clock").textContent = hms(now);
   const c = state.channel;
   const paused = c?.live === false;
-  const loc = c?.items?.length ? locate(c.items, c.epoch, now) : null;
+  const loc = c?.items?.length && !paused ? locate(c.items, c.epoch, now) : null;
   $("onair").classList.toggle("off", !loc || paused);
   $("onair").querySelector("b").textContent = paused ? "EMISIÓN CORTADA" : loc ? "AL AIRE" : "FUERA DEL AIRE";
   renderLive();
@@ -457,14 +479,13 @@ function onLogoFile() {
   img.src = url;
 }
 function renderBrand() {
-  $("b-name").value = state.brand.name || ""; $("b-show-name").checked = state.brand.showName === true;
   $("b-logo-pos").value = state.brand.logoPos || "top-right"; $("b-logo-size").value = state.brand.logoSize || 14; $("b-logo-op").value = Math.round((state.brand.logoOpacity ?? 0.9) * 100);
   $("b-accent").value = state.brand.accent || "#0E6B73";
   $("b-logo-prev").src = state.brand.logo || ""; $("b-logo-prev").classList.toggle("hidden", !state.brand.logo);
   $("b-logo-rm").classList.toggle("hidden", !state.brand.logo); $("b-ticker").value = state.brand.ticker || "";
 }
 async function saveBrand(keep) {
-  state.brand = { name: $("b-name").value.trim(), showName: $("b-show-name").checked, accent: $("b-accent").value, logo: state.brand.logo || "", ticker: $("b-ticker").value.trim(), logoPos: $("b-logo-pos").value, logoSize: Number($("b-logo-size").value), logoOpacity: Number($("b-logo-op").value) / 100 };
+  state.brand = { name: "", showName: false, accent: $("b-accent").value, logo: state.brand.logo || "", ticker: $("b-ticker").value.trim(), logoPos: $("b-logo-pos").value, logoSize: Number($("b-logo-size").value), logoOpacity: Number($("b-logo-op").value) / 100 };
   try { await setDoc(doc(db, "public", "brand"), state.brand); toast("Personalización publicada.", "ok"); } catch (err) { fail(err); }
 }
 
