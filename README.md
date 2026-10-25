@@ -3,7 +3,7 @@
 Canal de TV automatizado: biblioteca, parrilla, cortes comerciales, reproductor público sincronizado, personalización y estadísticas.
 
 - Panel: `/admin/` · Reproductor público: `/player/`
-- Todos ven lo mismo al mismo tiempo: la posición se calcula con el reloj, a partir de la hora de inicio guardada al publicar por primera vez.
+- Todos ven lo mismo al mismo tiempo: la posición se calcula con la hora del servidor, a partir de la hora de inicio guardada al publicar por primera vez.
 - Pruebas del motor: `npm test` (también corre en GitHub Actions).
 
 ## Uso
@@ -24,4 +24,4 @@ Mientras tanto puedes usar enlaces (YouTube o .mp4 alojado en otro sitio).
 
 ## Límites
 - Los navegadores bloquean el sonido automático: el espectador toca una vez para activarlo.
-- La sincronización depende del reloj del dispositivo del espectador.
+- La sincronización usa la hora del servidor (cabecera HTTP del propio sitio), no el reloj del dispositivo del espectador.

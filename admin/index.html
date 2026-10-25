@@ -8,7 +8,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&display=swap">
-<link rel="stylesheet" href="../css/app.css?v=8">
+<link rel="stylesheet" href="../css/app.css?v=10">
 </head>
 <body>
 
@@ -115,22 +115,34 @@
 
         <section id="tab-comercial" class="tab hidden">
           <div class="help"><b>Cómo funcionan los cortes</b>
-            <p>1. Sube tus anuncios con el botón <b>+ Comercial</b> de la biblioteca.<br>2. Aquí decide cada cuántos programas hay un corte y cuántos anuncios pasan en él.<br>3. Marca abajo cuáles anuncios están activos. Rotan en orden.<br>4. Pulsa <b>Publicar cambios</b>.</p>
-            <p>Ejemplo: “cada 2 programas, 3 comerciales” → programa, programa, 3 anuncios, y se repite.</p></div>
-          <label class="field"><span>Corte cada N programas (0 = sin cortes)</span><input id="plan-every" type="number" min="0" max="20"></label>
-          <label class="field"><span>Comerciales por corte</span><input id="plan-count" type="number" min="0" max="20"></label>
+            <p>Elige cada cuánto tiempo sale un corte. La página mira la duración de cada programa, calcula sola los puntos de corte, reproduce los anuncios y continúa el programa exactamente donde se quedó.</p>
+            <p>Ejemplo: programa de 30 minutos, “cada 10 minutos” → cortes en 10:00 y 20:00 (y al terminar si lo marcas).</p></div>
+          <label class="field"><span>Tipo de corte</span><select id="plan-mode"><option value="time">Por tiempo, dentro de cada programa</option><option value="programs">Entre programas (cada N programas)</option></select></label>
+          <div id="plan-time-box">
+            <label class="field"><span>Un corte cada…</span><div class="row2"><input id="plan-iv" type="number" min="1" step="any"><select id="plan-iu"><option value="m">minutos</option><option value="s">segundos</option></select></div></label>
+            <label class="field"><span><input id="plan-end" type="checkbox"> También poner un corte al terminar cada programa</span></label>
+          </div>
+          <div id="plan-prog-box" class="hidden"><label class="field"><span>Corte cada N programas</span><input id="plan-every" type="number" min="0" max="20"></label></div>
+          <label class="field"><span>Anuncios por corte (se toman en el orden de la lista)</span><input id="plan-count" type="number" min="0" max="20"></label>
+          <label class="field"><span>Repetir la tanda (1 = una sola vez; 3 = A, B, C, A, B, C, A, B, C)</span><input id="plan-repeat" type="number" min="1" max="10"></label>
           <button class="btn small" id="plan-save-com" type="button">Guardar</button>
-          <h3 class="sub">Comerciales activos</h3>
+          <h3 class="sub">Dónde caerán los cortes</h3>
+          <div id="cut-summary"></div>
+          <h3 class="sub">Comerciales (orden y activos)</h3>
           <div id="ads-list"></div>
         </section>
 
         <section id="tab-personalizacion" class="tab hidden">
           <form id="brand-form">
-            <label class="field"><span>Nombre del canal</span><input id="b-name" maxlength="60"></label>
+            <label class="field"><span>Nombre del canal (opcional, déjalo vacío si usas solo tu logo)</span><input id="b-name" maxlength="60"></label>
+            <label class="field"><span><input id="b-show-name" type="checkbox"> Mostrar el nombre en pantalla</span></label>
             <label class="field"><span>Color de acento</span><input id="b-accent" type="color"></label>
             <div class="field"><span>Logotipo</span>
               <div class="logo-row"><img id="b-logo-prev" alt="" class="hidden"><input id="b-logo-file" type="file" accept="image/*">
               <button class="btn secondary small hidden" id="b-logo-rm" type="button">Quitar logo</button></div></div>
+            <label class="field"><span>Posición del logo</span><select id="b-logo-pos"><option value="top-left">Arriba a la izquierda</option><option value="top-right">Arriba a la derecha</option><option value="bottom-left">Abajo a la izquierda</option><option value="bottom-right">Abajo a la derecha</option></select></label>
+            <label class="field"><span>Tamaño del logo (% del ancho)</span><input id="b-logo-size" type="range" min="4" max="40"></label>
+            <label class="field"><span>Opacidad del logo</span><input id="b-logo-op" type="range" min="10" max="100"></label>
             <label class="field"><span>Rótulo inferior</span><input id="b-ticker" maxlength="200"></label>
             <button class="btn" type="submit">Guardar y publicar</button>
           </form>
@@ -167,6 +179,6 @@
   </div>
 </div>
 
-<script type="module" src="../js/admin.js?v=8"></script>
+<script type="module" src="../js/admin.js?v=10"></script>
 </body>
 </html>

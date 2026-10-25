@@ -7,7 +7,8 @@ import {
   doc, getDoc, setDoc, addDoc, deleteDoc, updateDoc, getDocs, collection, query, orderBy, limit, serverTimestamp
 } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore.js";
 import { ref as sRef, uploadBytesResumable, getDownloadURL, deleteObject } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-storage.js";
-import { parseDuration, fmtDuration, youtubeId, buildCycle, cycleLength, locate } from "./engine.js";
+import { parseDuration, fmtDuration, youtubeId, buildCycle, cycleLength, locate, planWithDefaults, compactChannel, expandChannel, describeCuts, itemLabel, intervalSeconds } from "./engine.js";
+import { serverNow, startClock } from "./clock.js";
 
 const $ = (id) => document.getElementById(id);
 const views = ["config-warning", "login-view", "denied-view", "panel-view"];
@@ -78,7 +79,7 @@ if (!isConfigured) {
 
 /* ---------- Panel ---------- */
 let media = { cloud: "", preset: "" };
-const state = { lib: [], plan: { order: [], everyN: 2, breakCount: 2 }, brand: { name: "Fogón TV", accent: "#0E6B73", logo: "", ticker: "" } };
+const state = { lib: [], plan: planWithDefaults(), brand: { name: "", showName: false, accent: "#0E6B73", logo: "", ticker: "", logoPos: "top-right", logoSize: 14, logoOpacity: 0.9 } };
 let inited = false;
 
 function esc(t) { return String(t ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c])); }
@@ -108,6 +109,8 @@ async function initPanel() {
   $("b-logo-file").addEventListener("change", onLogoFile);
   $("b-logo-rm").addEventListener("click", () => { state.brand.logo = ""; renderBrand(); saveBrand(true); });
   $("plan-save-com").addEventListener("click", savePlanFromCommercial);
+  ["plan-mode", "plan-iv", "plan-iu", "plan-count", "plan-repeat", "plan-end", "plan-every"].forEach((id) => $(id).addEventListener("input", previewPlan));
+  startClock();   // hora del servidor: la misma para el panel y para todos los espectadores
   $("order-add-btn").addEventListener("click", () => {
     const id = $("order-add").value; if (!id) return;
     state.plan.order.push(id); savePlan().then(renderAll).catch(fail);
@@ -124,9 +127,9 @@ async function initPanel() {
     ]);
     if (mediaSnap.exists()) media = { ...media, ...mediaSnap.data() };
     state.lib = libSnap.docs.map((d) => ({ id: d.id, ...d.data() })).sort((a, b) => (a.title || "").localeCompare(b.title || ""));
-    if (planSnap.exists()) state.plan = { ...state.plan, ...planSnap.data() };
+    if (planSnap.exists()) state.plan = planWithDefaults(planSnap.data());
     if (brandSnap.exists()) state.brand = { ...state.brand, ...brandSnap.data() };
-    state.channel = chSnap.exists() ? chSnap.data() : null;
+    state.channel = chSnap.exists() ? { ...chSnap.data(), items: expandChannel(chSnap.data()) } : null;
   } catch (err) { fail(err); }
   renderAll();
   setInterval(renderNow, 1000);
@@ -270,20 +273,64 @@ function renderLibrary() {
 }
 
 /* Control comercial */
+function allAdsOrdered() {
+  const pos = new Map((state.plan.adOrder || []).map((id, n) => [id, n]));
+  return state.lib.filter((i) => i.kind === "comercial")
+    .sort((x, y) => (pos.has(x.id) ? pos.get(x.id) : 1e6) - (pos.has(y.id) ? pos.get(y.id) : 1e6) || (x.title || "").localeCompare(y.title || ""));
+}
+function readPlanForm() {
+  return planWithDefaults({
+    ...state.plan,
+    mode: $("plan-mode").value, intervalValue: Number($("plan-iv").value), intervalUnit: $("plan-iu").value,
+    breakCount: Math.max(0, parseInt($("plan-count").value, 10) || 0), breakRepeat: Math.max(1, parseInt($("plan-repeat").value, 10) || 1),
+    breakAtEnd: $("plan-end").checked, everyN: Math.max(0, parseInt($("plan-every").value, 10) || 0)
+  });
+}
+function renderCutSummary(plan) {
+  const ads = allAdsOrdered().filter((i) => i.active !== false && i.duration > 0);
+  const box = $("cut-summary");
+  const per = plan.breakCount * plan.breakRepeat;
+  let html = "";
+  if (!ads.length) html += '<p class="msg error">No hay comerciales activos: no se hará ningún corte. Marca al menos uno abajo.</p>';
+  if (plan.mode === "time") {
+    if (!(intervalSeconds(plan) > 0)) html += '<p class="msg error">Escribe cada cuánto tiempo va el corte.</p>';
+    const rows = describeCuts(state.lib, plan);
+    html += rows.length ? rows.map((r) => `<p><b>${esc(r.title)}</b> (${fmtDuration(r.duration)}): ${r.cuts.length ? "cortes en " + r.cuts.map(fmtDuration).join(", ") : "sin cortes dentro del video"}${r.end ? (r.cuts.length ? " y " : "") + "al terminar" : ""}.</p>`).join("")
+      : '<p class="hint">Añade programas a la parrilla para ver dónde caen los cortes.</p>';
+  } else html += `<p>Habrá un corte cada ${plan.everyN} programas.</p>`;
+  html += `<p class="hint">Cada corte: ${plan.breakCount} anuncio(s) en orden${plan.breakRepeat > 1 ? `, la tanda repetida ${plan.breakRepeat} veces` : ""} = ${per} anuncios por corte.</p>`;
+  box.innerHTML = html;
+}
+function previewPlan() {
+  const p = readPlanForm();
+  $("plan-time-box").classList.toggle("hidden", p.mode !== "time"); $("plan-prog-box").classList.toggle("hidden", p.mode !== "programs");
+  renderCutSummary(p);
+}
 function renderAds() {
-  $("plan-every").value = state.plan.everyN; $("plan-count").value = state.plan.breakCount;
-  const ads = state.lib.filter((i) => i.kind === "comercial");
-  $("ads-list").innerHTML = ads.length ? ads.map((i) => `<label class="item"><input type="checkbox" data-ad="${esc(i.id)}" ${i.active !== false ? "checked" : ""}>
-    <span class="grow"><b>${esc(i.title)}</b></span><span>${fmtDuration(i.duration)}</span></label>`).join("") : '<p class="hint">Agrega comerciales en la Biblioteca.</p>';
+  const p = state.plan;
+  $("plan-mode").value = p.mode; $("plan-iv").value = p.intervalValue; $("plan-iu").value = p.intervalUnit;
+  $("plan-count").value = p.breakCount; $("plan-repeat").value = p.breakRepeat; $("plan-end").checked = !!p.breakAtEnd; $("plan-every").value = p.everyN;
+  const ads = allAdsOrdered();
+  $("ads-list").innerHTML = ads.length ? ads.map((i, n) => `<div class="item"><input type="checkbox" data-ad="${esc(i.id)}" ${i.active !== false ? "checked" : ""} aria-label="Activo">
+    <span class="grow"><b>${n + 1}. ${esc(i.title)}</b></span><span>${fmtDuration(i.duration)}</span>
+    <button class="btn secondary small" data-admv="${n}:-1" type="button" aria-label="Subir">↑</button><button class="btn secondary small" data-admv="${n}:1" type="button" aria-label="Bajar">↓</button></div>`).join("") : '<p class="hint">Agrega comerciales en la Biblioteca.</p>';
   $("ads-list").querySelectorAll("[data-ad]").forEach((c) => c.addEventListener("change", async () => {
     const it = state.lib.find((x) => x.id === c.dataset.ad); it.active = c.checked;
-    try { await updateDoc(doc(db, "library", it.id), { active: c.checked }); renderCycle(); } catch (err) { fail(err); }
+    try { await updateDoc(doc(db, "library", it.id), { active: c.checked }); renderCycle(); previewPlan(); } catch (err) { fail(err); }
   }));
+  $("ads-list").querySelectorAll("[data-admv]").forEach((b) => b.addEventListener("click", () => {
+    const [n, d] = b.dataset.admv.split(":").map(Number), ids = ads.map((x) => x.id), m = n + d;
+    if (m < 0 || m >= ids.length) return;
+    [ids[n], ids[m]] = [ids[m], ids[n]]; state.plan.adOrder = ids;
+    savePlan().then(() => { renderAds(); renderCycle(); }).catch(fail);
+  }));
+  previewPlan();
 }
 async function savePlanFromCommercial() {
-  state.plan.everyN = Math.max(0, parseInt($("plan-every").value, 10) || 0);
-  state.plan.breakCount = Math.max(0, parseInt($("plan-count").value, 10) || 0);
-  try { await savePlan(); renderCycle(); toast("Control comercial guardado. Pulsa Publicar para aplicarlo.", "ok"); } catch (err) { fail(err); }
+  const p = readPlanForm();
+  if (p.mode === "time" && !(intervalSeconds(p) >= 5)) { toast("Escribe un intervalo de al menos 5 segundos.", "error"); return; }
+  state.plan = p;
+  try { await savePlan(); renderCycle(); renderAds(); toast("Control comercial guardado. Pulsa «Publicar cambios» para aplicarlo.", "ok"); } catch (err) { fail(err); }
 }
 const savePlan = () => setDoc(doc(db, "config", "plan"), state.plan);
 
@@ -311,8 +358,11 @@ function renderOrder() {
 }
 function renderCycle() {
   const cyc = buildCycle(state.lib, state.plan);
-  $("cycle-total").textContent = cyc.length ? `${cyc.length} elementos · duración del ciclo ${fmtDuration(cycleLength(cyc))}. Al terminar, vuelve a empezar.` : "Añade programas con duración para generar el ciclo.";
-  $("cycle-list").innerHTML = cyc.map((i) => `<li class="${i.type === "comercial" ? "ad" : ""}">${esc(i.title)} · ${fmtDuration(i.duration)}${i.type === "comercial" ? " (comercial)" : ""}</li>`).join("");
+  const ads = cyc.filter((i) => i.type === "comercial").length, cuts = new Set(cyc.filter((i) => i.type === "comercial").map((i) => i.breakNo)).size;
+  $("cycle-total").textContent = cyc.length ? `${cuts} cortes · ${ads} anuncios · duración del ciclo ${fmtDuration(cycleLength(cyc))}. Al terminar, vuelve a empezar.` : "Añade programas con duración para generar el ciclo.";
+  let t = 0;
+  $("cycle-list").innerHTML = cyc.slice(0, 400).map((i) => { const li = `<li class="${i.type === "comercial" ? "ad" : ""}">${fmtDuration(t)} · ${esc(itemLabel(i))} · ${fmtDuration(i.duration)}${i.type === "comercial" ? ` (corte ${i.breakNo})` : (i.parts > 1 ? ` (del minuto ${fmtDuration(i.startAt)} al ${fmtDuration(i.startAt + i.duration)})` : "")}</li>`; t += i.duration; return li; }).join("")
+    + (cyc.length > 400 ? `<li class="hint">… y ${cyc.length - 400} más</li>` : "");
   $("st-cycle").textContent = state.channel?.items?.length ? `${state.channel.items.length} elementos` : "Sin publicar";
 }
 
@@ -338,11 +388,11 @@ async function toggleLive() {
 async function publish(auto) {
   const items = buildCycle(state.lib, state.plan);
   if (!items.length && !auto && !confirm("La parrilla está vacía. ¿Publicar sin programación? El público verá “Sin programación”.")) return;
-  const epoch = state.channel?.epoch || Date.now();
+  const epoch = state.channel?.epoch || Math.round(serverNow());
   try {
     await savePlan();
     const live = state.channel?.live !== false;
-    const channel = { epoch, items, live, updatedAt: serverTimestamp() };
+    const channel = { epoch, live, ...compactChannel(items), updatedAt: serverTimestamp() };
     await setDoc(doc(db, "public", "channel"), channel);
     state.channel = { epoch, items, live };
     renderCycle(); renderNow();
@@ -352,7 +402,7 @@ async function publish(auto) {
 let tlKey = "";
 const hms = (ms) => new Date(ms).toLocaleTimeString("es", { hour12: false });
 function renderNow() {
-  const now = Date.now();
+  const now = serverNow();
   $("clock").textContent = hms(now);
   const c = state.channel;
   const paused = c?.live === false;
@@ -367,8 +417,8 @@ function renderNow() {
   }
   const items = c.items, n = items.length;
   const next = items[(loc.index + 1) % n];
-  $("now-title").textContent = `${loc.item.type === "comercial" ? "[Comercial] " : ""}${loc.item.title}`;
-  $("next-title").textContent = next.title;
+  $("now-title").textContent = `${loc.item.type === "comercial" ? "[Comercial] " : ""}${itemLabel(loc.item)}`;
+  $("next-title").textContent = itemLabel(next);
   $("now-left").textContent = fmtDuration(loc.remaining);
   $("now-bar").style.width = `${(loc.offset / loc.item.duration) * 100}%`;
   $("next-start").textContent = hms(now + loc.remaining * 1000);
@@ -386,7 +436,7 @@ function renderNow() {
   let t = now - loc.offset * 1000, rows = "";
   for (let k = 0; k < Math.min(n * 2, 14); k++) {
     const it = items[(loc.index + k) % n];
-    rows += `<tr class="${k === 0 ? "cur" : it.type === "comercial" ? "ad" : "prog"}"><td>${hms(t)}</td><td>${esc(it.title)}</td><td>${it.type}</td><td>${fmtDuration(it.duration)}</td></tr>`;
+    rows += `<tr class="${k === 0 ? "cur" : it.type === "comercial" ? "ad" : "prog"}"><td>${hms(t)}</td><td>${esc(itemLabel(it))}</td><td>${it.type}</td><td>${fmtDuration(it.duration)}</td></tr>`;
     t += it.duration * 1000;
   }
   $("live-body").innerHTML = rows;
@@ -407,12 +457,14 @@ function onLogoFile() {
   img.src = url;
 }
 function renderBrand() {
-  $("b-name").value = state.brand.name || ""; $("b-accent").value = state.brand.accent || "#0E6B73";
+  $("b-name").value = state.brand.name || ""; $("b-show-name").checked = state.brand.showName === true;
+  $("b-logo-pos").value = state.brand.logoPos || "top-right"; $("b-logo-size").value = state.brand.logoSize || 14; $("b-logo-op").value = Math.round((state.brand.logoOpacity ?? 0.9) * 100);
+  $("b-accent").value = state.brand.accent || "#0E6B73";
   $("b-logo-prev").src = state.brand.logo || ""; $("b-logo-prev").classList.toggle("hidden", !state.brand.logo);
   $("b-logo-rm").classList.toggle("hidden", !state.brand.logo); $("b-ticker").value = state.brand.ticker || "";
 }
 async function saveBrand(keep) {
-  state.brand = { name: $("b-name").value.trim() || "Fogón TV", accent: $("b-accent").value, logo: state.brand.logo || "", ticker: $("b-ticker").value.trim() };
+  state.brand = { name: $("b-name").value.trim(), showName: $("b-show-name").checked, accent: $("b-accent").value, logo: state.brand.logo || "", ticker: $("b-ticker").value.trim(), logoPos: $("b-logo-pos").value, logoSize: Number($("b-logo-size").value), logoOpacity: Number($("b-logo-op").value) / 100 };
   try { await setDoc(doc(db, "public", "brand"), state.brand); toast("Personalización publicada.", "ok"); } catch (err) { fail(err); }
 }
 

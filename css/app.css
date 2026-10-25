@@ -145,3 +145,6 @@ table.live tr.cur td{background:#a62f2a;color:#fff;font-weight:600}
 .studio .item{flex-wrap:wrap}
 .studio .item .btn{flex:none}
 .btn.del{border-color:var(--danger);color:var(--danger)}
+
+.row2{display:flex;gap:.5rem}.row2 input{flex:1;min-width:0}.row2 select{flex:none}
+#cut-summary p{margin:.25rem 0;font-size:.85rem}
