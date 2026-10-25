@@ -1,0 +1,39 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function isAdmin() {
+      return request.auth != null
+        && exists(/databases/$(database)/documents/admins/$(request.auth.uid));
+    }
+
+    // Cada usuario solo puede leer su propio documento. Se crea a mano en la consola.
+    match /admins/{uid} {
+      allow read: if request.auth != null && request.auth.uid == uid;
+      allow write: if false;
+    }
+
+    // Lo que el reproductor público necesita leer.
+    match /public/{document=**} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+
+    // Estadísticas: cualquiera puede registrar una reproducción (solo crear, campos fijos);
+    // solo el administrador puede leerlas o borrarlas.
+    match /stats/{id} {
+      allow create: if request.resource.data.keys().hasOnly(['at', 'sid', 'title', 'type'])
+        && request.resource.data.at == request.time
+        && request.resource.data.sid is string && request.resource.data.sid.size() <= 40
+        && request.resource.data.title is string && request.resource.data.title.size() <= 200
+        && request.resource.data.type in ['programa', 'comercial'];
+      allow read, delete: if isAdmin();
+      allow update: if false;
+    }
+
+    // Todo lo demás es solo para administradores.
+    match /{document=**} {
+      allow read, write: if isAdmin();
+    }
+  }
+}

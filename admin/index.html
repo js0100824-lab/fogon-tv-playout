@@ -1,0 +1,151 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex">
+<title>Panel · Fogón TV Playout</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&display=swap">
+<link rel="stylesheet" href="../css/app.css">
+</head>
+<body>
+
+<div id="config-warning" class="login hidden">
+  <div class="login-card">
+    <h1>Falta configurar Firebase</h1>
+    <p>Abre <code>js/firebase-config.js</code> y reemplaza los valores <code>REEMPLAZAR</code> por los de tu app web de Firebase. Los pasos están en el README, parte B.</p>
+  </div>
+</div>
+
+<main id="login-view" class="login hidden">
+  <div class="login-card">
+    <h1>Fogón TV Playout</h1>
+    <p>Inicia sesión para administrar la emisión.</p>
+    <div id="login-error" class="msg error hidden" role="alert"></div>
+    <form id="login-form" autocomplete="on">
+      <label class="field"><span>Correo electrónico</span>
+        <input id="email" type="email" autocomplete="username" required></label>
+      <label class="field"><span>Contraseña</span>
+        <input id="password" type="password" autocomplete="current-password" required></label>
+      <button class="btn" type="submit" id="login-btn">Iniciar sesión</button>
+    </form>
+  </div>
+</main>
+
+<div id="denied-view" class="login hidden">
+  <div class="login-card">
+    <h1>Sin permiso de administrador</h1>
+    <p>Tu cuenta inició sesión, pero aún no está autorizada. Crea un documento en la colección <code>admins</code> de Firestore cuyo ID sea este UID:</p>
+    <p><code id="denied-uid"></code></p>
+    <button class="btn secondary" id="denied-logout" type="button">Cerrar sesión</button>
+  </div>
+</div>
+
+<div id="panel-view" class="shell hidden">
+  <aside class="side">
+    <div class="brand">Fogón TV Playout</div>
+    <ul class="nav" id="nav" aria-label="Secciones">
+      <li><button data-tab="estado" class="active">Estado del sistema</button></li>
+      <li><button data-tab="biblioteca">Biblioteca</button></li>
+      <li><button data-tab="comercial">Control comercial</button></li>
+      <li><button data-tab="programacion">Programación</button></li>
+      <li><button data-tab="personalizacion">Personalización</button></li>
+      <li><button data-tab="estadisticas">Estadísticas</button></li>
+    </ul>
+    <div style="margin-top:auto">
+      <p id="user-email" style="font-size:.85rem;color:var(--muted);word-break:break-all"></p>
+      <button class="btn secondary" id="logout-btn" type="button">Cerrar sesión</button>
+    </div>
+  </aside>
+  <main class="main">
+    <div id="toast" class="msg hidden" role="status"></div>
+
+    <section id="tab-estado" class="tab">
+      <h1>Estado del sistema</h1>
+      <div class="panel">
+        <ul class="status-list">
+          <li><span>Proyecto</span><b id="st-project">—</b></li>
+          <li><span>Sesión</span><b id="st-auth">—</b></li>
+          <li><span>Permiso de administrador</span><b id="st-admin">—</b></li>
+          <li><span>Escritura en Firestore</span><b id="st-write">Sin probar</b></li>
+          <li><span>Ciclo publicado</span><b id="st-cycle">—</b></li>
+        </ul>
+        <button class="btn" id="test-btn" type="button">Probar escritura</button>
+      </div>
+      <div class="panel">
+        <h2>Emisión</h2>
+        <p>Publica los cambios para que el reproductor público los use. El reproductor está en <a id="player-link" href="../player/" target="_blank" rel="noopener">../player/</a>.</p>
+        <button class="btn" id="publish-btn" type="button">Publicar emisión</button>
+        <p id="now-playing" style="margin-top:1rem;color:var(--muted)"></p>
+      </div>
+    </section>
+
+    <section id="tab-biblioteca" class="tab hidden">
+      <h1>Biblioteca de contenidos</h1>
+      <form id="lib-form" class="panel grid">
+        <h2 style="grid-column:1/-1">Agregar contenido</h2>
+        <label class="field"><span>Título</span><input id="lib-title" required maxlength="120"></label>
+        <label class="field"><span>Tipo</span><select id="lib-kind"><option value="programa">Programa</option><option value="comercial">Comercial</option></select></label>
+        <label class="field wide"><span>URL (enlace de YouTube o archivo de video .mp4 / .webm)</span><input id="lib-url" type="url" required placeholder="https://"></label>
+        <label class="field"><span>Duración (mm:ss o segundos)</span><input id="lib-dur" placeholder="3:25"></label>
+        <div class="field"><span>&nbsp;</span><button class="btn" type="submit">Guardar</button></div>
+        <p class="hint wide">Para archivos .mp4 la duración se detecta sola si lo dejas vacío. Para YouTube escríbela tú.</p>
+      </form>
+      <div class="panel"><h2>Contenidos</h2><div id="lib-list"></div></div>
+    </section>
+
+    <section id="tab-comercial" class="tab hidden">
+      <h1>Control comercial</h1>
+      <div class="panel grid">
+        <label class="field"><span>Corte cada N programas (0 = sin cortes)</span><input id="plan-every" type="number" min="0" max="20"></label>
+        <label class="field"><span>Comerciales por corte</span><input id="plan-count" type="number" min="0" max="20"></label>
+        <div class="field wide"><button class="btn" id="plan-save-com" type="button">Guardar</button></div>
+      </div>
+      <div class="panel"><h2>Comerciales activos</h2><p class="hint">Solo los activos entran en los cortes y rotan en orden.</p><div id="ads-list"></div></div>
+    </section>
+
+    <section id="tab-programacion" class="tab hidden">
+      <h1>Programación</h1>
+      <div class="panel">
+        <h2>Orden de emisión</h2>
+        <div id="order-list"></div>
+        <div class="row">
+          <select id="order-add"></select>
+          <button class="btn secondary" id="order-add-btn" type="button">Añadir al final</button>
+        </div>
+      </div>
+      <div class="panel">
+        <h2>Ciclo resultante</h2>
+        <p id="cycle-total" class="hint"></p>
+        <ol id="cycle-list" class="cycle"></ol>
+        <button class="btn" id="publish-btn2" type="button">Guardar y publicar</button>
+      </div>
+    </section>
+
+    <section id="tab-personalizacion" class="tab hidden">
+      <h1>Personalización</h1>
+      <form id="brand-form" class="panel grid">
+        <label class="field"><span>Nombre del canal</span><input id="b-name" maxlength="60"></label>
+        <label class="field"><span>Color de acento</span><input id="b-accent" type="color"></label>
+        <label class="field wide"><span>URL del logotipo (imagen)</span><input id="b-logo" type="url" placeholder="https://"></label>
+        <label class="field wide"><span>Texto del rótulo inferior (opcional)</span><input id="b-ticker" maxlength="200"></label>
+        <div class="field wide"><button class="btn" type="submit">Guardar y publicar</button></div>
+      </form>
+    </section>
+
+    <section id="tab-estadisticas" class="tab hidden">
+      <h1>Estadísticas</h1>
+      <div class="panel">
+        <button class="btn secondary" id="stats-refresh" type="button">Actualizar</button>
+        <ul class="status-list" id="stats-summary" style="margin-top:1rem"></ul>
+      </div>
+      <div class="panel"><h2>Reproducciones por contenido</h2><div id="stats-table"></div></div>
+    </section>
+  </main>
+</div>
+
+<script type="module" src="../js/admin.js"></script>
+</body>
+</html>

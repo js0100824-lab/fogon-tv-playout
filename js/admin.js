@@ -1,0 +1,267 @@
+import { auth, db, isConfigured } from "./firebase.js";
+import { firebaseConfig } from "./firebase-config.js";
+import {
+  signInWithEmailAndPassword, signOut, onAuthStateChanged
+} from "https://www.gstatic.com/firebasejs/10.14.1/firebase-auth.js";
+import {
+  doc, getDoc, setDoc, addDoc, deleteDoc, updateDoc, getDocs, collection, query, orderBy, limit, serverTimestamp
+} from "https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore.js";
+import { parseDuration, fmtDuration, buildCycle, cycleLength, locate } from "./engine.js";
+
+const $ = (id) => document.getElementById(id);
+const views = ["config-warning", "login-view", "denied-view", "panel-view"];
+function show(id) { views.forEach((v) => $(v).classList.toggle("hidden", v !== id)); }
+
+const AUTH_ERRORS = {
+  "auth/invalid-credential": "Correo o contraseña incorrectos.",
+  "auth/invalid-email": "El correo no es válido.",
+  "auth/user-disabled": "Esta cuenta está deshabilitada.",
+  "auth/too-many-requests": "Demasiados intentos. Espera unos minutos e inténtalo de nuevo.",
+  "auth/network-request-failed": "No hay conexión con Firebase. Revisa tu internet."
+};
+
+if (!isConfigured) {
+  show("config-warning");
+} else {
+  $("login-form").addEventListener("submit", async (e) => {
+    e.preventDefault();
+    $("login-error").classList.add("hidden");
+    $("login-btn").disabled = true;
+    try {
+      await signInWithEmailAndPassword(auth, $("email").value.trim(), $("password").value);
+    } catch (err) {
+      $("login-error").textContent = AUTH_ERRORS[err.code] || `No se pudo iniciar sesión (${err.code}).`;
+      $("login-error").classList.remove("hidden");
+    } finally {
+      $("login-btn").disabled = false;
+    }
+  });
+
+  const logout = () => signOut(auth);
+  $("logout-btn").addEventListener("click", logout);
+  $("denied-logout").addEventListener("click", logout);
+
+  onAuthStateChanged(auth, async (user) => {
+    if (!user) { show("login-view"); return; }
+    let isAdmin = false;
+    try {
+      isAdmin = (await getDoc(doc(db, "admins", user.uid))).exists();
+    } catch (err) {
+      console.error("No se pudo comprobar el permiso:", err);
+    }
+    if (!isAdmin) {
+      $("denied-uid").textContent = user.uid;
+      show("denied-view");
+      return;
+    }
+    $("user-email").textContent = user.email;
+    $("st-project").textContent = firebaseConfig.projectId;
+    $("st-auth").textContent = "Activa";
+    $("st-admin").textContent = "Concedido";
+    show("panel-view");
+    initPanel();
+  });
+
+  $("test-btn").addEventListener("click", async () => {
+    $("test-btn").disabled = true;
+    try {
+      await setDoc(doc(db, "public", "ping"), { at: serverTimestamp(), by: auth.currentUser.uid });
+      $("st-write").textContent = "Correcta";
+      toast("Escritura correcta en Firestore (public/ping).", "ok");
+    } catch (err) {
+      $("st-write").textContent = "Fallida";
+      toast(`No se pudo escribir (${err.code}). Revisa que las reglas estén publicadas.`, "error");
+    } finally { $("test-btn").disabled = false; }
+  });
+}
+
+/* ---------- Panel ---------- */
+const state = { lib: [], plan: { order: [], everyN: 2, breakCount: 2 }, brand: { name: "Fogón TV", accent: "#0E6B73", logo: "", ticker: "" } };
+let inited = false;
+
+function esc(t) { return String(t ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c])); }
+function toast(text, kind = "ok") {
+  const t = $("toast"); t.textContent = text; t.className = `msg ${kind}`;
+  clearTimeout(toast.t); toast.t = setTimeout(() => t.classList.add("hidden"), 5000);
+}
+const fail = (err) => toast(`Error: ${err.code || err.message}`, "error");
+
+async function initPanel() {
+  if (inited) return; inited = true;
+  document.querySelectorAll("#nav button").forEach((b) => b.addEventListener("click", () => openTab(b.dataset.tab)));
+  $("lib-form").addEventListener("submit", addItem);
+  $("plan-save-com").addEventListener("click", savePlanFromCommercial);
+  $("order-add-btn").addEventListener("click", () => {
+    const id = $("order-add").value; if (!id) return;
+    state.plan.order.push(id); savePlan().then(renderAll).catch(fail);
+  });
+  $("publish-btn").addEventListener("click", publish);
+  $("publish-btn2").addEventListener("click", publish);
+  $("brand-form").addEventListener("submit", async (e) => { e.preventDefault(); await saveBrand(); });
+  $("stats-refresh").addEventListener("click", loadStats);
+  $("player-link").href = new URL("../player/", location.href).href;
+  try {
+    const [libSnap, planSnap, brandSnap, chSnap] = await Promise.all([
+      getDocs(collection(db, "library")), getDoc(doc(db, "config", "plan")),
+      getDoc(doc(db, "public", "brand")), getDoc(doc(db, "public", "channel"))
+    ]);
+    state.lib = libSnap.docs.map((d) => ({ id: d.id, ...d.data() })).sort((a, b) => (a.title || "").localeCompare(b.title || ""));
+    if (planSnap.exists()) state.plan = { ...state.plan, ...planSnap.data() };
+    if (brandSnap.exists()) state.brand = { ...state.brand, ...brandSnap.data() };
+    state.channel = chSnap.exists() ? chSnap.data() : null;
+  } catch (err) { fail(err); }
+  renderAll();
+  setInterval(renderNow, 1000);
+}
+
+function openTab(name) {
+  document.querySelectorAll(".tab").forEach((t) => t.classList.toggle("hidden", t.id !== `tab-${name}`));
+  document.querySelectorAll("#nav button").forEach((b) => b.classList.toggle("active", b.dataset.tab === name));
+  if (name === "estadisticas") loadStats();
+}
+
+function renderAll() {
+  state.plan.order = state.plan.order.filter((id) => state.lib.some((i) => i.id === id));
+  renderLibrary(); renderAds(); renderOrder(); renderCycle(); renderBrand(); renderNow();
+}
+
+/* Biblioteca */
+async function detectDuration(url) {
+  return new Promise((resolve) => {
+    const v = document.createElement("video");
+    const done = (d) => { v.removeAttribute("src"); v.load(); resolve(d); };
+    v.preload = "metadata";
+    v.onloadedmetadata = () => done(Number.isFinite(v.duration) ? Math.round(v.duration) : NaN);
+    v.onerror = () => done(NaN);
+    setTimeout(() => done(NaN), 8000);
+    v.src = url;
+  });
+}
+async function addItem(e) {
+  e.preventDefault();
+  const url = $("lib-url").value.trim();
+  let duration = parseDuration($("lib-dur").value);
+  if (!(duration > 0)) duration = await detectDuration(url);
+  if (!(duration > 0)) { toast("No pude detectar la duración. Escríbela (por ejemplo 3:25).", "error"); return; }
+  const kind = $("lib-kind").value;
+  const data = { title: $("lib-title").value.trim(), kind, url, duration, active: true, createdAt: serverTimestamp() };
+  try {
+    const ref = await addDoc(collection(db, "library"), data);
+    state.lib.push({ id: ref.id, ...data });
+    state.lib.sort((a, b) => a.title.localeCompare(b.title));
+    $("lib-form").reset(); renderAll(); toast("Contenido guardado.", "ok");
+  } catch (err) { fail(err); }
+}
+function renderLibrary() {
+  const el = $("lib-list");
+  if (!state.lib.length) { el.innerHTML = '<p class="hint">Aún no hay contenidos.</p>'; return; }
+  el.innerHTML = state.lib.map((i) => `<div class="item"><div class="grow"><b>${esc(i.title)}</b><small>${esc(i.url)}</small></div>
+    <span class="tag">${esc(i.kind)}</span><span>${fmtDuration(i.duration)}</span>
+    <button class="btn secondary small" data-del="${esc(i.id)}" type="button">Eliminar</button></div>`).join("");
+  el.querySelectorAll("[data-del]").forEach((b) => b.addEventListener("click", async () => {
+    const it = state.lib.find((x) => x.id === b.dataset.del);
+    if (!confirm(`¿Eliminar “${it.title}”?`)) return;
+    try {
+      await deleteDoc(doc(db, "library", it.id));
+      state.lib = state.lib.filter((x) => x.id !== it.id);
+      await savePlan(); renderAll();
+    } catch (err) { fail(err); }
+  }));
+}
+
+/* Control comercial */
+function renderAds() {
+  $("plan-every").value = state.plan.everyN; $("plan-count").value = state.plan.breakCount;
+  const ads = state.lib.filter((i) => i.kind === "comercial");
+  $("ads-list").innerHTML = ads.length ? ads.map((i) => `<label class="item"><input type="checkbox" data-ad="${esc(i.id)}" ${i.active !== false ? "checked" : ""}>
+    <span class="grow"><b>${esc(i.title)}</b></span><span>${fmtDuration(i.duration)}</span></label>`).join("") : '<p class="hint">Agrega comerciales en la Biblioteca.</p>';
+  $("ads-list").querySelectorAll("[data-ad]").forEach((c) => c.addEventListener("change", async () => {
+    const it = state.lib.find((x) => x.id === c.dataset.ad); it.active = c.checked;
+    try { await updateDoc(doc(db, "library", it.id), { active: c.checked }); renderCycle(); } catch (err) { fail(err); }
+  }));
+}
+async function savePlanFromCommercial() {
+  state.plan.everyN = Math.max(0, parseInt($("plan-every").value, 10) || 0);
+  state.plan.breakCount = Math.max(0, parseInt($("plan-count").value, 10) || 0);
+  try { await savePlan(); renderCycle(); toast("Control comercial guardado. Pulsa Publicar para aplicarlo.", "ok"); } catch (err) { fail(err); }
+}
+const savePlan = () => setDoc(doc(db, "config", "plan"), state.plan);
+
+/* Programación */
+function renderOrder() {
+  const progs = state.lib.filter((i) => i.kind === "programa");
+  $("order-add").innerHTML = progs.map((i) => `<option value="${esc(i.id)}">${esc(i.title)} (${fmtDuration(i.duration)})</option>`).join("");
+  const el = $("order-list");
+  if (!state.plan.order.length) { el.innerHTML = '<p class="hint">Aún no hay programas en la parrilla.</p>'; return; }
+  el.innerHTML = state.plan.order.map((id, n) => {
+    const i = state.lib.find((x) => x.id === id);
+    return `<div class="item"><span>${n + 1}.</span><span class="grow"><b>${esc(i.title)}</b></span><span>${fmtDuration(i.duration)}</span>
+      <button class="btn secondary small" data-mv="${n}:-1" type="button" aria-label="Subir">↑</button>
+      <button class="btn secondary small" data-mv="${n}:1" type="button" aria-label="Bajar">↓</button>
+      <button class="btn secondary small" data-rm="${n}" type="button">Quitar</button></div>`;
+  }).join("");
+  el.querySelectorAll("[data-mv]").forEach((b) => b.addEventListener("click", () => {
+    const [n, d] = b.dataset.mv.split(":").map(Number), o = state.plan.order, m = n + d;
+    if (m < 0 || m >= o.length) return;
+    [o[n], o[m]] = [o[m], o[n]]; savePlan().then(renderAll).catch(fail);
+  }));
+  el.querySelectorAll("[data-rm]").forEach((b) => b.addEventListener("click", () => {
+    state.plan.order.splice(Number(b.dataset.rm), 1); savePlan().then(renderAll).catch(fail);
+  }));
+}
+function renderCycle() {
+  const cyc = buildCycle(state.lib, state.plan);
+  $("cycle-total").textContent = cyc.length ? `${cyc.length} elementos · duración del ciclo ${fmtDuration(cycleLength(cyc))}. Al terminar, vuelve a empezar.` : "Añade programas con duración para generar el ciclo.";
+  $("cycle-list").innerHTML = cyc.map((i) => `<li class="${i.type === "comercial" ? "ad" : ""}">${esc(i.title)} · ${fmtDuration(i.duration)}${i.type === "comercial" ? " (comercial)" : ""}</li>`).join("");
+  $("st-cycle").textContent = state.channel?.items?.length ? `${state.channel.items.length} elementos` : "Sin publicar";
+}
+
+/* Publicar */
+async function publish() {
+  const items = buildCycle(state.lib, state.plan);
+  if (!items.length) { toast("Añade al menos un programa a la parrilla antes de publicar.", "error"); return; }
+  const epoch = state.channel?.epoch || Date.now();
+  try {
+    await savePlan();
+    const channel = { epoch, items, updatedAt: serverTimestamp() };
+    await setDoc(doc(db, "public", "channel"), channel);
+    state.channel = { epoch, items };
+    renderCycle(); renderNow();
+    toast("Emisión publicada. El reproductor se actualiza solo.", "ok");
+  } catch (err) { fail(err); }
+}
+function renderNow() {
+  const c = state.channel;
+  const loc = c?.items?.length ? locate(c.items, c.epoch, Date.now()) : null;
+  $("now-playing").textContent = loc ? `Al aire ahora: ${loc.item.title} (${fmtDuration(loc.offset)} / ${fmtDuration(loc.item.duration)})` : "Nada publicado todavía.";
+}
+
+/* Personalización */
+function renderBrand() {
+  $("b-name").value = state.brand.name || ""; $("b-accent").value = state.brand.accent || "#0E6B73";
+  $("b-logo").value = state.brand.logo || ""; $("b-ticker").value = state.brand.ticker || "";
+}
+async function saveBrand() {
+  state.brand = { name: $("b-name").value.trim() || "Fogón TV", accent: $("b-accent").value, logo: $("b-logo").value.trim(), ticker: $("b-ticker").value.trim() };
+  try { await setDoc(doc(db, "public", "brand"), state.brand); toast("Personalización publicada.", "ok"); } catch (err) { fail(err); }
+}
+
+/* Estadísticas */
+async function loadStats() {
+  try {
+    const snap = await getDocs(query(collection(db, "stats"), orderBy("at", "desc"), limit(2000)));
+    const rows = snap.docs.map((d) => d.data());
+    const sessions = new Set(rows.map((r) => r.sid));
+    const today = new Date().toDateString();
+    const todayRows = rows.filter((r) => r.at?.toDate().toDateString() === today);
+    $("stats-summary").innerHTML = `<li><span>Reproducciones (últimas ${rows.length})</span><b>${rows.length}</b></li>
+      <li><span>Espectadores distintos</span><b>${sessions.size}</b></li>
+      <li><span>Reproducciones hoy</span><b>${todayRows.length}</b></li>
+      <li><span>Espectadores hoy</span><b>${new Set(todayRows.map((r) => r.sid)).size}</b></li>`;
+    const by = new Map();
+    rows.forEach((r) => { const k = `${r.type}|${r.title}`; by.set(k, (by.get(k) || 0) + 1); });
+    const list = [...by].sort((a, b) => b[1] - a[1]);
+    $("stats-table").innerHTML = list.length ? `<table><thead><tr><th>Contenido</th><th>Tipo</th><th>Veces</th></tr></thead><tbody>${
+      list.map(([k, n]) => { const [t, ...ti] = k.split("|"); return `<tr><td>${esc(ti.join("|"))}</td><td>${esc(t)}</td><td>${n}</td></tr>`; }).join("")}</tbody></table>` : '<p class="hint">Todavía no hay reproducciones registradas.</p>';
+  } catch (err) { fail(err); }
+}
