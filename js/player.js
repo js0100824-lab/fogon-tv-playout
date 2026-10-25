@@ -121,4 +121,23 @@ async function log(item, key) {
   try { await addDoc(collection(db, "stats"), { at: serverTimestamp(), sid, title: String(item.title).slice(0, 200), type: item.type }); } catch {}
 }
 
+// Revisa la sincronía cada 2 s. Si un anuncio de YouTube o un tirón de red atrasó el video,
+// vuelve a saltar al segundo que toca según el reloj.
+setInterval(() => {
+  if (!channel?.items?.length || channel.live === false || !current) return;
+  const loc = locate(channel.items, channel.epoch, Date.now());
+  if (!loc) return;
+  if (current.key !== `${loc.index}:${loc.item.id}:${channel.epoch}`) { tick(false); return; }
+  if (loc.item.src === "file") {
+    const v = $("file");
+    if (v.readyState >= 2 && !v.paused && Math.abs(v.currentTime - loc.offset) > 1.5) v.currentTime = loc.offset;
+    else if (v.paused && v.readyState >= 2 && !v.ended) v.play().catch(() => {});
+  } else if (ytPlayer?.getPlayerState) {
+    const st = ytPlayer.getPlayerState(), dur = ytPlayer.getDuration?.() || 0;
+    // Solo corrige cuando está reproduciendo el video real (su duración coincide), no un anuncio.
+    if (st === 1 && Math.abs(dur - loc.item.duration) < 3 && Math.abs(ytPlayer.getCurrentTime() - loc.offset) > 2) ytPlayer.seekTo(loc.offset, true);
+    else if (st === 5 || st === -1 || st === 2) ytPlayer.playVideo?.();
+  }
+}, 2000);
+
 document.addEventListener("visibilitychange", () => { if (!document.hidden && channel?.items?.length) tick(true); });

@@ -8,7 +8,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&display=swap">
-<link rel="stylesheet" href="../css/app.css?v=6">
+<link rel="stylesheet" href="../css/app.css?v=8">
 </head>
 <body>
 
@@ -143,6 +143,16 @@
         </section>
 
         <section id="tab-estado" class="tab hidden">
+          <div class="help"><b>Subida gratis de videos (Cloudinary)</b>
+            <p>1. Crea una cuenta gratis en cloudinary.com (sin tarjeta).<br>
+            2. Copia tu <b>Cloud name</b> (se ve en el panel principal).<br>
+            3. Ve a <b>Settings → Upload → Upload presets → Add upload preset</b>, pon <b>Signing mode: Unsigned</b> y guarda. Copia el nombre del preset.<br>
+            4. Pégalos aquí y pulsa Guardar.</p></div>
+          <label class="field"><span>Cloud name</span><input id="cl-cloud" placeholder="mi-cuenta" autocomplete="off"></label>
+          <label class="field"><span>Upload preset (unsigned)</span><input id="cl-preset" placeholder="fogon_videos" autocomplete="off"></label>
+          <button class="btn small" id="cl-save" type="button">Guardar subida</button>
+          <p class="hint" id="cl-state"></p>
+          <hr style="border:0;border-top:1px solid var(--line);margin:1rem 0">
           <ul class="status-list">
             <li><span>Proyecto</span><b id="st-project">—</b></li>
             <li><span>Sesión</span><b id="st-auth">—</b></li>
@@ -157,6 +167,6 @@
   </div>
 </div>
 
-<script type="module" src="../js/admin.js?v=6"></script>
+<script type="module" src="../js/admin.js?v=8"></script>
 </body>
 </html>

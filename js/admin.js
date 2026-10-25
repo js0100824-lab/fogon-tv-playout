@@ -77,6 +77,7 @@ if (!isConfigured) {
 }
 
 /* ---------- Panel ---------- */
+let media = { cloud: "", preset: "" };
 const state = { lib: [], plan: { order: [], everyN: 2, breakCount: 2 }, brand: { name: "Fogón TV", accent: "#0E6B73", logo: "", ticker: "" } };
 let inited = false;
 
@@ -100,6 +101,10 @@ async function initPanel() {
     drop.addEventListener("drop", (e) => uploadFiles([...e.dataTransfer.files].filter((f) => f.type.startsWith("video/")), kind));
   });
   $("live-btn").addEventListener("click", toggleLive);
+  $("cl-save").addEventListener("click", async () => {
+    media = { cloud: $("cl-cloud").value.trim(), preset: $("cl-preset").value.trim() };
+    try { await setDoc(doc(db, "config", "media"), media); renderMedia(); toast("Subida configurada.", "ok"); } catch (err) { fail(err); }
+  });
   $("b-logo-file").addEventListener("change", onLogoFile);
   $("b-logo-rm").addEventListener("click", () => { state.brand.logo = ""; renderBrand(); saveBrand(true); });
   $("plan-save-com").addEventListener("click", savePlanFromCommercial);
@@ -113,10 +118,11 @@ async function initPanel() {
   $("stats-refresh").addEventListener("click", loadStats);
   $("player-link").href = new URL("../player/", location.href).href;
   try {
-    const [libSnap, planSnap, brandSnap, chSnap] = await Promise.all([
+    const [libSnap, planSnap, brandSnap, chSnap, mediaSnap] = await Promise.all([
       getDocs(collection(db, "library")), getDoc(doc(db, "config", "plan")),
-      getDoc(doc(db, "public", "brand")), getDoc(doc(db, "public", "channel"))
+      getDoc(doc(db, "public", "brand")), getDoc(doc(db, "public", "channel")), getDoc(doc(db, "config", "media"))
     ]);
+    if (mediaSnap.exists()) media = { ...media, ...mediaSnap.data() };
     state.lib = libSnap.docs.map((d) => ({ id: d.id, ...d.data() })).sort((a, b) => (a.title || "").localeCompare(b.title || ""));
     if (planSnap.exists()) state.plan = { ...state.plan, ...planSnap.data() };
     if (brandSnap.exists()) state.brand = { ...state.brand, ...brandSnap.data() };
@@ -132,9 +138,31 @@ function openTab(name) {
   if (name === "estadisticas") loadStats();
 }
 
+function renderMedia() {
+  $("cl-cloud").value = media.cloud || ""; $("cl-preset").value = media.preset || "";
+  $("cl-state").textContent = media.cloud && media.preset ? "Subida activa: los videos van a Cloudinary (máx. 100 MB cada uno)." : "Sin configurar.";
+}
 function renderAll() {
+  renderMedia();
   state.plan.order = state.plan.order.filter((id) => state.lib.some((i) => i.id === id));
   renderLibrary(); renderAds(); renderOrder(); renderCycle(); renderBrand(); renderNow();
+}
+
+/* Subida a Cloudinary (plan gratis, preset sin firma) */
+function cloudUpload(file, onProgress) {
+  return new Promise((resolve, reject) => {
+    const fd = new FormData(); fd.append("file", file); fd.append("upload_preset", media.preset);
+    const x = new XMLHttpRequest();
+    x.open("POST", `https://api.cloudinary.com/v1_1/${encodeURIComponent(media.cloud)}/video/upload`);
+    x.upload.onprogress = (e) => e.lengthComputable && onProgress(Math.round((e.loaded / e.total) * 100));
+    x.onload = () => {
+      let j = {}; try { j = JSON.parse(x.responseText); } catch {}
+      x.status >= 200 && x.status < 300 && j.secure_url ? resolve(j)
+        : reject(new Error(j.error?.message ? `Cloudinary: ${j.error.message}` : `Cloudinary respondió ${x.status}. Revisa el Cloud name y que el preset sea Unsigned.`));
+    };
+    x.onerror = () => reject(new Error("Sin conexión con Cloudinary."));
+    x.send(fd);
+  });
 }
 
 /* Biblioteca */
@@ -181,10 +209,22 @@ async function uploadFiles(files, kind) {
     $("uploads").prepend(row);
     const note = row.querySelector("small"), bar = row.querySelector("progress");
     try {
+      if (media.cloud && media.preset) {
+        if (!/\.(mp4|webm)$/i.test(f.name)) throw new Error("Usa un archivo .mp4 (H.264) o .webm.");
+        if (f.size > 100 * 1024 * 1024) throw new Error("Pesa más de 100 MB, el límite gratis de Cloudinary. Comprímelo con HandBrake a 720p.");
+        const res = await cloudUpload(f, (p) => { bar.value = p; note.textContent = `${p}%`; });
+        let duration = Math.round(res.duration || 0);
+        if (!(duration > 0)) duration = await detectDuration(res.secure_url);
+        if (!(duration > 0)) throw new Error("Se subió, pero no pude leer la duración.");
+        await saveItem({ title: f.name.replace(/\.[^.]+$/, ""), kind, url: res.secure_url, duration, provider: "cloudinary", publicId: res.public_id });
+        note.textContent = "Listo"; setTimeout(() => row.remove(), 3000);
+        continue;
+      }
       const local = URL.createObjectURL(f);
       const duration = await detectDuration(local); URL.revokeObjectURL(local);
       if (!(duration > 0)) throw new Error("No se pudo leer la duración del video (¿formato no compatible? usa .mp4).");
       const path = `media/${Date.now()}-${f.name.replace(/[^\w.-]+/g, "_")}`;
+      if (!media.cloud || !media.preset) { /* sin Cloudinary: se intenta Firebase Storage */ }
       const task = uploadBytesResumable(sRef(storage, path), f);
       let moved = 0;
       const stall = setTimeout(() => { if (!moved) task.cancel(); }, 20000);
@@ -220,6 +260,7 @@ function renderLibrary() {
     if (!confirm(`¿Eliminar “${it.title}”?`)) return;
     try {
       await deleteDoc(doc(db, "library", it.id));
+      if (it.provider === "cloudinary") toast("Se quitó de la biblioteca. El archivo sigue en tu Cloudinary: bórralo desde su panel si quieres liberar espacio.", "ok");
       if (it.path) { try { await deleteObject(sRef(storage, it.path)); } catch {} }
       state.lib = state.lib.filter((x) => x.id !== it.id);
       await savePlan(); renderAll();
