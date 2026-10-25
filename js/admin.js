@@ -93,7 +93,19 @@ async function initPanel() {
   if (inited) return; inited = true;
   document.querySelectorAll("#nav button").forEach((b) => b.addEventListener("click", () => openTab(b.dataset.tab)));
   $("lib-form").addEventListener("submit", addItem);
-  $("monitor").src = new URL("../player/?embed=1", location.href).href;
+  $("monitor").src = new URL("../player/?embed=1&studio=1", location.href).href;
+  // La vista previa es la señal maestra: lo que ella emite se publica para que el reproductor público la siga.
+  let lastOn = "", lastOnAt = 0;
+  setInterval(async () => {
+    try {
+      const o = $("monitor").contentWindow.__onair;
+      if (!o || state.channel?.live === false) return;
+      const key = `${o.epoch}:${o.index}:${o.sig}`;
+      if (key === lastOn && Date.now() - lastOnAt < 15000) return;
+      lastOn = key; lastOnAt = Date.now();
+      await setDoc(doc(db, "public", "onair"), o);
+    } catch { /* la vista previa aún no carga */ }
+  }, 1000);
   document.querySelectorAll(".drop").forEach((drop) => {
     const kind = drop.dataset.kind, input = drop.querySelector("input");
     input.addEventListener("change", () => { uploadFiles([...input.files], kind); input.value = ""; });
@@ -400,8 +412,9 @@ async function toggleLive() {
   if (!state.channel) { toast("Aún no hay emisión publicada.", "error"); return; }
   const live = state.channel.live === false;
   try {
-    await updateDoc(doc(db, "public", "channel"), { live });
-    state.channel.live = live; renderLive(); renderNow();
+    const upd = live ? { live, epoch: Math.round(serverNow()) } : { live };   // al reanudar, empieza desde el principio
+    await updateDoc(doc(db, "public", "channel"), upd);
+    state.channel.live = live; if (live) state.channel.epoch = upd.epoch; renderLive(); renderNow();
     toast(live ? "Emisión reanudada." : "Emisión cortada. El público ve el aviso de pausa.", "ok");
   } catch (err) { fail(err); }
 }
@@ -410,7 +423,7 @@ async function toggleLive() {
 async function publish(auto) {
   const items = buildCycle(state.lib, state.plan);
   if (!items.length && !auto && !confirm("La parrilla está vacía. ¿Publicar sin programación? El público verá “Sin programación”.")) return;
-  const epoch = state.channel?.epoch || Math.round(serverNow());
+  const epoch = Math.round(serverNow());   // al publicar, la emisión siempre arranca desde el principio del primer programa
   try {
     await savePlan();
     const live = state.channel?.live !== false;
@@ -428,7 +441,7 @@ function renderNow() {
   $("clock").textContent = hms(now);
   const c = state.channel;
   const paused = c?.live === false;
-  const loc = c?.items?.length && !paused ? locate(c.items, c.epoch, now) : null;
+  const loc = c?.items?.length ? locate(c.items, c.epoch, now) : null;   // el Studio sigue funcionando aunque el público esté cortado
   $("onair").classList.toggle("off", !loc || paused);
   $("onair").querySelector("b").textContent = paused ? "EMISIÓN CORTADA" : loc ? "AL AIRE" : "FUERA DEL AIRE";
   renderLive();

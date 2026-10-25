@@ -5,7 +5,9 @@ import { serverNow, startClock } from "./clock.js";
 
 const $ = (id) => document.getElementById(id);
 const sid = (crypto.randomUUID?.() || String(Math.random()).slice(2)).replace(/-/g, "").slice(0, 32);
-const embed = new URLSearchParams(location.search).has("embed");
+const params = new URLSearchParams(location.search);
+const embed = params.has("embed");
+const studio = params.has("studio");   // vista previa del panel: es la señal maestra y no se corta con «Cortar emisión»
 if (embed) document.body.classList.add("embed");
 
 // Dos reproductores de archivo: mientras uno emite, el otro deja listo lo siguiente.
@@ -16,7 +18,27 @@ const clockReady = startClock();
 
 $("fs").addEventListener("click", () => (document.fullscreenElement ? document.exitFullscreen() : document.documentElement.requestFullscreen()));
 function say(t) { $("msg").textContent = t; $("msg").classList.toggle("hidden", !t); }
-const nowLoc = () => (channel?.items?.length ? locate(channel.items, channel.epoch, serverNow()) : null);
+let onair = null;
+const clockLoc = () => (channel?.items?.length ? locate(channel.items, channel.epoch, serverNow()) : null);
+// El público sigue lo que realmente está emitiendo el Studio; si el Studio no está abierto, usa la parrilla con la hora del servidor.
+function nowLoc() {
+  const c = clockLoc();
+  if (studio || !onair || !channel?.items?.length) return c;
+  const now = serverNow();
+  if (onair.epoch !== channel.epoch || onair.sig !== sig || now - onair.at > 40000) return c;
+  const item = channel.items[onair.index];
+  if (!item || item.id !== onair.id) return c;
+  const filePos = onair.filePos + (now - onair.at) / 1000, offset = filePos - (item.startAt || 0);
+  if (offset < -0.5 || offset >= item.duration) return c;
+  const off = Math.max(0, offset);
+  return { index: onair.index, item, offset: off, remaining: item.duration - off, filePos: (item.startAt || 0) + off };
+}
+function exposeOnAir(loc) {
+  if (!studio || !channel) return;
+  const v = active?.el;
+  const pos = loc.item.src === "file" && v && v.readyState >= 2 ? v.currentTime : loc.filePos;
+  window.__onair = { epoch: channel.epoch, sig, index: loc.index, id: loc.item.id, filePos: Math.round(pos * 100) / 100, at: Math.round(serverNow()) };
+}
 const keyOf = (loc) => `${channel.epoch}:${loc.index}:${loc.item.id}:${loc.item.startAt || 0}`;
 const keyAt = (index) => { const it = channel.items[index]; return `${channel.epoch}:${index}:${it.id}:${it.startAt || 0}`; };
 
@@ -52,13 +74,14 @@ function lowerThird(item) {
 if (!isConfigured) say("Falta configurar Firebase.");
 else {
   onSnapshot(doc(db, "public", "brand"), (s) => applyBrand(s.data() || {}), () => {});
+  if (!studio) onSnapshot(doc(db, "public", "onair"), (s) => { onair = s.exists() ? s.data() : null; }, () => {});
   onSnapshot(doc(db, "public", "channel"), async (s) => {
     const data = s.exists() ? s.data() : null;
     const items = data ? expandChannel(data) : [];
     if (!items.length) { channel = null; sig = ""; stop(); say("Sin programación publicada por ahora."); return; }
     const newSig = `${data.epoch}|${items.length}|${Math.round(cycleLength(items))}|${items[0].id}|${items.at(-1).id}`;
     const wasLive = channel ? channel.live !== false : false;
-    channel = { epoch: data.epoch, items, live: data.live !== false };
+    channel = { epoch: data.epoch, items, live: studio ? true : data.live !== false };
     if (!channel.live) { stop(); say("Transmisión en pausa. Volvemos pronto."); return; }
     await clockReady;
     // Si solo cambió "cortar/reanudar" no se reinicia lo que ya está sonando.
@@ -88,6 +111,7 @@ function tick(force) {
 
 function begin(loc, key) {
   current = { key, index: loc.index };
+  exposeOnAir(loc);
   lowerThird(loc.item);
   log(loc.item, key);
   if (loc.item.src === "file") playFile(loc, key); else playYT(loc);
@@ -181,6 +205,7 @@ function watch() {
   if (!channel?.items?.length || channel.live === false || !current) return;
   const loc = nowLoc(); if (!loc) return;
   if (keyOf(loc) !== current.key) { tick(false); return; }
+  exposeOnAir(loc);
   $("prog").style.width = `${(loc.offset / loc.item.duration) * 100}%`;
   maybePreload(loc);
   if (loc.item.src === "file" && active) {
