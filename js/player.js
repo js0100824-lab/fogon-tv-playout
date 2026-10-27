@@ -1,6 +1,6 @@
 import { db, isConfigured } from "./firebase.js";
 import { doc, getDoc, onSnapshot, addDoc, collection, serverTimestamp } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore.js";
-import { locate, expandChannel, cycleLength, itemLabel } from "./engine.js?v=20";
+import { locate, expandChannel, cycleLength, itemLabel } from "./engine.js?v=21";
 import { serverNow, startClock } from "./clock.js";
 
 const $ = (id) => document.getElementById(id);
@@ -9,6 +9,7 @@ const params = new URLSearchParams(location.search);
 const embed = params.has("embed");
 const studio = params.has("studio");   // vista previa del panel: es la señal maestra y no se corta con «Cortar emisión»
 if (embed) document.body.classList.add("embed");
+if (studio) document.body.classList.add("studio");   // solo el Studio puede tocar el video; el público no
 
 // Dos reproductores de archivo: mientras uno emite, el otro deja listo lo siguiente.
 const slots = [{ el: $("fileA"), key: "", url: "" }, { el: $("fileB"), key: "", url: "" }];
@@ -205,7 +206,7 @@ function maybePreload(loc) {
 
 /* ---------- Facebook y directos ---------- */
 let fbToken = 0, fbSdk = null, fbWant = 0;
-function hideFB() { fbToken++; fbPlayer = null; fbSyncAt = Infinity; const f = $("fb"); f.classList.add("hidden"); f.classList.remove("live"); f.innerHTML = ""; }
+function hideFB() { fbToken++; fbPlayer = null; fbSyncAt = Infinity; const f = $("fb"); f.classList.add("hidden"); f.classList.remove("live", "manual"); f.innerHTML = ""; }
 // SDK oficial de Facebook: permite silenciar, dar play y saltar a un minuto por código.
 function loadFB() {
   if (fbSdk) return fbSdk;
@@ -247,6 +248,7 @@ function showFB(href, startSec, isLive) {
     } else {
       // Sin el SDK: reproductor incrustado básico (puede pedir pulsar play).
       let h = href; if (!isLive && startSec >= 3) h += `${h.includes("?") ? "&" : "?"}t=${Math.floor(startSec)}`;
+      f.classList.add("manual");   // en este modo básico el público necesita poder pulsar play
       const i = document.createElement("iframe");
       i.allow = "autoplay; encrypted-media; fullscreen"; i.setAttribute("allowfullscreen", "");
       i.src = `https://www.facebook.com/plugins/video.php?href=${encodeURIComponent(h)}&show_text=false&autoplay=true&width=1920&height=1080`;
