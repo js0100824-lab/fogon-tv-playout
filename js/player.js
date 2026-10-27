@@ -1,6 +1,6 @@
 import { db, isConfigured } from "./firebase.js";
 import { doc, onSnapshot, addDoc, collection, serverTimestamp } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore.js";
-import { locate, expandChannel, cycleLength, itemLabel } from "./engine.js?v=18";
+import { locate, expandChannel, cycleLength, itemLabel } from "./engine.js?v=19";
 import { serverNow, startClock } from "./clock.js";
 
 const $ = (id) => document.getElementById(id);
@@ -20,7 +20,9 @@ const clockReady = startClock();
 $("fs").addEventListener("click", () => (document.fullscreenElement ? document.exitFullscreen() : document.documentElement.requestFullscreen()));
 function say(t) { if (liveCfg) t = ""; $("msg").textContent = t; $("msg").classList.toggle("hidden", !t); }
 let onair = null;
-const clockLoc = () => (channel?.items?.length ? locate(channel.items, channel.epoch, serverNow()) : null);
+// En el Studio (vista previa) manda el VIDEO: `shift` mueve la hora de la barra para que siga al video y nunca se le obliga a saltar.
+let shift = 0;
+const clockLoc = () => (channel?.items?.length ? locate(channel.items, channel.epoch + shift, serverNow()) : null);
 // El público sigue lo que realmente está emitiendo el Studio; si el Studio no está abierto, usa la parrilla con la hora del servidor.
 function nowLoc() {
   const c = clockLoc();
@@ -92,7 +94,7 @@ else {
     if (!channel.live) { stop(); say("Transmisión en pausa. Volvemos pronto."); return; }
     await clockReady;
     // Si solo cambió "cortar/reanudar" no se reinicia lo que ya está sonando.
-    if (newSig !== sig) { slots.forEach((x) => { x.key = ""; }); current = null; }
+    if (newSig !== sig) { slots.forEach((x) => { x.key = ""; }); current = null; shift = 0; }
     sig = newSig;
     if (!wasLive || !current) current = null;
     tick(false);
@@ -291,6 +293,14 @@ function watch() {
   if (loc.item.src === "file" && active) {
     const v = active.el;
     if (v.readyState < 3 && !v.ended) return;                          // cargando: se espera
+    if (studio) {                                                      // el video manda: la barra se ajusta a él, el video no se toca
+      if (v.paused && !v.ended) v.play().catch(() => {});
+      else if (!v.paused && !v.ended && !v.seeking) {
+        const d = v.currentTime - loc.filePos;
+        if (Math.abs(d) > 0.12 && Math.abs(d) < 600) { shift -= d * 1000; tick(false); }
+      }
+      return;
+    }
     const drift = v.currentTime - loc.filePos;                         // + adelantado, − atrasado
     if (Math.abs(drift) > 2 || v.ended) {
       try { v.currentTime = Math.min(loc.filePos, Math.max(0, (v.duration || loc.filePos) - 0.3)); } catch { /* reintenta */ }

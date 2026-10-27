@@ -7,7 +7,7 @@ import {
   doc, getDoc, setDoc, addDoc, deleteDoc, updateDoc, getDocs, collection, query, orderBy, limit, serverTimestamp
 } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore.js";
 import { ref as sRef, uploadBytesResumable, getDownloadURL, deleteObject } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-storage.js";
-import { parseDuration, fmtDuration, youtubeId, facebookUrl, parseLiveLink, buildCycle, cycleLength, locate, planWithDefaults, compactChannel, expandChannel, describeCuts, itemLabel, intervalSeconds } from "./engine.js?v=18";
+import { parseDuration, fmtDuration, youtubeId, facebookUrl, parseLiveLink, buildCycle, cycleLength, locate, planWithDefaults, compactChannel, expandChannel, describeCuts, itemLabel, intervalSeconds } from "./engine.js?v=19";
 import { serverNow, startClock } from "./clock.js";
 
 const $ = (id) => document.getElementById(id);
@@ -462,12 +462,27 @@ async function publish(auto) {
 }
 let tlKey = "";
 const hms = (ms) => new Date(ms).toLocaleTimeString("es", { hour12: false });
+// La posición real la marca el video de la vista previa (no el reloj): así la barra de abajo corre junto con él.
+function studioLoc(c, now) {
+  try {
+    const o = $("monitor").contentWindow.__onair;
+    if (o && o.epoch === c.epoch && now - o.at < 4000) {
+      const item = c.items[o.index];
+      if (item && item.id === o.id) {
+        const filePos = o.filePos + (now - o.at) / 1000;
+        const offset = Math.min(item.duration, Math.max(0, filePos - (item.startAt || 0)));
+        return { index: o.index, item, offset, remaining: item.duration - offset };
+      }
+    }
+  } catch { /* la vista previa aún no carga */ }
+  return locate(c.items, c.epoch, now);
+}
 function renderNow() {
   const now = serverNow();
   $("clock").textContent = hms(now);
   const c = state.channel;
   const paused = c?.live === false;
-  const loc = c?.items?.length ? locate(c.items, c.epoch, now) : null;   // el Studio sigue funcionando aunque el público esté cortado
+  const loc = c?.items?.length ? studioLoc(c, now) : null;   // el Studio sigue funcionando aunque el público esté cortado
   $("onair").classList.toggle("off", !loc || paused);
   $("onair").querySelector("b").textContent = paused ? "EMISIÓN CORTADA" : loc ? "AL AIRE" : "FUERA DEL AIRE";
   renderLive();
