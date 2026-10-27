@@ -7,7 +7,7 @@ import {
   doc, getDoc, setDoc, addDoc, deleteDoc, updateDoc, getDocs, collection, query, orderBy, limit, serverTimestamp
 } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore.js";
 import { ref as sRef, uploadBytesResumable, getDownloadURL, deleteObject } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-storage.js";
-import { parseDuration, fmtDuration, youtubeId, facebookUrl, parseLiveLink, buildCycle, cycleLength, locate, planWithDefaults, compactChannel, expandChannel, describeCuts, itemLabel, intervalSeconds } from "./engine.js?v=19";
+import { parseDuration, fmtDuration, youtubeId, facebookUrl, parseLiveLink, buildCycle, cycleLength, locate, planWithDefaults, compactChannel, expandChannel, describeCuts, itemLabel, intervalSeconds } from "./engine.js?v=20";
 import { serverNow, startClock } from "./clock.js";
 
 const $ = (id) => document.getElementById(id);
@@ -96,14 +96,16 @@ async function initPanel() {
   $("lib-form").addEventListener("submit", addItem);
   $("monitor").src = new URL("../player/?embed=1&studio=1", location.href).href;
   // La vista previa es la señal maestra: lo que ella emite se publica para que el reproductor público la siga.
-  let lastOn = "", lastOnAt = 0;
+  let lastOn = "", lastOnAt = 0, lastO = null;
   setInterval(async () => {
     try {
       const o = $("monitor").contentWindow.__onair;
       if (!o || state.channel?.live === false) return;
       const key = `${o.epoch}:${o.index}:${o.sig}`;
-      if (key === lastOn && Date.now() - lastOnAt < 15000) return;
-      lastOn = key; lastOnAt = Date.now();
+      const exp = lastO ? (lastO.p ? lastO.filePos : lastO.filePos + (o.at - lastO.at) / 1000) : 0;
+      const jumped = !!lastO && key === lastOn && (Math.abs(o.filePos - exp) > 2 || !!o.p !== !!lastO.p);   // pausa o salto: se guarda enseguida
+      if (key === lastOn && !jumped && Date.now() - lastOnAt < 15000) return;
+      lastOn = key; lastOnAt = Date.now(); lastO = o;
       await setDoc(doc(db, "public", "onair"), o);
     } catch { /* la vista previa aún no carga */ }
   }, 1000);
@@ -469,7 +471,7 @@ function studioLoc(c, now) {
     if (o && o.epoch === c.epoch && now - o.at < 4000) {
       const item = c.items[o.index];
       if (item && item.id === o.id) {
-        const filePos = o.filePos + (now - o.at) / 1000;
+        const filePos = o.p ? o.filePos : o.filePos + (now - o.at) / 1000;   // en pausa la barra no avanza
         const offset = Math.min(item.duration, Math.max(0, filePos - (item.startAt || 0)));
         return { index: o.index, item, offset, remaining: item.duration - offset };
       }

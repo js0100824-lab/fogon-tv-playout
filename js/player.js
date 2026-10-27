@@ -1,6 +1,6 @@
 import { db, isConfigured } from "./firebase.js";
-import { doc, onSnapshot, addDoc, collection, serverTimestamp } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore.js";
-import { locate, expandChannel, cycleLength, itemLabel } from "./engine.js?v=19";
+import { doc, getDoc, onSnapshot, addDoc, collection, serverTimestamp } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore.js";
+import { locate, expandChannel, cycleLength, itemLabel } from "./engine.js?v=20";
 import { serverNow, startClock } from "./clock.js";
 
 const $ = (id) => document.getElementById(id);
@@ -14,6 +14,7 @@ if (embed) document.body.classList.add("embed");
 const slots = [{ el: $("fileA"), key: "", url: "" }, { el: $("fileB"), key: "", url: "" }];
 let channel = null, sig = "", current = null, active = null, timer = null;
 let liveCfg = null, liveKey = "";
+let fbPlayer = null, fbPaused = false, fbSyncAt = Infinity, ytPlayed = false, restored = false;
 let ytPlayer = null, ytReady = null, unmuted = false, lastLogged = "", lowerT = null;
 const clockReady = startClock();
 
@@ -38,9 +39,40 @@ function nowLoc() {
 }
 function exposeOnAir(loc) {
   if (!studio || !channel) return;
-  const v = active?.el;
-  const pos = loc.item.src === "file" && v && v.readyState >= 2 ? v.currentTime : loc.filePos;
-  window.__onair = { epoch: channel.epoch, sig, index: loc.index, id: loc.item.id, filePos: Math.round(pos * 100) / 100, at: Math.round(serverNow()) };
+  const m = mediaState(loc);
+  const pos = m ? m.pos : loc.filePos;
+  window.__onair = { epoch: channel.epoch, sig, index: loc.index, id: loc.item.id, filePos: Math.round(pos * 100) / 100, at: Math.round(serverNow()), p: m?.paused ? 1 : 0 };
+}
+// Posición y pausa REALES del video que se está viendo (null si aún no se puede saber).
+function mediaState(loc) {
+  const it = loc.item;
+  try {
+    if (it.src === "file" && active) {
+      const v = active.el;
+      if (v.readyState >= 2 && !v.seeking) return { pos: v.currentTime, paused: v.paused && !v.ended, played: !!active.played, thr: 0.3 };
+    } else if (it.src === "facebook" && fbPlayer && Date.now() > fbSyncAt) {
+      const p = fbPlayer.getCurrentPosition?.();
+      if (Number.isFinite(p)) return { pos: p, paused: fbPaused, played: true, thr: 1.2 };
+    } else if (it.src === "youtube" && ytPlayer?.getPlayerState) {
+      const st = ytPlayer.getPlayerState(), dur = ytPlayer.getDuration?.() || 0;
+      const full = it.parts > 1 ? Math.abs(dur - it.duration) > 3 : Math.abs(dur - it.duration) < 3;   // no un anuncio de YouTube
+      if (st === 1) ytPlayed = true;
+      if (full && (st === 1 || st === 2)) return { pos: ytPlayer.getCurrentTime(), paused: st === 2, played: ytPlayed, thr: 0.5 };
+    }
+  } catch { /* el reproductor aún no está listo */ }
+  return null;
+}
+// Al abrir o recargar el Studio, retoma donde iba (usa lo último guardado en public/onair).
+async function restoreShift(newSig) {
+  const s = await getDoc(doc(db, "public", "onair")); if (!s.exists()) return;
+  const o = s.data(), items = channel.items, item = items[o.index];
+  if (!item || o.epoch !== channel.epoch || o.sig !== newSig || o.id !== item.id) return;
+  let before = 0; for (let k = 0; k < o.index; k++) before += items[k].duration;
+  const pos = o.p ? o.filePos : o.filePos + (serverNow() - o.at) / 1000;   // si estaba en marcha, sigue sola
+  const total = cycleLength(items) * 1000;
+  let sh = (serverNow() - channel.epoch) - (before + pos - (item.startAt || 0)) * 1000;
+  sh = ((sh % total) + total) % total; if (sh > total / 2) sh -= total;
+  shift = sh;
 }
 const keyOf = (loc) => `${channel.epoch}:${loc.index}:${loc.item.id}:${loc.item.startAt || 0}`;
 const keyAt = (index) => { const it = channel.items[index]; return `${channel.epoch}:${index}:${it.id}:${it.startAt || 0}`; };
@@ -96,6 +128,7 @@ else {
     // Si solo cambió "cortar/reanudar" no se reinicia lo que ya está sonando.
     if (newSig !== sig) { slots.forEach((x) => { x.key = ""; }); current = null; shift = 0; }
     sig = newSig;
+    if (studio && !restored) { restored = true; try { await restoreShift(newSig); } catch { /* sin datos guardados */ } }
     if (!wasLive || !current) current = null;
     tick(false);
   }, () => say("No se pudo conectar con la emisión."));
@@ -130,7 +163,7 @@ function begin(loc, key) {
 /* ---------- Archivos de video ---------- */
 function prime(slot, item, key) {
   const v = slot.el;
-  slot.key = key;
+  slot.key = key; slot.played = false; v.onplaying = () => { slot.played = true; };
   if (slot.url !== item.ref) { slot.url = item.ref; v.src = item.ref; v.preload = "auto"; v.load(); }
   const seekStart = () => { try { v.currentTime = Math.min(item.startAt || 0, Math.max(0, (v.duration || item.startAt || 0) - 0.3)); } catch { /* aún no listo */ } };
   if (v.readyState >= 1) seekStart(); else v.addEventListener("loadedmetadata", seekStart, { once: true });
@@ -171,8 +204,8 @@ function maybePreload(loc) {
 }
 
 /* ---------- Facebook y directos ---------- */
-let fbPlayer = null, fbToken = 0, fbSdk = null, fbWant = 0;
-function hideFB() { fbToken++; fbPlayer = null; const f = $("fb"); f.classList.add("hidden"); f.classList.remove("live"); f.innerHTML = ""; }
+let fbToken = 0, fbSdk = null, fbWant = 0;
+function hideFB() { fbToken++; fbPlayer = null; fbSyncAt = Infinity; const f = $("fb"); f.classList.add("hidden"); f.classList.remove("live"); f.innerHTML = ""; }
 // SDK oficial de Facebook: permite silenciar, dar play y saltar a un minuto por código.
 function loadFB() {
   if (fbSdk) return fbSdk;
@@ -187,7 +220,9 @@ function loadFB() {
           try {
             if (!unmuted) fbPlayer.mute(); else fbPlayer.unmute();
             fbPlayer.play();
-            fbPlayer.subscribe("startedPlaying", () => { if (fbWant >= 3) { try { fbPlayer.seek(fbWant); } catch { /* sin salto */ } fbWant = 0; } });
+            fbPlayer.subscribe("startedPlaying", () => { fbPaused = false; if (fbWant >= 3) { try { fbPlayer.seek(fbWant); } catch { /* sin salto */ } fbWant = 0; } fbSyncAt = Date.now() + 3000; });
+            fbPlayer.subscribe("continuedPlaying", () => { fbPaused = false; });
+            fbPlayer.subscribe("paused", () => { fbPaused = true; });
           } catch { /* el reproductor aún no está listo */ }
         });
         clearTimeout(t); resolve(true);
@@ -201,7 +236,7 @@ function loadFB() {
 }
 function showFB(href, startSec, isLive) {
   const f = $("fb"), token = ++fbToken;
-  f.innerHTML = ""; fbPlayer = null; fbWant = isLive ? 0 : startSec;
+  f.innerHTML = ""; fbPlayer = null; fbSyncAt = Infinity; fbPaused = false; fbWant = isLive ? 0 : startSec;
   f.classList.toggle("live", !!isLive); f.classList.remove("hidden");
   loadFB().then((ok) => {
     if (token !== fbToken) return;
@@ -242,6 +277,7 @@ function endLive() {
 /* ---------- YouTube ---------- */
 let ytMaskT = null;
 function playYT(loc) {
+  ytPlayed = false;
   hideFB();
   // YouTube muestra su título y canal al empezar: se oculta con una banda negra los primeros segundos.
   $("ytmask").classList.remove("hidden"); clearTimeout(ytMaskT); ytMaskT = setTimeout(() => $("ytmask").classList.add("hidden"), 8000);
@@ -290,17 +326,24 @@ function watch() {
   exposeOnAir(loc);
   $("prog").style.width = `${(loc.offset / loc.item.duration) * 100}%`;
   maybePreload(loc);
+  if (studio) {   // en el Studio manda el VIDEO: la barra lo sigue (si lo retrocedes, lo pausas o se atrasa) y a él nunca se le obliga a saltar
+    const m = mediaState(loc);
+    if (m) {
+      if (m.paused && !m.played) {
+        if (loc.item.src === "file") active.el.play().catch(() => {});
+        else if (loc.item.src === "youtube") ytPlayer.playVideo?.();
+        else try { fbPlayer.play(); } catch { /* sin reproductor */ }
+      }
+      const d = m.pos - loc.filePos;
+      if (Math.abs(d) > m.thr) { shift -= d * 1000; tick(false); }
+    } else if (loc.item.src === "youtube" && ytPlayer?.getPlayerState) {
+      const st = ytPlayer.getPlayerState(); if (st === 5 || st === -1) ytPlayer.playVideo?.();
+    } else if (loc.item.src === "file" && active?.el.paused && !active.played) active.el.play().catch(() => {});
+    return;
+  }
   if (loc.item.src === "file" && active) {
     const v = active.el;
     if (v.readyState < 3 && !v.ended) return;                          // cargando: se espera
-    if (studio) {                                                      // el video manda: la barra se ajusta a él, el video no se toca
-      if (v.paused && !v.ended) v.play().catch(() => {});
-      else if (!v.paused && !v.ended && !v.seeking) {
-        const d = v.currentTime - loc.filePos;
-        if (Math.abs(d) > 0.12 && Math.abs(d) < 600) { shift -= d * 1000; tick(false); }
-      }
-      return;
-    }
     const drift = v.currentTime - loc.filePos;                         // + adelantado, − atrasado
     if (Math.abs(drift) > 2 || v.ended) {
       try { v.currentTime = Math.min(loc.filePos, Math.max(0, (v.duration || loc.filePos) - 0.3)); } catch { /* reintenta */ }
