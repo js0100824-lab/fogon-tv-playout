@@ -13,11 +13,12 @@ if (embed) document.body.classList.add("embed");
 // Dos reproductores de archivo: mientras uno emite, el otro deja listo lo siguiente.
 const slots = [{ el: $("fileA"), key: "", url: "" }, { el: $("fileB"), key: "", url: "" }];
 let channel = null, sig = "", current = null, active = null, timer = null;
+let liveCfg = null, liveKey = "";
 let ytPlayer = null, ytReady = null, unmuted = false, lastLogged = "", lowerT = null;
 const clockReady = startClock();
 
 $("fs").addEventListener("click", () => (document.fullscreenElement ? document.exitFullscreen() : document.documentElement.requestFullscreen()));
-function say(t) { $("msg").textContent = t; $("msg").classList.toggle("hidden", !t); }
+function say(t) { if (liveCfg) t = ""; $("msg").textContent = t; $("msg").classList.toggle("hidden", !t); }
 let onair = null;
 const clockLoc = () => (channel?.items?.length ? locate(channel.items, channel.epoch, serverNow()) : null);
 // El público sigue lo que realmente está emitiendo el Studio; si el Studio no está abierto, usa la parrilla con la hora del servidor.
@@ -74,6 +75,12 @@ function lowerThird(item) {
 if (!isConfigured) say("Falta configurar Firebase.");
 else {
   onSnapshot(doc(db, "public", "brand"), (s) => applyBrand(s.data() || {}), () => {});
+  onSnapshot(doc(db, "public", "live"), (s) => {
+    const d = s.exists() ? s.data() : null, was = !!liveCfg;
+    liveCfg = d && d.on && d.ref ? d : null;
+    if (liveCfg) { const k = `${liveCfg.kind}|${liveCfg.ref}`; if (k !== liveKey || !was) startLive(); liveKey = k; }
+    else { liveKey = ""; if (was) endLive(); }
+  }, () => {});
   if (!studio) onSnapshot(doc(db, "public", "onair"), (s) => { onair = s.exists() ? s.data() : null; }, () => {});
   onSnapshot(doc(db, "public", "channel"), async (s) => {
     const data = s.exists() ? s.data() : null;
@@ -95,12 +102,13 @@ else {
 function stop() {
   clearTimeout(timer); current = null; active = null;
   for (const x of slots) { x.el.pause(); x.el.removeAttribute("src"); x.el.classList.add("hidden"); x.key = ""; x.url = ""; }
-  ytPlayer?.stopVideo?.(); $("yt").classList.add("hidden");
+  ytPlayer?.stopVideo?.(); $("yt").classList.add("hidden"); hideFB();
 }
 
 // Decide qué toca ahora según la hora del servidor y vuelve a decidir justo al terminar el tramo.
 function tick(force) {
   clearTimeout(timer);
+  if (liveCfg) return;
   if (!channel?.items?.length || channel.live === false) return;
   const loc = nowLoc(); if (!loc) return;
   const key = keyOf(loc);
@@ -114,7 +122,7 @@ function begin(loc, key) {
   exposeOnAir(loc);
   lowerThird(loc.item);
   log(loc.item, key);
-  if (loc.item.src === "file") playFile(loc, key); else playYT(loc);
+  if (loc.item.src === "file") playFile(loc, key); else if (loc.item.src === "facebook") playFB(loc); else playYT(loc);
 }
 
 /* ---------- Archivos de video ---------- */
@@ -128,7 +136,7 @@ function prime(slot, item, key) {
 }
 
 function playFile(loc, key) {
-  ytPlayer?.stopVideo?.(); $("yt").classList.add("hidden"); $("ytmask").classList.add("hidden");
+  hideFB(); ytPlayer?.stopVideo?.(); $("yt").classList.add("hidden"); $("ytmask").classList.add("hidden");
   let slot = slots.find((x) => x.key === key);
   if (!slot) { slot = slots.find((x) => x !== active) || slots[0]; prime(slot, loc.item, key); }
   const previous = active;
@@ -160,9 +168,39 @@ function maybePreload(loc) {
   prime(idle, nx, nkey);
 }
 
+/* ---------- Facebook y directos ---------- */
+function hideFB() { const f = $("fb"); f.classList.add("hidden"); f.classList.remove("live"); if (f.getAttribute("src")) f.removeAttribute("src"); }
+function showFB(href, startSec, isLive) {
+  const f = $("fb");
+  let h = href;
+  if (!isLive && startSec >= 3) h += `${h.includes("?") ? "&" : "?"}t=${Math.floor(startSec)}`;
+  f.src = `https://www.facebook.com/plugins/video.php?href=${encodeURIComponent(h)}&show_text=false&autoplay=true&mute=${unmuted ? 0 : 1}&width=1920&height=1080`;
+  f.classList.toggle("live", !!isLive); f.classList.remove("hidden");
+}
+function playFB(loc) {
+  $("ytmask").classList.add("hidden");
+  for (const x of slots) { x.el.pause(); x.el.classList.add("hidden"); }
+  active = null; ytPlayer?.stopVideo?.(); $("yt").classList.add("hidden");
+  showFB(loc.item.ref, (nowLoc() || loc).filePos, false);
+}
+function startLive() {
+  clearTimeout(timer); clearTimeout(ytMaskT); current = null;
+  stop(); say(""); $("ytmask").classList.add("hidden"); $("prog").style.width = "0"; $("lower").classList.remove("show");
+  if (liveCfg.kind === "facebook") showFB(liveCfg.ref, 0, true);
+  else {
+    $("yt").classList.remove("hidden");
+    loadYT().then(() => { if (!liveCfg || liveCfg.kind !== "youtube") return; ytPlayer.loadVideoById({ videoId: liveCfg.ref }); unmuted ? ytPlayer.unMute() : ytPlayer.mute(); });
+  }
+}
+function endLive() {
+  stop(); current = null; slots.forEach((x) => { x.key = ""; });
+  clockReady.then(() => tick(false));
+}
+
 /* ---------- YouTube ---------- */
 let ytMaskT = null;
 function playYT(loc) {
+  hideFB();
   // YouTube muestra su título y canal al empezar: se oculta con una banda negra los primeros segundos.
   $("ytmask").classList.remove("hidden"); clearTimeout(ytMaskT); ytMaskT = setTimeout(() => $("ytmask").classList.add("hidden"), 8000);
   for (const x of slots) { x.el.pause(); x.el.classList.add("hidden"); }
@@ -202,6 +240,7 @@ setTimeout(() => { if (!unmuted && channel && !embed) $("sound").classList.remov
 
 /* ---------- Control de sincronía (cada segundo) ---------- */
 function watch() {
+  if (liveCfg) return;
   if (!channel?.items?.length || channel.live === false || !current) return;
   const loc = nowLoc(); if (!loc) return;
   if (keyOf(loc) !== current.key) { tick(false); return; }

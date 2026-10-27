@@ -24,9 +24,23 @@ export function youtubeId(url) {
   return m ? m[1] : null;
 }
 
+export function facebookUrl(url) {
+  return /^https?:\/\/(?:[\w-]+\.)?(?:facebook\.com|fb\.watch)\//i.test(String(url).trim()) ? String(url).trim() : null;
+}
+
 export function toSource(url) {
   const id = youtubeId(url);
-  return id ? { src: "youtube", ref: id } : { src: "file", ref: url };
+  if (id) return { src: "youtube", ref: id };
+  const fb = facebookUrl(url);
+  return fb ? { src: "facebook", ref: fb } : { src: "file", ref: url };
+}
+
+// Enlace de un directo (YouTube o Facebook) → { kind, ref } o null.
+export function parseLiveLink(url) {
+  const yt = youtubeId(url);
+  if (yt) return { kind: "youtube", ref: yt };
+  const fb = facebookUrl(url);
+  return fb ? { kind: "facebook", ref: fb } : null;
 }
 
 /* ---------------- Plan de cortes ---------------- */

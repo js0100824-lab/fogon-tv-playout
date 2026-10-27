@@ -1,11 +1,17 @@
 import assert from "node:assert/strict";
 import {
   parseDuration, fmtDuration, youtubeId, buildCycle, cycleLength, locate, cutPoints, intervalSeconds,
-  compactChannel, expandChannel, describeCuts, activeAds, itemLabel
+  compactChannel, expandChannel, describeCuts, activeAds, itemLabel, toSource, parseLiveLink
 } from "../js/engine.js";
 import { estimateOffset } from "../js/clock.js";
 
 let n = 0; const t = (name, fn) => { fn(); n++; console.log("  ok -", name); };
+
+t("enlaces de Facebook y directos", () => {
+  assert.deepEqual(toSource("https://www.facebook.com/canal/videos/123"), { src: "facebook", ref: "https://www.facebook.com/canal/videos/123" });
+  assert.equal(toSource("https://fb.watch/abc/").src, "facebook"); assert.equal(toSource("https://x.com/a.mp4").src, "file");
+  assert.equal(parseLiveLink("https://youtu.be/dQw4w9WgXcQ").kind, "youtube"); assert.equal(parseLiveLink("https://www.facebook.com/x/videos/1").kind, "facebook"); assert.equal(parseLiveLink("https://x.com"), null);
+});
 
 t("duraciones y enlaces", () => {
   assert.equal(parseDuration("1:30"), 90); assert.equal(parseDuration("1:00:05"), 3605); assert.equal(parseDuration("45"), 45);

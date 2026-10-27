@@ -7,7 +7,7 @@ import {
   doc, getDoc, setDoc, addDoc, deleteDoc, updateDoc, getDocs, collection, query, orderBy, limit, serverTimestamp
 } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore.js";
 import { ref as sRef, uploadBytesResumable, getDownloadURL, deleteObject } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-storage.js";
-import { parseDuration, fmtDuration, youtubeId, buildCycle, cycleLength, locate, planWithDefaults, compactChannel, expandChannel, describeCuts, itemLabel, intervalSeconds } from "./engine.js";
+import { parseDuration, fmtDuration, youtubeId, facebookUrl, parseLiveLink, buildCycle, cycleLength, locate, planWithDefaults, compactChannel, expandChannel, describeCuts, itemLabel, intervalSeconds } from "./engine.js";
 import { serverNow, startClock } from "./clock.js";
 
 const $ = (id) => document.getElementById(id);
@@ -79,6 +79,7 @@ if (!isConfigured) {
 
 /* ---------- Panel ---------- */
 let media = { cloud: "", preset: "" };
+let liveCfg = null;
 const state = { lib: [], plan: planWithDefaults(), brand: { name: "", showName: false, accent: "#0E6B73", logo: "", ticker: "", logoPos: "top-right", logoSize: 14, logoOpacity: 0.9 } };
 let inited = false;
 
@@ -114,6 +115,8 @@ async function initPanel() {
     drop.addEventListener("drop", (e) => uploadFiles([...e.dataTransfer.files].filter((f) => f.type.startsWith("video/")), kind));
   });
   $("live-btn").addEventListener("click", toggleLive);
+  $("lv-on").addEventListener("click", () => setLiveStream(true));
+  $("lv-off").addEventListener("click", () => setLiveStream(false));
   $("cl-save").addEventListener("click", async () => {
     media = { cloud: $("cl-cloud").value.trim(), preset: $("cl-preset").value.trim() };
     try { await setDoc(doc(db, "config", "media"), media); renderMedia(); toast("Subida configurada.", "ok"); } catch (err) { fail(err); }
@@ -133,11 +136,12 @@ async function initPanel() {
   $("stats-refresh").addEventListener("click", loadStats);
   $("player-link").href = new URL("../player/", location.href).href;
   try {
-    const [libSnap, planSnap, brandSnap, chSnap, mediaSnap] = await Promise.all([
+    const [libSnap, planSnap, brandSnap, chSnap, mediaSnap, liveSnap] = await Promise.all([
       getDocs(collection(db, "library")), getDoc(doc(db, "config", "plan")),
-      getDoc(doc(db, "public", "brand")), getDoc(doc(db, "public", "channel")), getDoc(doc(db, "config", "media"))
+      getDoc(doc(db, "public", "brand")), getDoc(doc(db, "public", "channel")), getDoc(doc(db, "config", "media")), getDoc(doc(db, "public", "live"))
     ]);
     if (mediaSnap.exists()) media = { ...media, ...mediaSnap.data() };
+    liveCfg = liveSnap.exists() ? liveSnap.data() : null; renderLiveStream();
     state.lib = libSnap.docs.map((d) => ({ id: d.id, ...d.data() })).sort((a, b) => (a.title || "").localeCompare(b.title || ""));
     if (planSnap.exists()) state.plan = planWithDefaults(planSnap.data());
     if (brandSnap.exists()) state.brand = { ...state.brand, ...brandSnap.data() };
@@ -219,9 +223,11 @@ async function addItem(e) {
   e.preventDefault();
   let url = $("lib-url").value.trim();
   // Si solo escribes el nombre del archivo (video1.mp4), se busca en la carpeta media del sitio.
+  if (/^(?:[\w-]+\.)?(?:facebook\.com|fb\.watch)\//i.test(url)) url = `https://${url}`;
   if (!/^https?:\/\//i.test(url)) url = new URL(`../media/${encodeURIComponent(url.replace(/^\/?(media\/)?/, ""))}`, location.href).href;
-  const yt = youtubeId(url);
+  const yt = youtubeId(url), fb = !!facebookUrl(url);
   let duration = parseDuration($("lib-dur").value);
+  if (fb && !(duration > 0)) { toast("Facebook no permite detectar la duración. Escríbela a mano en el campo Duración, por ejemplo 25:10.", "error"); return; }
   if (!(duration > 0)) { toast("Detectando la duración…", "ok"); duration = yt ? await ytDuration(yt) : await detectDuration(url); }
   if (!(duration > 0)) {
     toast(yt ? "No pude detectar la duración de ese video de YouTube (puede tener la inserción bloqueada). Escríbela a mano, por ejemplo 3:25."
@@ -399,6 +405,26 @@ function renderCycle() {
   $("cycle-list").innerHTML = cyc.slice(0, 400).map((i) => { const li = `<li class="${i.type === "comercial" ? "ad" : ""}">${fmtDuration(t)} · ${esc(itemLabel(i))} · ${fmtDuration(i.duration)}${i.type === "comercial" ? ` (corte ${i.breakNo})` : (i.parts > 1 ? ` (del minuto ${fmtDuration(i.startAt)} al ${fmtDuration(i.startAt + i.duration)})` : "")}</li>`; t += i.duration; return li; }).join("")
     + (cyc.length > 400 ? `<li class="hint">… y ${cyc.length - 400} más</li>` : "");
   $("st-cycle").textContent = state.channel?.items?.length ? `${state.channel.items.length} elementos` : "Sin publicar";
+}
+
+/* Directo en vivo (YouTube / Facebook) */
+function renderLiveStream() {
+  const on = !!(liveCfg?.on && liveCfg.ref);
+  if (liveCfg?.url) $("lv-url").value = liveCfg.url;
+  $("lv-state").textContent = on ? `EN VIVO ahora (${liveCfg.kind === "facebook" ? "Facebook" : "YouTube"}). El público ve el directo, no la parrilla.` : "Sin directo activo: se emite la parrilla.";
+  $("lv-on").textContent = on ? "Actualizar directo" : "Poner en vivo";
+}
+async function setLiveStream(on) {
+  try {
+    if (on) {
+      const url = $("lv-url").value.trim(), l = parseLiveLink(/^(?:[\w-]+\.)?(?:facebook\.com|fb\.watch)\//i.test(url) ? `https://${url}` : url);
+      if (!l) { toast("Ese enlace no es de YouTube ni de Facebook.", "error"); return; }
+      liveCfg = { on: true, kind: l.kind, ref: l.ref, url, updatedAt: serverTimestamp() };
+    } else liveCfg = { ...(liveCfg || {}), on: false, updatedAt: serverTimestamp() };
+    await setDoc(doc(db, "public", "live"), liveCfg);
+    renderLiveStream();
+    toast(on ? "Directo activado. El reproductor lo muestra ahora." : "Directo quitado. Vuelve la parrilla.", "ok");
+  } catch (err) { fail(err); }
 }
 
 /* Cortar / reanudar emisión */

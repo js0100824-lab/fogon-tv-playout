@@ -8,7 +8,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&display=swap">
-<link rel="stylesheet" href="../css/app.css?v=14">
+<link rel="stylesheet" href="../css/app.css?v=15">
 </head>
 <body>
 
@@ -72,12 +72,12 @@
         </div>
         <div id="uploads"></div>
         <details class="link-add">
-          <summary>Añadir por enlace (YouTube o .mp4)</summary>
+          <summary>Añadir por enlace (YouTube, Facebook o .mp4)</summary>
           <form id="lib-form">
             <input id="lib-title" placeholder="Título" required maxlength="120">
-            <input id="lib-url" type="text" placeholder="Solo el nombre (video1.mp4) o enlace de YouTube" required>
+            <input id="lib-url" type="text" placeholder="Nombre (video1.mp4) o enlace de YouTube / Facebook" required>
             <select id="lib-kind"><option value="programa">Es un programa</option><option value="comercial">Es un comercial</option></select>
-            <input id="lib-dur" id="lib-dur" placeholder="Duración (opcional: se detecta sola)">
+            <input id="lib-dur" placeholder="Duración (obligatoria en Facebook; ej. 25:10)">
             <button class="btn small" type="submit">Guardar enlace</button>
           </form>
         </details>
@@ -99,6 +99,7 @@
       <ul class="tabs" id="nav" role="tablist">
         <li><button data-tab="programacion" class="active">Parrilla</button></li>
         <li><button data-tab="comercial">Comerciales</button></li>
+        <li><button data-tab="envivo">En vivo</button></li>
         <li><button data-tab="personalizacion">Marca</button></li>
         <li><button data-tab="estadisticas">Stats</button></li>
         <li><button data-tab="estado">Sistema</button></li>
@@ -130,6 +131,15 @@
           <div id="cut-summary"></div>
           <h3 class="sub">Comerciales (orden y activos)</h3>
           <div id="ads-list"></div>
+        </section>
+
+        <section id="tab-envivo" class="tab hidden">
+          <div class="help"><b>Directo en vivo (YouTube o Facebook)</b>
+            <p>Pega el enlace de un directo que ya esté transmitiendo. Mientras esté activo, el reproductor y la vista previa muestran ese directo en lugar de la parrilla. Al quitarlo, la parrilla continúa sola.</p>
+            <p>YouTube: usa el enlace del video del directo (youtube.com/watch?v=… o youtube.com/live/…). Facebook: el enlace del video en vivo.</p></div>
+          <label class="field"><span>Enlace del directo</span><input id="lv-url" type="text" placeholder="https://www.youtube.com/watch?v=…  o  https://www.facebook.com/…/videos/…" autocomplete="off"></label>
+          <div class="row"><button class="btn small" id="lv-on" type="button">Poner en vivo</button><button class="btn secondary small" id="lv-off" type="button">Quitar directo</button></div>
+          <p class="hint" id="lv-state"></p>
         </section>
 
         <section id="tab-personalizacion" class="tab hidden">
@@ -177,6 +187,6 @@
   </div>
 </div>
 
-<script type="module" src="../js/admin.js?v=14"></script>
+<script type="module" src="../js/admin.js?v=15"></script>
 </body>
 </html>
