@@ -7,7 +7,7 @@ import {
   doc, getDoc, setDoc, addDoc, deleteDoc, updateDoc, getDocs, collection, query, orderBy, limit, serverTimestamp
 } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore.js";
 import { ref as sRef, uploadBytesResumable, getDownloadURL, deleteObject } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-storage.js";
-import { parseDuration, fmtDuration, youtubeId, facebookUrl, parseLiveLink, buildCycle, cycleLength, locate, planWithDefaults, compactChannel, expandChannel, describeCuts, itemLabel, intervalSeconds } from "./engine.js?v=21";
+import { parseDuration, fmtDuration, youtubeId, facebookUrl, parseLiveLink, buildCycle, cycleLength, locate, planWithDefaults, compactChannel, expandChannel, describeCuts, itemLabel, intervalSeconds } from "./engine.js?v=22";
 import { serverNow, startClock } from "./clock.js";
 
 const $ = (id) => document.getElementById(id);
@@ -104,7 +104,7 @@ async function initPanel() {
       const key = `${o.epoch}:${o.index}:${o.sig}`;
       const exp = lastO ? (lastO.p ? lastO.filePos : lastO.filePos + (o.at - lastO.at) / 1000) : 0;
       const jumped = !!lastO && key === lastOn && (Math.abs(o.filePos - exp) > 2 || !!o.p !== !!lastO.p);   // pausa o salto: se guarda enseguida
-      if (key === lastOn && !jumped && Date.now() - lastOnAt < 15000) return;
+      if (key === lastOn && !jumped && (o.p || Date.now() - lastOnAt < 10000)) return;
       lastOn = key; lastOnAt = Date.now(); lastO = o;
       await setDoc(doc(db, "public", "onair"), o);
     } catch { /* la vista previa aún no carga */ }

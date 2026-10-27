@@ -1,6 +1,6 @@
 import { db, isConfigured } from "./firebase.js";
 import { doc, getDoc, onSnapshot, addDoc, collection, serverTimestamp } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore.js";
-import { locate, expandChannel, cycleLength, itemLabel } from "./engine.js?v=21";
+import { locate, expandChannel, cycleLength, itemLabel } from "./engine.js?v=22";
 import { serverNow, startClock } from "./clock.js";
 
 const $ = (id) => document.getElementById(id);
@@ -25,19 +25,25 @@ let onair = null;
 // En el Studio (vista previa) manda el VIDEO: `shift` mueve la hora de la barra para que siga al video y nunca se le obliga a saltar.
 let shift = 0;
 const clockLoc = () => (channel?.items?.length ? locate(channel.items, channel.epoch + shift, serverNow()) : null);
-// El público sigue lo que realmente está emitiendo el Studio; si el Studio no está abierto, usa la parrilla con la hora del servidor.
-function nowLoc() {
-  const c = clockLoc();
-  if (studio || !onair || !channel?.items?.length) return c;
-  const now = serverNow();
-  if (onair.epoch !== channel.epoch || onair.sig !== sig || now - onair.at > 40000) return c;
-  const item = channel.items[onair.index];
-  if (!item || item.id !== onair.id) return c;
-  const filePos = onair.filePos + (now - onair.at) / 1000, offset = filePos - (item.startAt || 0);
-  if (offset < -0.5 || offset >= item.duration) return c;
-  const off = Math.max(0, offset);
-  return { index: onair.index, item, offset: off, remaining: item.duration - off, filePos: (item.startAt || 0) + off };
+// El público sigue lo que emite el Studio: de public/onair se calcula `shift` y desde ahí corre solo (sin saltos si el Studio se cierra o recarga).
+function nowLoc() { return clockLoc(); }
+function shiftFromOnair(o, sg) {
+  const items = channel?.items; if (!o || !items?.length) return null;
+  const item = items[o.index];
+  if (!item || o.epoch !== channel.epoch || o.sig !== sg || o.id !== item.id) return null;
+  let before = 0; for (let k = 0; k < o.index; k++) before += items[k].duration;
+  const pos = studio && o.p ? o.filePos : o.filePos + (serverNow() - o.at) / 1000;
+  const total = cycleLength(items) * 1000;
+  let sh = (serverNow() - channel.epoch) - (before + pos - (item.startAt || 0)) * 1000;
+  sh = ((sh % total) + total) % total; if (sh > total / 2) sh -= total;
+  return sh;
 }
+function applyOnair() {
+  const sh = shiftFromOnair(onair, sig); if (sh === null) return;
+  const moved = Math.abs(sh - shift) > 300; shift = sh;
+  if (moved && current) tick(false);
+}
+let lastSeekAt = 0;
 function exposeOnAir(loc) {
   if (!studio || !channel) return;
   const m = mediaState(loc);
@@ -65,15 +71,8 @@ function mediaState(loc) {
 }
 // Al abrir o recargar el Studio, retoma donde iba (usa lo último guardado en public/onair).
 async function restoreShift(newSig) {
-  const s = await getDoc(doc(db, "public", "onair")); if (!s.exists()) return;
-  const o = s.data(), items = channel.items, item = items[o.index];
-  if (!item || o.epoch !== channel.epoch || o.sig !== newSig || o.id !== item.id) return;
-  let before = 0; for (let k = 0; k < o.index; k++) before += items[k].duration;
-  const pos = o.p ? o.filePos : o.filePos + (serverNow() - o.at) / 1000;   // si estaba en marcha, sigue sola
-  const total = cycleLength(items) * 1000;
-  let sh = (serverNow() - channel.epoch) - (before + pos - (item.startAt || 0)) * 1000;
-  sh = ((sh % total) + total) % total; if (sh > total / 2) sh -= total;
-  shift = sh;
+  const snap = await getDoc(doc(db, "public", "onair")); if (!snap.exists()) return;
+  const sh = shiftFromOnair(snap.data(), newSig); if (sh !== null) shift = sh;
 }
 const keyOf = (loc) => `${channel.epoch}:${loc.index}:${loc.item.id}:${loc.item.startAt || 0}`;
 const keyAt = (index) => { const it = channel.items[index]; return `${channel.epoch}:${index}:${it.id}:${it.startAt || 0}`; };
@@ -116,7 +115,7 @@ else {
     if (liveCfg) { const k = `${liveCfg.kind}|${liveCfg.ref}`; if (k !== liveKey || !was) startLive(); liveKey = k; }
     else { liveKey = ""; if (was) endLive(); }
   }, () => {});
-  if (!studio) onSnapshot(doc(db, "public", "onair"), (s) => { onair = s.exists() ? s.data() : null; }, () => {});
+  if (!studio) onSnapshot(doc(db, "public", "onair"), (s) => { onair = s.exists() ? s.data() : null; applyOnair(); }, () => {});
   onSnapshot(doc(db, "public", "channel"), async (s) => {
     const data = s.exists() ? s.data() : null;
     const items = data ? expandChannel(data) : [];
@@ -129,6 +128,7 @@ else {
     // Si solo cambió "cortar/reanudar" no se reinicia lo que ya está sonando.
     if (newSig !== sig) { slots.forEach((x) => { x.key = ""; }); current = null; shift = 0; }
     sig = newSig;
+    if (!studio) applyOnair();
     if (studio && !restored) { restored = true; try { await restoreShift(newSig); } catch { /* sin datos guardados */ } }
     if (!wasLive || !current) current = null;
     tick(false);
@@ -356,13 +356,14 @@ function watch() {
   } else if (loc.item.src === "facebook" && fbPlayer) {
     try {
       const pos = fbPlayer.getCurrentPosition?.();
-      if (Number.isFinite(pos) && pos > 0 && Math.abs(pos - loc.filePos) > 3) fbPlayer.seek(loc.filePos);
+      if (fbPaused && Date.now() - lastSeekAt > 4000) { lastSeekAt = Date.now(); fbPlayer.play(); }
+      else if (Number.isFinite(pos) && pos > 0 && Math.abs(pos - loc.filePos) > 6 && Date.now() - lastSeekAt > 12000) { lastSeekAt = Date.now(); fbPlayer.seek(loc.filePos); }
     } catch { /* sin reproductor */ }
   } else if (loc.item.src === "youtube" && ytPlayer?.getPlayerState) {
     const st = ytPlayer.getPlayerState(), dur = ytPlayer.getDuration?.() || 0;
     // Solo corrige con el video real (no con un anuncio de YouTube): su duración coincide con la del archivo.
     const full = loc.item.parts > 1 ? Math.abs(dur - loc.item.duration) > 3 : Math.abs(dur - loc.item.duration) < 3;
-    if (st === 1 && (loc.item.parts > 1 || full) && Math.abs(ytPlayer.getCurrentTime() - loc.filePos) > 2) ytPlayer.seekTo(loc.filePos, true);
+    if (st === 1 && (loc.item.parts > 1 || full) && Math.abs(ytPlayer.getCurrentTime() - loc.filePos) > 3 && Date.now() - lastSeekAt > 8000) { lastSeekAt = Date.now(); ytPlayer.seekTo(loc.filePos, true); }
     else if (st === 5 || st === -1 || st === 2) ytPlayer.playVideo?.();
   }
 }
