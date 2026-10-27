@@ -1,6 +1,6 @@
 import { db, isConfigured } from "./firebase.js";
 import { doc, onSnapshot, addDoc, collection, serverTimestamp } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore.js";
-import { locate, expandChannel, cycleLength, itemLabel } from "./engine.js?v=17";
+import { locate, expandChannel, cycleLength, itemLabel } from "./engine.js?v=18";
 import { serverNow, startClock } from "./clock.js";
 
 const $ = (id) => document.getElementById(id);
@@ -169,13 +169,53 @@ function maybePreload(loc) {
 }
 
 /* ---------- Facebook y directos ---------- */
-function hideFB() { const f = $("fb"); f.classList.add("hidden"); f.classList.remove("live"); if (f.getAttribute("src")) f.removeAttribute("src"); }
+let fbPlayer = null, fbToken = 0, fbSdk = null, fbWant = 0;
+function hideFB() { fbToken++; fbPlayer = null; const f = $("fb"); f.classList.add("hidden"); f.classList.remove("live"); f.innerHTML = ""; }
+// SDK oficial de Facebook: permite silenciar, dar play y saltar a un minuto por código.
+function loadFB() {
+  if (fbSdk) return fbSdk;
+  fbSdk = new Promise((resolve) => {
+    const t = setTimeout(() => resolve(false), 8000);
+    window.fbAsyncInit = () => {
+      try {
+        FB.init({ xfbml: false, version: "v19.0" });
+        FB.Event.subscribe("xfbml.ready", (m) => {
+          if (m.type !== "video" || !m.instance) return;
+          fbPlayer = m.instance;
+          try {
+            if (!unmuted) fbPlayer.mute(); else fbPlayer.unmute();
+            fbPlayer.play();
+            fbPlayer.subscribe("startedPlaying", () => { if (fbWant >= 3) { try { fbPlayer.seek(fbWant); } catch { /* sin salto */ } fbWant = 0; } });
+          } catch { /* el reproductor aún no está listo */ }
+        });
+        clearTimeout(t); resolve(true);
+      } catch { clearTimeout(t); resolve(false); }
+    };
+    const sc = document.createElement("script"); sc.async = true; sc.src = "https://connect.facebook.net/es_LA/sdk.js";
+    sc.onerror = () => { clearTimeout(t); resolve(false); };
+    document.head.appendChild(sc);
+  });
+  return fbSdk;
+}
 function showFB(href, startSec, isLive) {
-  const f = $("fb");
-  let h = href;
-  if (!isLive && startSec >= 3) h += `${h.includes("?") ? "&" : "?"}t=${Math.floor(startSec)}`;
-  f.src = `https://www.facebook.com/plugins/video.php?href=${encodeURIComponent(h)}&show_text=false&autoplay=true&mute=${unmuted ? 0 : 1}&width=1920&height=1080`;
+  const f = $("fb"), token = ++fbToken;
+  f.innerHTML = ""; fbPlayer = null; fbWant = isLive ? 0 : startSec;
   f.classList.toggle("live", !!isLive); f.classList.remove("hidden");
+  loadFB().then((ok) => {
+    if (token !== fbToken) return;
+    if (ok && window.FB) {
+      const d = document.createElement("div");
+      d.className = "fb-video"; d.dataset.href = href; d.dataset.autoplay = "true"; d.dataset.showText = "false"; d.dataset.allowfullscreen = "false"; d.dataset.width = "1920";
+      f.appendChild(d); FB.XFBML.parse(f);
+    } else {
+      // Sin el SDK: reproductor incrustado básico (puede pedir pulsar play).
+      let h = href; if (!isLive && startSec >= 3) h += `${h.includes("?") ? "&" : "?"}t=${Math.floor(startSec)}`;
+      const i = document.createElement("iframe");
+      i.allow = "autoplay; encrypted-media; fullscreen"; i.setAttribute("allowfullscreen", "");
+      i.src = `https://www.facebook.com/plugins/video.php?href=${encodeURIComponent(h)}&show_text=false&autoplay=true&width=1920&height=1080`;
+      f.appendChild(i);
+    }
+  });
 }
 function playFB(loc) {
   $("ytmask").classList.add("hidden");
@@ -235,6 +275,7 @@ $("sound").addEventListener("click", () => {
   for (const x of slots) x.el.muted = false;
   active?.el.play().catch(() => {});
   ytPlayer?.unMute?.(); ytPlayer?.playVideo?.();
+  try { fbPlayer?.unmute(); fbPlayer?.play(); } catch { /* sin reproductor */ }
 });
 setTimeout(() => { if (!unmuted && channel && !embed) $("sound").classList.remove("hidden"); }, 1500);
 
@@ -257,6 +298,11 @@ function watch() {
     } else if (Math.abs(drift) > 0.3) v.playbackRate = drift > 0 ? 0.94 : 1.06;   // se acerca sin saltos
     else if (v.playbackRate !== 1) v.playbackRate = 1;
     if (v.paused) v.play().catch(() => {});
+  } else if (loc.item.src === "facebook" && fbPlayer) {
+    try {
+      const pos = fbPlayer.getCurrentPosition?.();
+      if (Number.isFinite(pos) && pos > 0 && Math.abs(pos - loc.filePos) > 3) fbPlayer.seek(loc.filePos);
+    } catch { /* sin reproductor */ }
   } else if (loc.item.src === "youtube" && ytPlayer?.getPlayerState) {
     const st = ytPlayer.getPlayerState(), dur = ytPlayer.getDuration?.() || 0;
     // Solo corrige con el video real (no con un anuncio de YouTube): su duración coincide con la del archivo.
