@@ -23,7 +23,6 @@ body:not(.studio) #fb:not(.manual){pointer-events:none}
 #lower.show{opacity:1;transform:none}
 #lower small{display:block;color:var(--accent);font-weight:700;letter-spacing:.08em;font-size:20px}
 #lower b{font-size:46px}
-#prog{position:absolute;left:0;bottom:0;height:6px;width:0;background:var(--accent);transition:width 1s linear;z-index:6}
 #fs{position:fixed;right:1rem;bottom:1rem;border:0;border-radius:6px;padding:.5rem .8rem;background:rgba(0,0,0,.6);color:#fff;cursor:pointer;opacity:0;transition:.3s;z-index:7}
 body:hover #fs{opacity:1}
 body.embed #fs,body.embed #sound{display:none !important}
@@ -42,7 +41,6 @@ body.embed #fs,body.embed #sound{display:none !important}
   <img id="logo" class="hidden" alt="">
   <div id="ticker" class="hidden"></div>
   <div id="lower"><small></small><b></b></div>
-  <div id="prog"></div>
   <div id="msg">Conectando…</div>
   <button id="sound" class="hidden" type="button"><span>▶ Toca para ver con sonido</span></button>
 </div>
@@ -50,6 +48,6 @@ body.embed #fs,body.embed #sound{display:none !important}
 <script>
 (function(){var r=document.documentElement;function f(){r.style.setProperty("--s",Math.min(innerWidth/1920,innerHeight/1080));}f();addEventListener("resize",f);})();
 </script>
-<script type="module" src="../js/player.js?v=23"></script>
+<script type="module" src="../js/player.js?v=24"></script>
 </body>
 </html>

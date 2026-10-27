@@ -1,6 +1,6 @@
 import { db, isConfigured } from "./firebase.js";
 import { doc, getDoc, onSnapshot, addDoc, collection, serverTimestamp } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore.js";
-import { locate, expandChannel, cycleLength, itemLabel } from "./engine.js?v=23";
+import { locate, expandChannel, cycleLength, itemLabel } from "./engine.js?v=24";
 import { serverNow, startClock } from "./clock.js";
 
 const $ = (id) => document.getElementById(id);
@@ -222,7 +222,7 @@ function loadFB() {
           try {
             if (!unmuted) fbPlayer.mute(); else fbPlayer.unmute();
             fbPlayer.play();
-            fbPlayer.subscribe("startedPlaying", () => { fbPaused = false; if (fbWant >= 3) { try { fbPlayer.seek(fbWant); } catch { /* sin salto */ } fbWant = 0; } fbSyncAt = Date.now() + 3000; });
+            fbPlayer.subscribe("startedPlaying", () => { fbPaused = false; $("fb").classList.remove("manual"); if (fbWant >= 3) { try { fbPlayer.seek(fbWant); } catch { /* sin salto */ } fbWant = 0; } fbSyncAt = Date.now() + 3000; });
             fbPlayer.subscribe("continuedPlaying", () => { fbPaused = false; });
             fbPlayer.subscribe("paused", () => { fbPaused = true; });
           } catch { /* el reproductor aún no está listo */ }
@@ -239,7 +239,7 @@ function loadFB() {
 function showFB(href, startSec, isLive) {
   const f = $("fb"), token = ++fbToken;
   f.innerHTML = ""; fbPlayer = null; fbSyncAt = Infinity; fbPaused = false; fbWant = isLive ? 0 : startSec;
-  f.classList.toggle("live", !!isLive); f.classList.remove("hidden");
+  f.classList.toggle("live", !!isLive); f.classList.add("manual"); f.classList.remove("hidden");   // clicable hasta que arranque, por si Facebook no inicia solo
   loadFB().then((ok) => {
     if (token !== fbToken) return;
     if (ok && window.FB) {
@@ -265,7 +265,7 @@ function playFB(loc) {
 }
 function startLive() {
   clearTimeout(timer); clearTimeout(ytMaskT); current = null;
-  stop(); say(""); $("ytmask").classList.add("hidden"); $("prog").style.width = "0"; $("lower").classList.remove("show");
+  stop(); say(""); $("ytmask").classList.add("hidden"); $("lower").classList.remove("show");
   setTimeout(() => { if (!unmuted && liveCfg) needTap(); }, 1200);
   if (liveCfg.kind === "facebook") showFB(liveCfg.ref, 0, true);
   else {
@@ -328,7 +328,6 @@ function watch() {
   const loc = nowLoc(); if (!loc) return;
   if (keyOf(loc) !== current.key) { tick(false); return; }
   exposeOnAir(loc);
-  $("prog").style.width = `${(loc.offset / loc.item.duration) * 100}%`;
   maybePreload(loc);
   if (studio) {   // en el Studio manda el VIDEO: la barra lo sigue (si lo retrocedes, lo pausas o se atrasa) y a él nunca se le obliga a saltar
     const m = mediaState(loc);
