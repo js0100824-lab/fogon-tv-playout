@@ -1,6 +1,6 @@
 import { db, isConfigured } from "./firebase.js";
 import { doc, getDoc, onSnapshot, addDoc, collection, serverTimestamp } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore.js";
-import { locate, expandChannel, cycleLength, itemLabel } from "./engine.js?v=22";
+import { locate, expandChannel, cycleLength, itemLabel } from "./engine.js?v=23";
 import { serverNow, startClock } from "./clock.js";
 
 const $ = (id) => document.getElementById(id);
@@ -159,6 +159,7 @@ function begin(loc, key) {
   lowerThird(loc.item);
   log(loc.item, key);
   if (loc.item.src === "file") playFile(loc, key); else if (loc.item.src === "facebook") playFB(loc); else playYT(loc);
+  setTimeout(() => { if (!unmuted && current) needTap(); }, 1200);   // el botón «toca para ver» siempre aparece si aún no hay sonido
 }
 
 /* ---------- Archivos de video ---------- */
@@ -265,6 +266,7 @@ function playFB(loc) {
 function startLive() {
   clearTimeout(timer); clearTimeout(ytMaskT); current = null;
   stop(); say(""); $("ytmask").classList.add("hidden"); $("prog").style.width = "0"; $("lower").classList.remove("show");
+  setTimeout(() => { if (!unmuted && liveCfg) needTap(); }, 1200);
   if (liveCfg.kind === "facebook") showFB(liveCfg.ref, 0, true);
   else {
     $("yt").classList.remove("hidden");
