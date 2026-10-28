@@ -130,6 +130,7 @@ else {
     liveCfg = d && d.on && d.ref ? d : null;
     if (liveCfg) { const k = `${liveCfg.kind}|${liveCfg.ref}`; if (k !== liveKey || !was) startLive(); liveKey = k; }
     else { liveKey = ""; if (was) endLive(); }
+    postInfo();   // al entrar o salir un directo, la página quita o vuelve a poner "Al aire / A continuación" al instante
   }, () => {});
   if (!studio) onSnapshot(doc(db, "public", "onair"), (s) => { onair = s.exists() ? s.data() : null; applyOnair(); }, () => {});
   onSnapshot(doc(db, "public", "channel"), async (s) => {
