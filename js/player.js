@@ -215,7 +215,7 @@ function maybePreload(loc) {
 
 /* ---------- Facebook y directos ---------- */
 let fbToken = 0, fbSdk = null, fbWant = 0;
-function hideFB() { fbToken++; fbPlayer = null; fbSyncAt = Infinity; const f = $("fb"); f.classList.add("hidden"); f.classList.remove("live", "manual"); f.innerHTML = ""; }
+function hideFB() { disarmFbTap(); fbToken++; fbPlayer = null; fbSyncAt = Infinity; const f = $("fb"); f.classList.add("hidden"); f.classList.remove("live", "manual"); f.innerHTML = ""; }
 // SDK oficial de Facebook: permite silenciar, dar play y saltar a un minuto por código.
 function loadFB() {
   if (fbSdk) return fbSdk;
@@ -231,13 +231,12 @@ function loadFB() {
             fbPlayer.mute();   // siempre arranca en silencio: el navegador lo permite y nunca se congela
             fbPlayer.play();
             let tried = false;
-            fbPlayer.subscribe("startedPlaying", () => {   // ya está corriendo: ahora se intenta el sonido (si el navegador lo bloquea, se vuelve a silenciar y sigue)
-              if (tried || !unmuted || soundBlocked) return; tried = true;
-              fbUnmutedAt = Date.now(); fbPauseCount = 0;
-              setTimeout(() => { try { fbPlayer?.unmute(); } catch { /* sin reproductor */ } }, 400);
+            fbPlayer.subscribe("startedPlaying", () => {   // ya está corriendo en silencio: si el espectador ya pidió sonido, se activa sin recargar
+              if (tried) return; tried = true;
+              wantSoundFB();
             });
             fbPlayer.subscribe("finishedPlaying", () => { fbEnded = true; });
-            fbPlayer.subscribe("startedPlaying", () => { fbPaused = false; fbEnded = false; $("fb").classList.remove("manual"); if (fbWant >= 3) { try { fbPlayer.seek(fbWant); } catch { /* sin salto */ } fbWant = 0; } fbSyncAt = Date.now() + 3000; });
+            fbPlayer.subscribe("startedPlaying", () => { fbPaused = false; fbEnded = false; if (!fbTapWanted) $("fb").classList.remove("manual"); if (fbWant >= 3) { try { fbPlayer.seek(fbWant); } catch { /* sin salto */ } fbWant = 0; } fbSyncAt = Date.now() + 3000; });
             fbPlayer.subscribe("continuedPlaying", () => { fbPaused = false; });
             fbPlayer.subscribe("paused", () => { fbPaused = true; if (!studio) onFbPaused(); });
           } catch { /* el reproductor aún no está listo */ }
@@ -254,7 +253,8 @@ function loadFB() {
 // En la página pública nadie puede pausar: si Facebook se pausa (p. ej. al activar el sonido), se le da play otra vez.
 // Si el navegador no deja reproducir con sonido, se vuelve a silenciar para que el video no se quede parado.
 function onFbPaused() {
-  if (Date.now() - fbUnmutedAt < 8000) blockSound();   // el navegador pausó el video al activar el sonido: se silencia y sigue
+  if (Date.now() - fbTapAt < 2500) { /* pausa causada por el toque en el video: solo se reanuda */ }
+  else if (Date.now() - fbUnmutedAt < 8000) blockSound();   // el navegador pausó el video al activar el sonido: se silencia y sigue
   [250, 1000].forEach((ms) => setTimeout(() => { try { fbPlayer?.play(); } catch { /* sin reproductor */ } }, ms));
 }
 // Facebook crea su propio iframe: se le da permiso de autoplay/sonido para que no se pause al activar el sonido.
@@ -271,8 +271,7 @@ function showFB(href, startSec, isLive) {
   f.classList.toggle("live", !!isLive); f.classList.add("manual"); f.classList.remove("hidden");   // clicable hasta que arranque, por si Facebook no inicia solo
   loadFB().then((ok) => {
     if (token !== fbToken) return;
-    const direct = unmuted && !obs && !studio;   // con sonido: iframe propio con permiso de autoplay; el SDK pausa el video al activar el sonido por código
-    if (ok && window.FB && !direct) {
+    if (ok && window.FB) {
       const d = document.createElement("div");
       d.className = "fb-video"; d.dataset.href = href; d.dataset.autoplay = "true"; d.dataset.showText = "false"; d.dataset.allowfullscreen = "false"; d.dataset.width = "1920";
       f.appendChild(d); FB.XFBML.parse(f);
@@ -341,6 +340,37 @@ function loadYT() {
 }
 
 /* ---------- Sonido ---------- */
+// Si el reproductor está incrustado en otra página cuyo <iframe> no tiene allow="autoplay", el navegador pausa a Facebook cuando se le
+// activa el sonido por código. La única forma de permitirlo sin recargar es que el TOQUE del espectador llegue DENTRO del video de Facebook.
+const inFrame = (() => { try { return window.self !== window.top; } catch { return true; } })();
+const noAutoplay = (() => { try { const fp = document.featurePolicy || document.permissionsPolicy; return inFrame && !!fp?.allowsFeature && !fp.allowsFeature("autoplay"); } catch { return false; } })();
+let fbTapWanted = false, fbTapAt = 0;
+const tapHint = document.createElement("div");   // cartel que no captura toques: el toque pasa al video de Facebook
+tapHint.textContent = "👆 Toca el video para activar el sonido";
+tapHint.style.cssText = "position:absolute;left:50%;bottom:24%;transform:translateX(-50%);padding:18px 36px;border-radius:999px;background:rgba(0,0,0,.75);color:#fff;font-size:40px;z-index:9;pointer-events:none;display:none;white-space:nowrap";
+$("stage").appendChild(tapHint);
+function armFbTap() {
+  if (obs || studio || embed) return;
+  fbTapWanted = true; $("fb").classList.add("manual"); tapHint.style.display = "block"; $("sound").classList.add("hidden");
+}
+function disarmFbTap() { fbTapWanted = false; tapHint.style.display = "none"; }
+function wantSoundFB() {
+  if (!unmuted || obs || studio) return;
+  if (noAutoplay || soundBlocked) armFbTap();
+  else { fbUnmutedAt = Date.now(); fbPauseCount = 0; setTimeout(() => { try { fbPlayer?.unmute(); fbPlayer?.play(); } catch { /* sin reproductor */ } }, 400); }   // la página dio permiso de autoplay: basta con activar el sonido
+}
+// Cuando el espectador toca dentro del video de Facebook, el foco pasa a ese iframe: ahí el navegador ya permite el sonido.
+window.addEventListener("blur", () => setTimeout(() => {
+  if (!fbTapWanted) return;
+  const fr = $("fb").querySelector("iframe");
+  if (fr && document.activeElement === fr) onFbTapped();
+}, 0));
+function onFbTapped() {
+  disarmFbTap(); soundBlocked = false; fbTapAt = fbUnmutedAt = Date.now(); fbPauseCount = 0;
+  const go = () => { try { fbPlayer?.unmute(); fbPlayer?.play(); } catch { /* sin reproductor */ } };
+  [100, 500, 1200].forEach((ms) => setTimeout(go, ms));
+  setTimeout(() => { if (!fbTapWanted) $("fb").classList.remove("manual"); }, 1500);   // el público vuelve a no poder pausar
+}
 // Si el navegador bloquea el sonido y pausa el video, se silencia ESE video, se pone a correr y el botón vuelve a aparecer.
 // Los videos siguientes arrancan en silencio (corren siempre) hasta que el espectador toque «Activar sonido».
 function blockSound() {
@@ -348,7 +378,7 @@ function blockSound() {
   try {
     const it = channel?.items?.[current?.index];
     if (liveCfg ? liveCfg.kind === "youtube" : it?.src === "youtube") { ytPlayer?.mute?.(); ytPlayer?.playVideo?.(); }
-    else if (liveCfg ? liveCfg.kind === "facebook" : it?.src === "facebook") { fbPlayer?.mute?.(); fbPlayer?.play?.(); }
+    else if (liveCfg ? liveCfg.kind === "facebook" : it?.src === "facebook") { fbPlayer?.mute?.(); fbPlayer?.play?.(); armFbTap(); return; }
     else if (active) { active.el.muted = true; active.el.play().catch(() => {}); }
   } catch { /* sin reproductor */ }
   needTap();
@@ -366,21 +396,17 @@ function guardPaused(loc) {
   if (!pausedSince) { pausedSince = Date.now(); return; }
   if (Date.now() - pausedSince >= 2000) { pausedSince = 0; blockSound(); }
 }
-function needTap() { if ((!unmuted || soundBlocked) && !embed && !obs) $("sound").classList.remove("hidden"); }
+function needTap() { if ((!unmuted || soundBlocked) && !fbTapWanted && !embed && !obs) $("sound").classList.remove("hidden"); }
 $("sound").addEventListener("click", () => {
   unmuted = true; $("sound").classList.add("hidden");
   for (const x of slots) x.el.muted = false;
   active?.el.play().catch(() => {});
   ytPlayer?.unMute?.(); ytPlayer?.playVideo?.();
-  soundBlocked = false; fbUnmutedAt = Date.now(); fbPauseCount = 0;
-  const it = channel?.items?.[current?.index];
-  if (!obs && !studio) {
-    // Facebook: no se activa el sonido por código (lo pausa); se vuelve a cargar el video ya con sonido, justo después de este toque.
-    if (liveCfg?.kind === "facebook") startLive();
-    else if (!liveCfg && it?.src === "facebook") tick(true);
-  }
+  soundBlocked = false;
+  const fbNow = liveCfg ? liveCfg.kind === "facebook" : channel?.items?.[current?.index]?.src === "facebook";
+  if (fbNow && !obs && !studio) wantSoundFB();   // Facebook: sin recargar el video
 });
-setTimeout(() => { if (!unmuted && channel && !embed) $("sound").classList.remove("hidden"); }, 1500);
+setTimeout(() => { if (!unmuted && !fbTapWanted && channel && !embed) $("sound").classList.remove("hidden"); }, 1500);
 
 /* ---------- Control de sincronía (cada segundo) ---------- */
 function watch() {
