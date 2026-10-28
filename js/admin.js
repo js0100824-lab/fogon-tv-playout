@@ -486,10 +486,18 @@ async function publish(auto) {
     const now = serverNow(), live = state.channel?.live !== false;
     // Emisión en marcha: NO se reinicia. Lo que está al aire sigue; lo nuevo por debajo entra en este ciclo y lo nuevo por encima, en la próxima repetición.
     let plan = null; const old = state.channel;
-    if (!auto && live && old?.items?.length && items.length) {
+    if (live && old?.items?.length && items.length) {
       settleChannel(old, now);
       const loc = studioLoc(old, now);
-      if (loc) plan = seamlessPublish(old.items, loc.index, loc.offset, items, now);
+      if (loc) {
+        // Si se borró un video de la biblioteca, se saca de lo que falta por emitir; si justo ese estaba al aire, se empieza de cero.
+        const gone = (it) => !state.lib.some((x) => x.id === it.id);
+        if (!gone(old.items[loc.index])) {
+          const base = old.items.filter((it, k) => k === loc.index || !gone(it));
+          const idx = old.items.slice(0, loc.index).filter((it) => !gone(it)).length;
+          plan = seamlessPublish(base, idx, loc.offset, items, now);
+        }
+      }
     }
     if (!plan) plan = { items, epoch: Math.round(now), next: null, nextAt: 0 };   // primera publicación, directo, pausa o borrado: empieza desde el principio
     const cur = compactChannel(plan.items), nxt = plan.next ? compactChannel(plan.next) : null;

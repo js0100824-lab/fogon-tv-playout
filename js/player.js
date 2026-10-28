@@ -142,7 +142,17 @@ else {
     if (!channel.live) { stop(); say("Transmisión en pausa. Volvemos pronto."); return; }
     await clockReady;
     // Si solo cambió "cortar/reanudar" no se reinicia lo que ya está sonando.
-    if (newSig !== sig) { slots.forEach((x) => { x.key = ""; }); current = null; shift = 0; }
+    if (newSig !== sig) {
+      shift = 0;
+      // Si el tramo que suena es el mismo y va en su sitio, NO se reinicia nada (ni video, ni transición, ni sonido): solo se actualiza la clave.
+      const nl = current ? nowLoc() : null;
+      const ms = nl && nl.item.id === current.id && (nl.item.startAt || 0) === current.startAt ? mediaState(nl) : null;
+      if (ms && !liveCfg && Math.abs(ms.pos - nl.filePos) < 2.5) {
+        const nk = keyOf(nl);
+        slots.forEach((x) => { x.key = x === active ? nk : ""; });
+        current = { key: nk, index: nl.index, id: nl.item.id, startAt: nl.item.startAt || 0 };
+      } else { slots.forEach((x) => { x.key = ""; }); current = null; }
+    }
     sig = newSig;
     if (!studio) applyOnair();
     if (studio && !restored) { restored = true; try { await restoreShift(newSig); } catch { /* sin datos guardados */ } }
@@ -170,7 +180,7 @@ function tick(force) {
 }
 
 function begin(loc, key) {
-  current = { key, index: loc.index };
+  current = { key, index: loc.index, id: loc.item.id, startAt: loc.item.startAt || 0 };
   exposeOnAir(loc);
   lowerThird(loc.item);
   log(loc.item, key);
