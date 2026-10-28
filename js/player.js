@@ -362,7 +362,7 @@ function armFbTap() {
 }
 function disarmFbTap() { fbTapWanted = false; tapHint.style.display = "none"; }
 function wantSoundFB() {
-  if (!unmuted || obs || studio) return;
+  if (!unmuted || studio) return;   // en OBS (obs=1) el audio está permitido: el video de Facebook se desmutea solo al empezar
   { fbUnmutedAt = Date.now(); fbPauseCount = 0; setTimeout(() => { try { fbPlayer?.unmute(); fbPlayer?.play(); } catch { /* sin reproductor */ } }, 400); }   // la página dio permiso de autoplay: basta con activar el sonido
 }
 // Cuando el espectador toca dentro del video de Facebook, el foco pasa a ese iframe: ahí el navegador ya permite el sonido.
