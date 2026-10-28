@@ -301,8 +301,9 @@ function renderLibrary() {
     const n = state.plan.order.filter((x) => x === i.id).length;
     const onGrid = i.kind === "programa" && n > 0 ? `<span class="tag ok">✓ En parrilla${n > 1 ? ` ×${n}` : ""}</span>` : "";
     const dur = fmtDuration(i.duration) + (i.kind === "comercial" && i.playFor > 0 ? ` · al aire ${fmtDuration(Math.min(i.playFor, i.duration))}` : "");
-    return `<div class="item lib-item"><div class="lib-main"><b>${esc(i.title)}</b><small>${esc(i.url)}</small></div>
-    <div class="lib-meta"><span class="tag">${esc(i.kind)}</span>${onGrid}<span class="lib-dur">${dur}</span><button class="btn del small" data-del="${esc(i.id)}" type="button" title="Eliminar de la biblioteca">Eliminar</button></div></div>`;
+    return `<div class="item lib-item"><div class="lib-main"><b>${esc(i.title)}</b></div>
+    <div class="lib-meta"><span class="tag">${esc(i.kind)}</span>${onGrid}<span class="lib-dur">${dur}</span><button class="btn del small" data-del="${esc(i.id)}" type="button" title="Eliminar de la biblioteca">Eliminar</button></div>
+    <details class="lib-link"><summary>Ver enlace</summary><span>${esc(i.url)}</span></details></div>`;
   }).join("");
   el.querySelectorAll("[data-del]").forEach((b) => b.addEventListener("click", async () => {
     const it = state.lib.find((x) => x.id === b.dataset.del);

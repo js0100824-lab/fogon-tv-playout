@@ -10,15 +10,19 @@
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&display=swap">
 <link rel="stylesheet" href="../css/app.css?v=39">
 <style>
-/* Biblioteca: título completo arriba; tipo, estado, duración y botón en una segunda línea */
-#lib-list .lib-item{display:flex;flex-direction:column;align-items:stretch;gap:8px;padding:10px 4px}
-#lib-list .lib-main{min-width:0;display:flex;flex-direction:column;gap:2px}
+/* Biblioteca: nada se sale de la columna; el enlace queda oculto y se abre con "Ver enlace" */
+section[aria-label="Biblioteca"] .col-b{overflow-x:hidden}
+#lib-list{min-width:0;max-width:100%;overflow-x:hidden}
+#lib-list .lib-item{display:flex;flex-direction:column;align-items:stretch;gap:8px;padding:10px 4px;min-width:0;max-width:100%;box-sizing:border-box}
+#lib-list .lib-main{min-width:0;width:100%}
 #lib-list .lib-main b{display:block;white-space:normal;overflow-wrap:anywhere;word-break:normal;line-height:1.3}
-#lib-list .lib-main small{display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:100%;opacity:.6}
-#lib-list .lib-meta{display:flex;flex-wrap:wrap;align-items:center;gap:6px 8px}
+#lib-list .lib-meta{display:flex;flex-wrap:wrap;align-items:center;gap:6px 8px;min-width:0}
 #lib-list .lib-meta .tag{white-space:nowrap}
 #lib-list .lib-dur{white-space:nowrap;font-variant-numeric:tabular-nums}
 #lib-list .lib-meta .btn{margin-left:auto;white-space:nowrap}
+#lib-list .lib-link{min-width:0;max-width:100%;font-size:.8em;opacity:.8}
+#lib-list .lib-link summary{cursor:pointer;display:inline-block;opacity:.8}
+#lib-list .lib-link span{display:block;margin-top:4px;overflow-wrap:anywhere;word-break:break-all;user-select:all}
 </style>
 </head>
 <body>
@@ -182,6 +186,6 @@
   </div>
 </div>
 
-<script type="module" src="../js/admin.js?v=41"></script>
+<script type="module" src="../js/admin.js?v=42"></script>
 </body>
 </html>
