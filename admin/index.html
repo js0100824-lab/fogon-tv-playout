@@ -8,7 +8,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&display=swap">
-<link rel="stylesheet" href="../css/app.css?v=27">
+<link rel="stylesheet" href="../css/app.css?v=39">
 </head>
 <body>
 
@@ -66,12 +66,7 @@
     <section class="col" aria-label="Biblioteca">
       <h2 class="col-h">Biblioteca</h2>
       <div class="col-b">
-        <div class="drops">
-          <label class="drop" data-kind="programa"><input type="file" accept="video/*" multiple hidden><b>+ Programa</b><span>Subir video</span></label>
-          <label class="drop ad" data-kind="comercial"><input type="file" accept="video/*" multiple hidden><b>+ Comercial</b><span>Subir video</span></label>
-        </div>
-        <div id="uploads"></div>
-        <details class="link-add">
+        <details class="link-add" open>
           <summary>Añadir por enlace (YouTube, Facebook o .mp4)</summary>
           <form id="lib-form">
             <input id="lib-title" placeholder="Título" required maxlength="120">
@@ -111,6 +106,7 @@
         <section id="tab-programacion" class="tab">
           <div id="order-list"></div>
           <div class="row"><select id="order-add"></select><button class="btn secondary small" id="order-add-btn" type="button">Añadir</button></div>
+          <p class="hint" id="order-hint"></p>
           <h3 class="sub">Ciclo de emisión</h3>
           <p id="cycle-total" class="hint"></p>
           <ol id="cycle-list" class="cycle"></ol>
@@ -166,15 +162,6 @@
         </section>
 
         <section id="tab-estado" class="tab hidden">
-          <div class="help"><b>Subida gratis de videos (Cloudinary)</b>
-            <p>1. Crea una cuenta gratis en cloudinary.com (sin tarjeta).<br>
-            2. Copia tu <b>Cloud name</b> (se ve en el panel principal).<br>
-            3. Ve a <b>Settings → Upload → Upload presets → Add upload preset</b>, pon <b>Signing mode: Unsigned</b> y guarda. Copia el nombre del preset.<br>
-            4. Pégalos aquí y pulsa Guardar.</p></div>
-          <label class="field"><span>Cloud name</span><input id="cl-cloud" placeholder="mi-cuenta" autocomplete="off"></label>
-          <label class="field"><span>Upload preset (unsigned)</span><input id="cl-preset" placeholder="fogon_videos" autocomplete="off"></label>
-          <button class="btn small" id="cl-save" type="button">Guardar subida</button>
-          <p class="hint" id="cl-state"></p>
           <hr style="border:0;border-top:1px solid var(--line);margin:1rem 0">
           <ul class="status-list">
             <li><span>Proyecto</span><b id="st-project">—</b></li>
@@ -190,6 +177,6 @@
   </div>
 </div>
 
-<script type="module" src="../js/admin.js?v=27"></script>
+<script type="module" src="../js/admin.js?v=39"></script>
 </body>
 </html>

@@ -374,8 +374,17 @@ window.addEventListener("blur", () => setTimeout(() => {
 function onFbTapped() {
   unmuted = true; $("sound").classList.add("hidden");   // el espectador tocó el video de Facebook: ya hay permiso del navegador, se activa el sonido
   disarmFbTap(); soundBlocked = false; fbTapAt = fbUnmutedAt = Date.now(); fbPauseCount = 0;
-  const go = () => { try { fbPlayer?.unmute(); fbPlayer?.setVolume?.(1); fbPlayer?.play(); } catch { /* sin reproductor */ } };
-  [100, 500, 1200].forEach((ms) => setTimeout(go, ms));
+  // Tras tu toque, el navegador ya permite el sonido: se reintenta hasta que Facebook confirme que suena (o 8 segundos).
+  let n = 0;
+  const t = setInterval(() => {
+    n++;
+    try {
+      const m = fbPlayer?.isMuted?.(), v = fbPlayer?.getVolume?.();
+      if (!fbPlayer || (m === false && !(v <= 0))) { clearInterval(t); return; }
+      fbTapAt = Date.now(); fbPlayer.unmute(); fbPlayer.setVolume?.(1); fbPlayer.play();
+    } catch { /* sin reproductor */ }
+    if (n >= 12) clearInterval(t);
+  }, 700);
 }
 // Si el navegador bloquea el sonido y pausa el video, se silencia ESE video, se pone a correr y el botón vuelve a aparecer.
 // Los videos siguientes arrancan en silencio (corren siempre) hasta que el espectador toque «Activar sonido».
@@ -473,7 +482,7 @@ async function log(item, key) {
 /* ---------- Diagnóstico: abre el reproductor con ?debug=1 y verás un cuadro con el estado del sonido ---------- */
 if (params.has("debug")) {
   const d = document.createElement("div");
-  d.style.cssText = "position:absolute;left:12px;top:12px;z-index:20;padding:8px 14px;background:rgba(0,0,0,.85);color:#0f0;pointer-events:none;white-space:pre;font-family:monospace;font-size:calc(15px / var(--s, 1))";
+  d.style.cssText = "position:absolute;left:12px;top:100px;z-index:20;padding:8px 14px;background:rgba(0,0,0,.85);color:#0f0;pointer-events:none;white-space:pre;font-family:monospace;font-size:calc(15px / var(--s, 1))";
   $("stage").appendChild(d);
   setInterval(() => {
     let m = "-", v = "-";

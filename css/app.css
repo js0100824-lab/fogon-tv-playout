@@ -144,7 +144,10 @@ table.live tr.cur td{background:#a62f2a;color:#fff;font-weight:600}
 .logo-row{display:flex;align-items:center;gap:.6rem;flex-wrap:wrap}.logo-row img{max-height:48px;max-width:120px;background:#222;border-radius:4px}
 .studio .item{flex-wrap:wrap}
 .studio .item .btn{flex:none}
-.btn.del{border-color:var(--danger);color:var(--danger)}
+.btn.del,.studio .btn.del{background:#C62828;border-color:#C62828;color:#fff;font-weight:600}
+.btn.del:hover{background:#A61E1E;border-color:#A61E1E}
+.tag.ok{border-color:var(--ok);color:var(--ok)}
+#order-add{max-width:100%;min-width:0}
 
 .row2{display:flex;gap:.5rem}.row2 input{flex:1;min-width:0}.row2 select{flex:none}
 #cut-summary p{margin:.25rem 0;font-size:.85rem}

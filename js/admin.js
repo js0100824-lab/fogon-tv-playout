@@ -119,7 +119,7 @@ async function initPanel() {
   $("live-btn").addEventListener("click", toggleLive);
   $("lv-on").addEventListener("click", () => setLiveStream(true));
   $("lv-off").addEventListener("click", () => setLiveStream(false));
-  $("cl-save").addEventListener("click", async () => {
+  $("cl-save")?.addEventListener("click", async () => {
     media = { cloud: $("cl-cloud").value.trim(), preset: $("cl-preset").value.trim() };
     try { await setDoc(doc(db, "config", "media"), media); renderMedia(); toast("Subida configurada.", "ok"); } catch (err) { fail(err); }
   });
@@ -135,7 +135,7 @@ async function initPanel() {
   $("publish-btn").addEventListener("click", publish);
   $("publish-btn2").addEventListener("click", publish);
   $("brand-form").addEventListener("submit", async (e) => { e.preventDefault(); await saveBrand(); });
-  $("stats-refresh").addEventListener("click", loadStats);
+  $("stats-refresh").addEventListener("click", async () => { await loadStats(); toast("Actualizado.", "ok"); });
   $("player-link").href = new URL("../player/", location.href).href;
   try {
     const [libSnap, planSnap, brandSnap, chSnap, mediaSnap, liveSnap] = await Promise.all([
@@ -160,6 +160,7 @@ function openTab(name) {
 }
 
 function renderMedia() {
+  if (!$("cl-cloud")) return;
   $("cl-cloud").value = media.cloud || ""; $("cl-preset").value = media.preset || "";
   $("cl-state").textContent = media.cloud && media.preset ? "Subida activa: los videos van a Cloudinary (máx. 100 MB cada uno)." : "Sin configurar.";
 }
@@ -297,7 +298,7 @@ function renderLibrary() {
   const el = $("lib-list");
   if (!state.lib.length) { el.innerHTML = '<p class="hint">Aún no hay contenidos.</p>'; return; }
   el.innerHTML = state.lib.map((i) => `<div class="item"><div class="grow"><b>${esc(i.title)}</b><small>${esc(i.url)}</small></div>
-    <span class="tag">${esc(i.kind)}</span><span>${fmtDuration(i.duration)}${i.kind === "comercial" && i.playFor > 0 ? ` · al aire ${fmtDuration(Math.min(i.playFor, i.duration))}` : ""}</span>
+    <span class="tag">${esc(i.kind)}</span>${i.kind === "programa" && state.plan.order.includes(i.id) ? `<span class="tag ok">✓ En parrilla${state.plan.order.filter((x) => x === i.id).length > 1 ? ` ×${state.plan.order.filter((x) => x === i.id).length}` : ""}</span>` : ""}<span>${fmtDuration(i.duration)}${i.kind === "comercial" && i.playFor > 0 ? ` · al aire ${fmtDuration(Math.min(i.playFor, i.duration))}` : ""}</span>
     ${i.kind === "programa" ? `<button class="btn secondary small" data-add="${esc(i.id)}" type="button" title="Añadir a la parrilla">+</button>` : ""}
     <button class="btn del small" data-del="${esc(i.id)}" type="button" title="Eliminar de la biblioteca">🗑 Eliminar</button></div>`).join("");
   el.querySelectorAll("[data-add]").forEach((b) => b.addEventListener("click", () => {
@@ -389,7 +390,12 @@ const savePlan = () => setDoc(doc(db, "config", "plan"), state.plan);
 /* Programación */
 function renderOrder() {
   const progs = state.lib.filter((i) => i.kind === "programa");
-  $("order-add").innerHTML = progs.map((i) => `<option value="${esc(i.id)}">${esc(i.title)} (${fmtDuration(i.duration)})</option>`).join("");
+  const inCount = (id) => state.plan.order.filter((x) => x === id).length;
+  const fresh = progs.filter((i) => !inCount(i.id)), used = progs.filter((i) => inCount(i.id));
+  const opt = (i, mark) => `<option value="${esc(i.id)}">${mark ? `✓ ${esc(i.title)} (${fmtDuration(i.duration)}) · ya está${inCount(i.id) > 1 ? ` ×${inCount(i.id)}` : ""}` : `${esc(i.title)} (${fmtDuration(i.duration)})`}</option>`;
+  $("order-add").innerHTML = (fresh.length ? `<optgroup label="Aún NO están en la parrilla (${fresh.length})">${fresh.map((i) => opt(i, false)).join("")}</optgroup>` : "")
+    + (used.length ? `<optgroup label="YA están en la parrilla (${used.length}) · si los añades se repiten">${used.map((i) => opt(i, true)).join("")}</optgroup>` : "");
+  if ($("order-hint")) $("order-hint").textContent = !progs.length ? "" : fresh.length ? `Faltan por añadir ${fresh.length} de ${progs.length} programas.` : "Todos los programas ya están en la parrilla.";
   const el = $("order-list");
   if (!state.plan.order.length) { el.innerHTML = '<p class="hint">Aún no hay programas en la parrilla.</p>'; return; }
   el.innerHTML = state.plan.order.map((id, n) => {
@@ -472,7 +478,8 @@ async function publish(auto) {
   } catch (err) { fail(err); }
 }
 let tlKey = "";
-const hms = (ms) => new Date(ms).toLocaleTimeString("es", { hour12: false });
+const TZ = "America/Santo_Domingo";   // hora de República Dominicana
+const hms = (ms) => new Date(ms).toLocaleTimeString("es-DO", { hour12: false, timeZone: TZ });
 // La posición real la marca el video de la vista previa (no el reloj): así la barra de abajo corre junto con él.
 function studioLoc(c, now) {
   try {
@@ -555,21 +562,30 @@ async function saveBrand(keep) {
 }
 
 /* Estadísticas */
+async function reloadLibrary() {   // vuelve a leer la biblioteca para que las estadísticas usen solo lo que existe hoy
+  const [libSnap, chSnap] = await Promise.all([getDocs(collection(db, "library")), getDoc(doc(db, "public", "channel"))]);
+  state.lib = libSnap.docs.map((d) => ({ id: d.id, ...d.data() })).sort((a, b) => (a.title || "").localeCompare(b.title || ""));
+  state.channel = chSnap.exists() ? { ...chSnap.data(), items: expandChannel(chSnap.data()) } : null;
+  renderAll();
+}
 async function loadStats() {
   try {
+    try { await reloadLibrary(); } catch { /* se usa la biblioteca ya cargada */ }
     const snap = await getDocs(query(collection(db, "stats"), orderBy("at", "desc"), limit(2000)));
-    const rows = snap.docs.map((d) => d.data());
-    const sessions = new Set(rows.map((r) => r.sid));
-    const today = new Date().toDateString();
-    const todayRows = rows.filter((r) => r.at?.toDate().toDateString() === today);
-    $("stats-summary").innerHTML = `<li><span>Reproducciones (últimas ${rows.length})</span><b>${rows.length}</b></li>
-      <li><span>Espectadores distintos</span><b>${sessions.size}</b></li>
+    const norm = (t) => String(t || "").trim().toLowerCase();
+    const known = new Set(state.lib.map((i) => norm(i.title)));
+    const rows = snap.docs.map((d) => d.data()).filter((r) => known.has(norm(r.title)));   // se ignoran programas borrados y pruebas antiguas
+    const day = (ms) => new Date(ms).toLocaleDateString("en-CA", { timeZone: TZ });
+    const today = day(Date.now());
+    const todayRows = rows.filter((r) => r.at && day(r.at.toDate().getTime()) === today);
+    $("stats-summary").innerHTML = `<li><span>Reproducciones</span><b>${rows.length}</b></li>
+      <li><span>Espectadores distintos</span><b>${new Set(rows.map((r) => r.sid)).size}</b></li>
       <li><span>Reproducciones hoy</span><b>${todayRows.length}</b></li>
       <li><span>Espectadores hoy</span><b>${new Set(todayRows.map((r) => r.sid)).size}</b></li>`;
-    const by = new Map();
-    rows.forEach((r) => { const k = `${r.type}|${r.title}`; by.set(k, (by.get(k) || 0) + 1); });
-    const list = [...by].sort((a, b) => b[1] - a[1]);
+    const count = new Map();
+    rows.forEach((r) => count.set(norm(r.title), (count.get(norm(r.title)) || 0) + 1));
+    const list = state.lib.map((i) => ({ title: i.title, kind: i.kind, n: count.get(norm(i.title)) || 0 })).sort((a, b) => b.n - a.n || a.title.localeCompare(b.title));
     $("stats-table").innerHTML = list.length ? `<table><thead><tr><th>Contenido</th><th>Tipo</th><th>Veces</th></tr></thead><tbody>${
-      list.map(([k, n]) => { const [t, ...ti] = k.split("|"); return `<tr><td>${esc(ti.join("|"))}</td><td>${esc(t)}</td><td>${n}</td></tr>`; }).join("")}</tbody></table>` : '<p class="hint">Todavía no hay reproducciones registradas.</p>';
+      list.map((x) => `<tr><td>${esc(x.title)}</td><td>${esc(x.kind)}</td><td>${x.n}</td></tr>`).join("")}</tbody></table>` : '<p class="hint">Aún no hay contenidos en la biblioteca.</p>';
   } catch (err) { fail(err); }
 }
