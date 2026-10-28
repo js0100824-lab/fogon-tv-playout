@@ -1,6 +1,6 @@
 import { db, isConfigured } from "./firebase.js";
 import { doc, getDoc, onSnapshot, addDoc, collection, serverTimestamp } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore.js";
-import { locate, expandChannel, cycleLength, itemLabel } from "./engine.js?v=24";
+import { locate, expandChannel, cycleLength, itemLabel } from "./engine.js?v=25";
 import { serverNow, startClock } from "./clock.js";
 
 const $ = (id) => document.getElementById(id);
@@ -15,7 +15,7 @@ if (studio) document.body.classList.add("studio");   // solo el Studio puede toc
 const slots = [{ el: $("fileA"), key: "", url: "" }, { el: $("fileB"), key: "", url: "" }];
 let channel = null, sig = "", current = null, active = null, timer = null;
 let liveCfg = null, liveKey = "";
-let fbPlayer = null, fbPaused = false, fbSyncAt = Infinity, ytPlayed = false, restored = false;
+let fbPlayer = null, fbPaused = false, fbEnded = false, fbSyncAt = Infinity, ytPlayed = false, restored = false;
 let ytPlayer = null, ytReady = null, unmuted = false, lastLogged = "", lowerT = null;
 const clockReady = startClock();
 
@@ -24,7 +24,12 @@ function say(t) { if (liveCfg) t = ""; $("msg").textContent = t; $("msg").classL
 let onair = null;
 // En el Studio (vista previa) manda el VIDEO: `shift` mueve la hora de la barra para que siga al video y nunca se le obliga a saltar.
 let shift = 0;
-const clockLoc = () => (channel?.items?.length ? locate(channel.items, channel.epoch + shift, serverNow()) : null);
+const clockLoc = () => {
+  if (!channel?.items?.length) return null;
+  const now = serverNow(), loc = locate(channel.items, channel.epoch + shift, now);
+  if (loc) loc.loop = Math.floor((now - (channel.epoch + shift)) / 1000 / cycleLength(channel.items));   // nº de vuelta: así un ciclo de un solo video también se reinicia
+  return loc;
+};
 // El público sigue lo que emite el Studio: de public/onair se calcula `shift` y desde ahí corre solo (sin saltos si el Studio se cierra o recarga).
 function nowLoc() { return clockLoc(); }
 function shiftFromOnair(o, sg) {
@@ -56,8 +61,8 @@ function mediaState(loc) {
   try {
     if (it.src === "file" && active) {
       const v = active.el;
-      if (v.readyState >= 2 && !v.seeking) return { pos: v.currentTime, paused: v.paused && !v.ended, played: !!active.played, thr: 0.3 };
-    } else if (it.src === "facebook" && fbPlayer && Date.now() > fbSyncAt) {
+      if (v.readyState >= 2 && !v.seeking && !v.ended) return { pos: v.currentTime, paused: v.paused && !v.ended, played: !!active.played, thr: 0.3 };
+    } else if (it.src === "facebook" && fbPlayer && !fbEnded && Date.now() > fbSyncAt) {
       const p = fbPlayer.getCurrentPosition?.();
       if (Number.isFinite(p)) return { pos: p, paused: fbPaused, played: true, thr: 1.2 };
     } else if (it.src === "youtube" && ytPlayer?.getPlayerState) {
@@ -74,8 +79,8 @@ async function restoreShift(newSig) {
   const snap = await getDoc(doc(db, "public", "onair")); if (!snap.exists()) return;
   const sh = shiftFromOnair(snap.data(), newSig); if (sh !== null) shift = sh;
 }
-const keyOf = (loc) => `${channel.epoch}:${loc.index}:${loc.item.id}:${loc.item.startAt || 0}`;
-const keyAt = (index) => { const it = channel.items[index]; return `${channel.epoch}:${index}:${it.id}:${it.startAt || 0}`; };
+const keyOf = (loc) => `${channel.epoch}:${loc.index}:${loc.item.id}:${loc.item.startAt || 0}:${loc.loop || 0}`;
+const keyAt = (index, loop) => { const it = channel.items[index]; return `${channel.epoch}:${index}:${it.id}:${it.startAt || 0}:${loop || 0}`; };
 
 /* ---------- Marca ---------- */
 const POS = { "top-left": ["top", "left"], "top-right": ["top", "right"], "bottom-left": ["bottom", "left"], "bottom-right": ["bottom", "right"] };
@@ -199,7 +204,7 @@ function maybePreload(loc) {
   if (loc.remaining > 25) return;
   const n = channel.items.length, ni = (loc.index + 1) % n, nx = channel.items[ni];
   if (nx.src !== "file") return;
-  const nkey = keyAt(ni);
+  const nkey = keyAt(ni, (loc.loop || 0) + (ni === 0 ? 1 : 0));
   if (nkey === current.key || slots.some((x) => x.key === nkey)) return;
   const idle = slots.find((x) => x !== active); if (!idle) return;
   prime(idle, nx, nkey);
@@ -222,7 +227,8 @@ function loadFB() {
           try {
             if (!unmuted) fbPlayer.mute(); else fbPlayer.unmute();
             fbPlayer.play();
-            fbPlayer.subscribe("startedPlaying", () => { fbPaused = false; $("fb").classList.remove("manual"); if (fbWant >= 3) { try { fbPlayer.seek(fbWant); } catch { /* sin salto */ } fbWant = 0; } fbSyncAt = Date.now() + 3000; });
+            fbPlayer.subscribe("finishedPlaying", () => { fbEnded = true; });
+            fbPlayer.subscribe("startedPlaying", () => { fbPaused = false; fbEnded = false; $("fb").classList.remove("manual"); if (fbWant >= 3) { try { fbPlayer.seek(fbWant); } catch { /* sin salto */ } fbWant = 0; } fbSyncAt = Date.now() + 3000; });
             fbPlayer.subscribe("continuedPlaying", () => { fbPaused = false; });
             fbPlayer.subscribe("paused", () => { fbPaused = true; });
           } catch { /* el reproductor aún no está listo */ }
@@ -238,7 +244,7 @@ function loadFB() {
 }
 function showFB(href, startSec, isLive) {
   const f = $("fb"), token = ++fbToken;
-  f.innerHTML = ""; fbPlayer = null; fbSyncAt = Infinity; fbPaused = false; fbWant = isLive ? 0 : startSec;
+  f.innerHTML = ""; fbPlayer = null; fbSyncAt = Infinity; fbPaused = false; fbEnded = false; fbWant = isLive ? 0 : startSec;
   f.classList.toggle("live", !!isLive); f.classList.add("manual"); f.classList.remove("hidden");   // clicable hasta que arranque, por si Facebook no inicia solo
   loadFB().then((ok) => {
     if (token !== fbToken) return;
