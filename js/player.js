@@ -1,6 +1,6 @@
 import { db, isConfigured } from "./firebase.js";
 import { doc, getDoc, onSnapshot, addDoc, collection, serverTimestamp } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore.js";
-import { locate, expandChannel, cycleLength, itemLabel } from "./engine.js?v=25";
+import { locate, expandChannel, cycleLength, itemLabel } from "./engine.js?v=26";
 import { serverNow, startClock } from "./clock.js";
 
 const $ = (id) => document.getElementById(id);
@@ -15,6 +15,7 @@ if (studio) document.body.classList.add("studio");   // solo el Studio puede toc
 const slots = [{ el: $("fileA"), key: "", url: "" }, { el: $("fileB"), key: "", url: "" }];
 let channel = null, sig = "", current = null, active = null, timer = null;
 let liveCfg = null, liveKey = "";
+let fbPauseCount = 0, fbUnmutedAt = 0;
 let fbPlayer = null, fbPaused = false, fbEnded = false, fbSyncAt = Infinity, ytPlayed = false, restored = false;
 let ytPlayer = null, ytReady = null, unmuted = false, lastLogged = "", lowerT = null;
 const clockReady = startClock();
@@ -230,7 +231,7 @@ function loadFB() {
             fbPlayer.subscribe("finishedPlaying", () => { fbEnded = true; });
             fbPlayer.subscribe("startedPlaying", () => { fbPaused = false; fbEnded = false; $("fb").classList.remove("manual"); if (fbWant >= 3) { try { fbPlayer.seek(fbWant); } catch { /* sin salto */ } fbWant = 0; } fbSyncAt = Date.now() + 3000; });
             fbPlayer.subscribe("continuedPlaying", () => { fbPaused = false; });
-            fbPlayer.subscribe("paused", () => { fbPaused = true; });
+            fbPlayer.subscribe("paused", () => { fbPaused = true; if (!studio) onFbPaused(); });
           } catch { /* el reproductor aún no está listo */ }
         });
         clearTimeout(t); resolve(true);
@@ -242,9 +243,18 @@ function loadFB() {
   });
   return fbSdk;
 }
+// En la página pública nadie puede pausar: si Facebook se pausa (p. ej. al activar el sonido), se le da play otra vez.
+// Si el navegador no deja reproducir con sonido, se vuelve a silenciar para que el video no se quede parado.
+function onFbPaused() {
+  if (Date.now() - fbUnmutedAt < 5000 && ++fbPauseCount >= 3) {
+    try { fbPlayer.mute(); } catch { /* sin reproductor */ }
+    say("Tu navegador no permite el sonido de este video; se muestra sin sonido."); setTimeout(() => say(""), 6000);
+  }
+  setTimeout(() => { try { fbPlayer?.play(); } catch { /* sin reproductor */ } }, 250);
+}
 function showFB(href, startSec, isLive) {
   const f = $("fb"), token = ++fbToken;
-  f.innerHTML = ""; fbPlayer = null; fbSyncAt = Infinity; fbPaused = false; fbEnded = false; fbWant = isLive ? 0 : startSec;
+  f.innerHTML = ""; fbPlayer = null; fbSyncAt = Infinity; fbPaused = false; fbEnded = false; fbPauseCount = 0; fbWant = isLive ? 0 : startSec;
   f.classList.toggle("live", !!isLive); f.classList.add("manual"); f.classList.remove("hidden");   // clicable hasta que arranque, por si Facebook no inicia solo
   loadFB().then((ok) => {
     if (token !== fbToken) return;
@@ -323,7 +333,10 @@ $("sound").addEventListener("click", () => {
   for (const x of slots) x.el.muted = false;
   active?.el.play().catch(() => {});
   ytPlayer?.unMute?.(); ytPlayer?.playVideo?.();
-  try { fbPlayer?.unmute(); fbPlayer?.play(); } catch { /* sin reproductor */ }
+  try {
+    fbUnmutedAt = Date.now(); fbPauseCount = 0; fbPlayer?.unmute(); fbPlayer?.play();
+    [400, 1200].forEach((ms) => setTimeout(() => { try { if (fbPlayer && !studio) fbPlayer.play(); } catch { /* sin reproductor */ } }, ms));   // por si Facebook se pausa al activar el sonido
+  } catch { /* sin reproductor */ }
 });
 setTimeout(() => { if (!unmuted && channel && !embed) $("sound").classList.remove("hidden"); }, 1500);
 
