@@ -151,6 +151,7 @@ async function initPanel() {
   } catch (err) { fail(err); }
   renderAll();
   setInterval(renderNow, 1000);
+  setInterval(renderCycle, 30000);   // las horas del ciclo se mantienen al día
 }
 
 function openTab(name) {
@@ -415,12 +416,24 @@ function renderOrder() {
     state.plan.order.splice(Number(b.dataset.rm), 1); savePlan().then(renderAll).catch(fail);
   }));
 }
+// Hora real (República Dominicana) de la próxima emisión de cada tramo del ciclo, igual que el reloj de arriba.
+function cycleClock(cyc) {
+  const old = state.channel, now = serverNow();
+  if (!old?.items?.length || old.live === false || !cyc.length) return null;
+  settleChannel(old, now);
+  const loc = studioLoc(old, now); if (!loc) return null;
+  const r = seamlessPublish(old.items, loc.index, loc.offset, cyc, now); if (!r) return null;
+  const L = cycleLength(cyc) * 1000, st = []; let a = 0;
+  for (const it of cyc) { st.push(a); a += it.duration * 1000; }
+  return r.next ? { starts: st.map((x) => r.nextAt + x), pending: true } : { starts: st.map((x, k) => (k >= loc.index ? r.epoch + x : r.epoch + L + x)), pending: false };
+}
 function renderCycle() {
   const cyc = buildCycle(state.lib, state.plan);
   const ads = cyc.filter((i) => i.type === "comercial").length, cuts = new Set(cyc.filter((i) => i.type === "comercial").map((i) => i.breakNo)).size;
-  $("cycle-total").textContent = cyc.length ? `${cuts} cortes · ${ads} anuncios · duración del ciclo ${fmtDuration(cycleLength(cyc))}. Al terminar, vuelve a empezar.` : "Añade programas con duración para generar el ciclo.";
+  const clk = cycleClock(cyc);
+  $("cycle-total").textContent = cyc.length ? `${cuts} cortes · ${ads} anuncios · duración del ciclo ${fmtDuration(cycleLength(cyc))}. Al terminar, vuelve a empezar.${clk ? (clk.pending ? " Horas de la próxima repetición (los cambios de arriba entran ahí)." : " Horas de la próxima emisión de cada tramo.") : ""}` : "Añade programas con duración para generar el ciclo.";
   let t = 0;
-  $("cycle-list").innerHTML = cyc.slice(0, 400).map((i) => { const li = `<li class="${i.type === "comercial" ? "ad" : ""}">${fmtDuration(t)} · ${esc(itemLabel(i))} · ${fmtDuration(i.duration)}${i.type === "comercial" ? ` (corte ${i.breakNo})` : (i.parts > 1 ? ` (del minuto ${fmtDuration(i.startAt)} al ${fmtDuration(i.startAt + i.duration)})` : "")}</li>`; t += i.duration; return li; }).join("")
+  $("cycle-list").innerHTML = cyc.slice(0, 400).map((i, k) => { const li = `<li class="${i.type === "comercial" ? "ad" : ""}">${clk ? hms(clk.starts[k]) : fmtDuration(t)} · ${esc(itemLabel(i))} · ${fmtDuration(i.duration)}${i.type === "comercial" ? ` (corte ${i.breakNo})` : (i.parts > 1 ? ` (del minuto ${fmtDuration(i.startAt)} al ${fmtDuration(i.startAt + i.duration)})` : "")}</li>`; t += i.duration; return li; }).join("")
     + (cyc.length > 400 ? `<li class="hint">… y ${cyc.length - 400} más</li>` : "");
   $("st-cycle").textContent = state.channel?.items?.length ? `${state.channel.items.length} elementos` : "Sin publicar";
 }
