@@ -297,13 +297,13 @@ async function uploadFiles(files, kind) {
 function renderLibrary() {
   const el = $("lib-list");
   if (!state.lib.length) { el.innerHTML = '<p class="hint">Aún no hay contenidos.</p>'; return; }
-  el.innerHTML = state.lib.map((i) => `<div class="item"><div class="grow"><b>${esc(i.title)}</b><small>${esc(i.url)}</small></div>
-    <span class="tag">${esc(i.kind)}</span>${i.kind === "programa" && state.plan.order.includes(i.id) ? `<span class="tag ok">✓ En parrilla${state.plan.order.filter((x) => x === i.id).length > 1 ? ` ×${state.plan.order.filter((x) => x === i.id).length}` : ""}</span>` : ""}<span>${fmtDuration(i.duration)}${i.kind === "comercial" && i.playFor > 0 ? ` · al aire ${fmtDuration(Math.min(i.playFor, i.duration))}` : ""}</span>
-    ${i.kind === "programa" ? `<button class="btn secondary small" data-add="${esc(i.id)}" type="button" title="Añadir a la parrilla">+</button>` : ""}
-    <button class="btn del small" data-del="${esc(i.id)}" type="button" title="Eliminar de la biblioteca">🗑 Eliminar</button></div>`).join("");
-  el.querySelectorAll("[data-add]").forEach((b) => b.addEventListener("click", () => {
-    state.plan.order.push(b.dataset.add); savePlan().then(renderAll).catch(fail); toast("Añadido a la parrilla.", "ok");
-  }));
+  el.innerHTML = state.lib.map((i) => {
+    const n = state.plan.order.filter((x) => x === i.id).length;
+    const onGrid = i.kind === "programa" && n > 0 ? `<span class="tag ok">✓ En parrilla${n > 1 ? ` ×${n}` : ""}</span>` : "";
+    const dur = fmtDuration(i.duration) + (i.kind === "comercial" && i.playFor > 0 ? ` · al aire ${fmtDuration(Math.min(i.playFor, i.duration))}` : "");
+    return `<div class="item lib-item"><div class="lib-main"><b>${esc(i.title)}</b><small>${esc(i.url)}</small></div>
+    <div class="lib-meta"><span class="tag">${esc(i.kind)}</span>${onGrid}<span class="lib-dur">${dur}</span><button class="btn del small" data-del="${esc(i.id)}" type="button" title="Eliminar de la biblioteca">Eliminar</button></div></div>`;
+  }).join("");
   el.querySelectorAll("[data-del]").forEach((b) => b.addEventListener("click", async () => {
     const it = state.lib.find((x) => x.id === b.dataset.del);
     if (!confirm(`¿Eliminar “${it.title}”?`)) return;
@@ -479,7 +479,8 @@ async function publish(auto) {
 }
 let tlKey = "";
 const TZ = "America/Santo_Domingo";   // hora de República Dominicana
-const hms = (ms) => new Date(ms).toLocaleTimeString("es-DO", { hour12: false, timeZone: TZ });
+const HMS = new Intl.DateTimeFormat("en-US", { timeZone: TZ, hour: "numeric", minute: "2-digit", second: "2-digit", hour12: true });
+const hms = (ms) => HMS.format(new Date(ms));   // 2:33:32 PM (hora de República Dominicana)
 // La posición real la marca el video de la vista previa (no el reloj): así la barra de abajo corre junto con él.
 function studioLoc(c, now) {
   try {

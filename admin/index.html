@@ -9,6 +9,17 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&display=swap">
 <link rel="stylesheet" href="../css/app.css?v=39">
+<style>
+/* Biblioteca: título completo arriba; tipo, estado, duración y botón en una segunda línea */
+#lib-list .lib-item{display:flex;flex-direction:column;align-items:stretch;gap:8px;padding:10px 4px}
+#lib-list .lib-main{min-width:0;display:flex;flex-direction:column;gap:2px}
+#lib-list .lib-main b{display:block;white-space:normal;overflow-wrap:anywhere;word-break:normal;line-height:1.3}
+#lib-list .lib-main small{display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:100%;opacity:.6}
+#lib-list .lib-meta{display:flex;flex-wrap:wrap;align-items:center;gap:6px 8px}
+#lib-list .lib-meta .tag{white-space:nowrap}
+#lib-list .lib-dur{white-space:nowrap;font-variant-numeric:tabular-nums}
+#lib-list .lib-meta .btn{margin-left:auto;white-space:nowrap}
+</style>
 </head>
 <body>
 
@@ -114,10 +125,6 @@
         </section>
 
         <section id="tab-comercial" class="tab hidden">
-          <div class="help"><b>Cómo funcionan los cortes</b>
-            <p>Elige cada cuánto tiempo sale un corte. La página mira la duración de cada programa, calcula sola los puntos de corte, reproduce los anuncios y continúa el programa exactamente donde se quedó.</p>
-            <p><b>Tiempo corrido</b> (recomendado): cuenta el tiempo de programación seguido, programa tras programa. Con “cada 10 minutos” sale un anuncio cada 10 minutos de programas, aunque sean varios programas cortos; si el minuto 10 cae a mitad de un programa, se corta ahí y continúa donde iba.</p>
-            <p>Ejemplo (modo “dentro de cada programa”): programa de 30 minutos, “cada 10 minutos” → cortes en 10:00 y 20:00 (y al terminar si lo marcas).</p></div>
           <label class="field"><span>Tipo de corte</span><select id="plan-mode"><option value="continuous">Por tiempo corrido (cada X minutos de programación, entre varios programas)</option><option value="time">Por tiempo, dentro de cada programa</option><option value="programs">Entre programas (cada N programas)</option></select></label>
           <div id="plan-time-box">
             <label class="field"><span>Un corte cada…</span><div class="row2"><input id="plan-iv" type="number" min="1" step="any"><select id="plan-iu"><option value="m">minutos</option><option value="s">segundos</option></select></div></label>
@@ -134,9 +141,6 @@
         </section>
 
         <section id="tab-envivo" class="tab hidden">
-          <div class="help"><b>Directo en vivo (YouTube o Facebook)</b>
-            <p>Pega el enlace de un directo que ya esté transmitiendo. Mientras esté activo, el reproductor y la vista previa muestran ese directo en lugar de la parrilla. Al quitarlo, la parrilla continúa sola.</p>
-            <p>YouTube: usa el enlace del video del directo (youtube.com/watch?v=… o youtube.com/live/…). Facebook: el enlace del video en vivo.</p></div>
           <label class="field"><span>Enlace del directo</span><input id="lv-url" type="text" placeholder="https://www.youtube.com/watch?v=…  o  https://www.facebook.com/…/videos/…" autocomplete="off"></label>
           <div class="row"><button class="btn small" id="lv-on" type="button">Poner en vivo</button><button class="btn secondary small" id="lv-off" type="button">Quitar directo</button></div>
           <p class="hint" id="lv-state"></p>
@@ -178,6 +182,6 @@
   </div>
 </div>
 
-<script type="module" src="../js/admin.js?v=40"></script>
+<script type="module" src="../js/admin.js?v=41"></script>
 </body>
 </html>
