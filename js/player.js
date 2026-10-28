@@ -236,7 +236,7 @@ function loadFB() {
               wantSoundFB();
             });
             fbPlayer.subscribe("finishedPlaying", () => { fbEnded = true; });
-            fbPlayer.subscribe("startedPlaying", () => { fbPaused = false; fbEnded = false; if (!fbTapWanted) $("fb").classList.remove("manual"); if (fbWant >= 3) { try { fbPlayer.seek(fbWant); } catch { /* sin salto */ } fbWant = 0; } fbSyncAt = Date.now() + 3000; });
+            fbPlayer.subscribe("startedPlaying", () => { fbPaused = false; fbEnded = false; if (obs) $("fb").classList.remove("manual"); if (fbWant >= 3) { try { fbPlayer.seek(fbWant); } catch { /* sin salto */ } fbWant = 0; } fbSyncAt = Date.now() + 3000; });
             fbPlayer.subscribe("continuedPlaying", () => { fbPaused = false; });
             fbPlayer.subscribe("paused", () => { fbPaused = true; if (!studio) onFbPaused(); });
           } catch { /* el reproductor aún no está listo */ }
@@ -367,15 +367,15 @@ function wantSoundFB() {
 }
 // Cuando el espectador toca dentro del video de Facebook, el foco pasa a ese iframe: ahí el navegador ya permite el sonido.
 window.addEventListener("blur", () => setTimeout(() => {
-  if (!fbTapWanted) return;
+  if (obs || studio || !document.hasFocus()) return;   // solo si el foco pasó a Facebook (no al cambiar de pestaña)
   const fr = $("fb").querySelector("iframe");
   if (fr && document.activeElement === fr) onFbTapped();
 }, 0));
 function onFbTapped() {
+  unmuted = true; $("sound").classList.add("hidden");   // el espectador tocó el video de Facebook: ya hay permiso del navegador, se activa el sonido
   disarmFbTap(); soundBlocked = false; fbTapAt = fbUnmutedAt = Date.now(); fbPauseCount = 0;
   const go = () => { try { fbPlayer?.unmute(); fbPlayer?.setVolume?.(1); fbPlayer?.play(); } catch { /* sin reproductor */ } };
   [100, 500, 1200].forEach((ms) => setTimeout(go, ms));
-  setTimeout(() => { if (!fbTapWanted) $("fb").classList.remove("manual"); }, 1500);   // el público vuelve a no poder pausar
 }
 // Si el navegador bloquea el sonido y pausa el video, se silencia ESE video, se pone a correr y el botón vuelve a aparecer.
 // Los videos siguientes arrancan en silencio (corren siempre) hasta que el espectador toque «Activar sonido».
@@ -473,7 +473,7 @@ async function log(item, key) {
 /* ---------- Diagnóstico: abre el reproductor con ?debug=1 y verás un cuadro con el estado del sonido ---------- */
 if (params.has("debug")) {
   const d = document.createElement("div");
-  d.style.cssText = "position:absolute;left:12px;top:12px;z-index:20;padding:8px 14px;background:rgba(0,0,0,.85);color:#0f0;font:24px monospace;pointer-events:none;white-space:pre";
+  d.style.cssText = "position:absolute;left:12px;top:12px;z-index:20;padding:8px 14px;background:rgba(0,0,0,.85);color:#0f0;pointer-events:none;white-space:pre;font-family:monospace;font-size:calc(15px / var(--s, 1))";
   $("stage").appendChild(d);
   setInterval(() => {
     let m = "-", v = "-";
