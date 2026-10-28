@@ -424,6 +424,20 @@ $("sound").addEventListener("click", () => {
 setTimeout(() => { if (!unmuted && !fbTapWanted && channel && !embed) $("sound").classList.remove("hidden"); }, 1500);
 
 /* ---------- Control de sincronía (cada segundo) ---------- */
+// El Studio manda con su VIDEO. Si la pestaña queda en segundo plano el navegador frena/pausa el video y la barra
+// se atrasaba junto con él (retraso grande). Ahora, mientras está oculta no se toca el reloj, y al volver se
+// reposiciona el video en la hora real del canal.
+let studioGraceUntil = 0;
+function resumeStudio() {
+  studioGraceUntil = Date.now() + 4000;
+  const loc = nowLoc(); if (!loc || !current) return;
+  if (keyOf(loc) !== current.key) return;   // cambió de tramo: tick() lo resuelve
+  try {
+    if (loc.item.src === "file" && active) { active.el.currentTime = Math.min(loc.filePos, Math.max(0, (active.el.duration || loc.filePos) - 0.3)); active.el.play().catch(() => {}); }
+    else if (loc.item.src === "youtube" && ytPlayer?.seekTo) { ytPlayer.seekTo(loc.filePos, true); ytPlayer.playVideo?.(); }
+    else if (loc.item.src === "facebook" && fbPlayer) { fbPlayer.seek(loc.filePos); fbPlayer.play(); }
+  } catch { /* el reproductor aún no está listo */ }
+}
 function watch() {
   if (liveCfg) return;
   if (!channel?.items?.length || channel.live === false || !current) return;
@@ -431,6 +445,10 @@ function watch() {
   if (keyOf(loc) !== current.key) { tick(false); return; }
   exposeOnAir(loc);
   maybePreload(loc);
+  if (studio && (document.hidden || Date.now() < studioGraceUntil)) {   // pestaña en segundo plano o recién vuelta: el video no manda, solo se mantiene en marcha
+    try { if (loc.item.src === "file" && active?.el.paused) active.el.play().catch(() => {}); else if (loc.item.src === "youtube" && ytPlayer?.getPlayerState?.() === 2) ytPlayer.playVideo?.(); } catch { /* sin reproductor */ }
+    return;
+  }
   if (studio) {   // en el Studio manda el VIDEO: la barra lo sigue (si lo retrocedes, lo pausas o se atrasa) y a él nunca se le obliga a saltar
     const m = mediaState(loc);
     if (m) {
@@ -472,7 +490,7 @@ function watch() {
   }
 }
 setInterval(watch, 1000);
-document.addEventListener("visibilitychange", () => { if (!document.hidden) { tick(false); watch(); } });
+document.addEventListener("visibilitychange", () => { if (!document.hidden) { if (studio) resumeStudio(); tick(false); watch(); } });
 
 async function log(item, key) {
   if (embed || key === lastLogged || (item.type === "programa" && item.part > 1)) return; lastLogged = key;
