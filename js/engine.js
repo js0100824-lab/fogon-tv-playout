@@ -80,7 +80,9 @@ export function activeAds(library, plan) {
 }
 
 function toItem(i, type, extra = {}) {
-  return { id: i.id, type, title: i.title, duration: i.duration, startAt: 0, ...toSource(i.url), ...extra };
+  // Un comercial puede tener «duración al aire» (playFor): solo se emite ese tiempo y luego sigue la programación.
+  const dur = type === "comercial" && i.playFor > 0 ? Math.min(i.playFor, i.duration) : i.duration;
+  return { id: i.id, type, title: i.title, duration: dur, startAt: 0, ...toSource(i.url), ...extra };
 }
 
 // Construye el ciclo de emisión como lista de tramos. Un programa largo se parte en varios

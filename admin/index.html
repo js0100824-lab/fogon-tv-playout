@@ -8,7 +8,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&display=swap">
-<link rel="stylesheet" href="../css/app.css?v=26">
+<link rel="stylesheet" href="../css/app.css?v=27">
 </head>
 <body>
 
@@ -77,7 +77,10 @@
             <input id="lib-title" placeholder="Título" required maxlength="120">
             <input id="lib-url" type="text" placeholder="Nombre (video1.mp4) o enlace de YouTube / Facebook" required>
             <select id="lib-kind"><option value="programa">Es un programa</option><option value="comercial">Es un comercial</option></select>
-            <input id="lib-dur" placeholder="Duración (obligatoria en Facebook; ej. 25:10)">
+            <label class="mini-l">Duración del video (obligatoria en Facebook)</label>
+            <div class="row2"><input id="lib-dur-m" type="number" min="0" placeholder="Minutos"><input id="lib-dur-s" type="number" min="0" max="59" placeholder="Segundos"></div>
+            <label class="mini-l">Solo comerciales: cuánto dura al aire (opcional)</label>
+            <div class="row2"><input id="lib-play-m" type="number" min="0" placeholder="Minutos"><input id="lib-play-s" type="number" min="0" max="59" placeholder="Segundos"></div>
             <button class="btn small" type="submit">Guardar enlace</button>
           </form>
         </details>
@@ -187,6 +190,6 @@
   </div>
 </div>
 
-<script type="module" src="../js/admin.js?v=26"></script>
+<script type="module" src="../js/admin.js?v=27"></script>
 </body>
 </html>

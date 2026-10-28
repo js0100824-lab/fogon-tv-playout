@@ -169,3 +169,8 @@ table.live tr.cur td{background:#a62f2a;color:#fff;font-weight:600}
 .col-b{padding:.6rem}
 .studio .item .btn.small{padding:.2rem .45rem;font-size:.75rem}
 .studio .item .grow{font-size:.85rem}
+
+/* v27 */
+.mini-l{display:block;font-size:.8rem;color:var(--muted);margin:.4rem 0 .15rem}
+.item .playfor{align-items:center;font-size:.8rem;color:var(--muted);margin-top:.25rem}
+.item .playfor input{flex:0 0 56px;width:56px !important;padding:.2rem .3rem}

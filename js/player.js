@@ -1,6 +1,6 @@
 import { db, isConfigured } from "./firebase.js";
 import { doc, getDoc, onSnapshot, addDoc, collection, serverTimestamp } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore.js";
-import { locate, expandChannel, cycleLength, itemLabel } from "./engine.js?v=26";
+import { locate, expandChannel, cycleLength, itemLabel } from "./engine.js?v=27";
 import { serverNow, startClock } from "./clock.js";
 
 const $ = (id) => document.getElementById(id);
@@ -8,7 +8,9 @@ const sid = (crypto.randomUUID?.() || String(Math.random()).slice(2)).replace(/-
 const params = new URLSearchParams(location.search);
 const embed = params.has("embed");
 const studio = params.has("studio");   // vista previa del panel: es la señal maestra y no se corta con «Cortar emisión»
+const obs = params.has("obs");   // en OBS el audio se permite solo: sin botón de sonido
 if (embed) document.body.classList.add("embed");
+if (obs) document.body.classList.add("obs");
 if (studio) document.body.classList.add("studio");   // solo el Studio puede tocar el video; el público no
 
 // Dos reproductores de archivo: mientras uno emite, el otro deja listo lo siguiente.
@@ -17,7 +19,7 @@ let channel = null, sig = "", current = null, active = null, timer = null;
 let liveCfg = null, liveKey = "";
 let fbPauseCount = 0, fbUnmutedAt = 0;
 let fbPlayer = null, fbPaused = false, fbEnded = false, fbSyncAt = Infinity, ytPlayed = false, restored = false;
-let ytPlayer = null, ytReady = null, unmuted = false, lastLogged = "", lowerT = null;
+let ytPlayer = null, ytReady = null, unmuted = obs, lastLogged = "", lowerT = null;
 const clockReady = startClock();
 
 $("fs").addEventListener("click", () => (document.fullscreenElement ? document.exitFullscreen() : document.documentElement.requestFullscreen()));

@@ -7,7 +7,7 @@ import {
   doc, getDoc, setDoc, addDoc, deleteDoc, updateDoc, getDocs, collection, query, orderBy, limit, serverTimestamp
 } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore.js";
 import { ref as sRef, uploadBytesResumable, getDownloadURL, deleteObject } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-storage.js";
-import { parseDuration, fmtDuration, youtubeId, facebookUrl, parseLiveLink, buildCycle, cycleLength, locate, planWithDefaults, compactChannel, expandChannel, describeCuts, itemLabel, intervalSeconds } from "./engine.js?v=26";
+import { parseDuration, fmtDuration, youtubeId, facebookUrl, parseLiveLink, buildCycle, cycleLength, locate, planWithDefaults, compactChannel, expandChannel, describeCuts, itemLabel, intervalSeconds } from "./engine.js?v=27";
 import { serverNow, startClock } from "./clock.js";
 
 const $ = (id) => document.getElementById(id);
@@ -228,16 +228,18 @@ async function addItem(e) {
   if (/^(?:[\w-]+\.)?(?:facebook\.com|fb\.watch)\//i.test(url)) url = `https://${url}`;
   if (!/^https?:\/\//i.test(url)) url = new URL(`../media/${encodeURIComponent(url.replace(/^\/?(media\/)?/, ""))}`, location.href).href;
   const yt = youtubeId(url), fb = !!facebookUrl(url);
-  let duration = parseDuration($("lib-dur").value);
-  if (fb && !(duration > 0)) { toast("Facebook no permite detectar la duración. Escríbela a mano en el campo Duración, por ejemplo 25:10.", "error"); return; }
+  const ms = (a, b) => Math.max(0, Math.floor(Number($(a).value) || 0)) * 60 + Math.max(0, Math.floor(Number($(b).value) || 0));
+  let duration = ms("lib-dur-m", "lib-dur-s"), playFor = ms("lib-play-m", "lib-play-s");
+  if (fb && !(duration > 0)) { toast("Facebook no permite detectar la duración. Escribe los minutos y segundos del video en los campos de Duración.", "error"); return; }
   if (!(duration > 0)) { toast("Detectando la duración…", "ok"); duration = yt ? await ytDuration(yt) : await detectDuration(url); }
   if (!(duration > 0)) {
-    toast(yt ? "No pude detectar la duración de ese video de YouTube (puede tener la inserción bloqueada). Escríbela a mano, por ejemplo 3:25."
+    toast(yt ? "No pude detectar la duración de ese video de YouTube (puede tener la inserción bloqueada). Escribe los minutos y segundos del video en los campos de Duración."
       : "No se pudo abrir ese video. Revisa: 1) que el archivo ya esté en la carpeta media de GitHub y el flujo de Actions esté en verde; 2) que el nombre esté bien escrito; 3) que sea .mp4 H.264. Si todo está bien, escribe la duración a mano.", "error");
     return;
   }
   try {
-    await saveItem({ title: $("lib-title").value.trim(), kind: $("lib-kind").value, url, duration });
+    const kind = $("lib-kind").value, extra = kind === "comercial" && playFor > 0 ? { playFor: Math.min(playFor, duration) } : {};
+    await saveItem({ title: $("lib-title").value.trim(), kind, url, duration, ...extra });
     $("lib-form").reset(); toast("Contenido guardado.", "ok");
   } catch (err) { fail(err); }
 }
@@ -295,7 +297,7 @@ function renderLibrary() {
   const el = $("lib-list");
   if (!state.lib.length) { el.innerHTML = '<p class="hint">Aún no hay contenidos.</p>'; return; }
   el.innerHTML = state.lib.map((i) => `<div class="item"><div class="grow"><b>${esc(i.title)}</b><small>${esc(i.url)}</small></div>
-    <span class="tag">${esc(i.kind)}</span><span>${fmtDuration(i.duration)}</span>
+    <span class="tag">${esc(i.kind)}</span><span>${fmtDuration(i.duration)}${i.kind === "comercial" && i.playFor > 0 ? ` · al aire ${fmtDuration(Math.min(i.playFor, i.duration))}` : ""}</span>
     ${i.kind === "programa" ? `<button class="btn secondary small" data-add="${esc(i.id)}" type="button" title="Añadir a la parrilla">+</button>` : ""}
     <button class="btn del small" data-del="${esc(i.id)}" type="button" title="Eliminar de la biblioteca">🗑 Eliminar</button></div>`).join("");
   el.querySelectorAll("[data-add]").forEach((b) => b.addEventListener("click", () => {
@@ -355,11 +357,18 @@ function renderAds() {
   $("plan-count").value = p.breakCount; $("plan-repeat").value = p.breakRepeat; $("plan-end").checked = !!p.breakAtEnd; $("plan-every").value = p.everyN;
   const ads = allAdsOrdered();
   $("ads-list").innerHTML = ads.length ? ads.map((i, n) => `<div class="item"><input type="checkbox" data-ad="${esc(i.id)}" ${i.active !== false ? "checked" : ""} aria-label="Activo">
-    <span class="grow"><b>${n + 1}. ${esc(i.title)}</b></span><span>${fmtDuration(i.duration)}</span>
+    <span class="grow"><b>${n + 1}. ${esc(i.title)}</b>
+      <div class="row2 playfor">Al aire: <input type="number" min="0" data-pm="${esc(i.id)}" value="${i.playFor > 0 ? Math.floor(Math.min(i.playFor, i.duration) / 60) : ""}" placeholder="min" aria-label="Minutos al aire"><input type="number" min="0" max="59" data-ps="${esc(i.id)}" value="${i.playFor > 0 ? Math.min(i.playFor, i.duration) % 60 : ""}" placeholder="seg" aria-label="Segundos al aire"></div></span><span title="Duración total del video">${fmtDuration(i.duration)}</span>
     <button class="btn secondary small" data-admv="${n}:-1" type="button" aria-label="Subir">↑</button><button class="btn secondary small" data-admv="${n}:1" type="button" aria-label="Bajar">↓</button></div>`).join("") : '<p class="hint">Agrega comerciales en la Biblioteca.</p>';
   $("ads-list").querySelectorAll("[data-ad]").forEach((c) => c.addEventListener("change", async () => {
     const it = state.lib.find((x) => x.id === c.dataset.ad); it.active = c.checked;
     try { await updateDoc(doc(db, "library", it.id), { active: c.checked }); renderCycle(); previewPlan(); } catch (err) { fail(err); }
+  }));
+  $("ads-list").querySelectorAll("[data-pm],[data-ps]").forEach((inp) => inp.addEventListener("change", async () => {
+    const id = inp.dataset.pm || inp.dataset.ps, it = state.lib.find((x) => x.id === id); if (!it) return;
+    const m = Math.max(0, Math.floor(Number($(`#ads-list [data-pm="${id}"]`).value) || 0)), sc = Math.max(0, Math.floor(Number($(`#ads-list [data-ps="${id}"]`).value) || 0));
+    let playFor = m * 60 + sc; if (playFor > it.duration) { playFor = it.duration; toast(`El comercial dura ${fmtDuration(it.duration)}; no puede pasar de eso.`, "error"); }
+    try { await updateDoc(doc(db, "library", it.id), { playFor }); it.playFor = playFor; renderAds(); renderCycle(); toast(playFor > 0 ? `“${it.title}” durará ${fmtDuration(playFor)} al aire. Pulsa «Publicar cambios» para aplicarlo.` : "Se emitirá completo. Pulsa «Publicar cambios» para aplicarlo.", "ok"); } catch (err) { fail(err); }
   }));
   $("ads-list").querySelectorAll("[data-admv]").forEach((b) => b.addEventListener("click", () => {
     const [n, d] = b.dataset.admv.split(":").map(Number), ids = ads.map((x) => x.id), m = n + d;

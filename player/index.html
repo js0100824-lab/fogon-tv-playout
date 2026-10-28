@@ -17,8 +17,9 @@ body:not(.studio) #fb:not(.manual){pointer-events:none}
 #logo{position:absolute;top:3%;right:3%;width:14%;height:auto;opacity:.9;z-index:5;pointer-events:none}
 #ticker{position:absolute;left:0;right:0;bottom:0;padding:14px 32px;background:var(--accent);font-weight:600;font-size:30px;z-index:5}
 #name{position:absolute;top:3%;left:3%;padding:6px 16px;background:var(--accent);font-weight:700;font-size:30px;border-radius:4px;z-index:5}
-#sound{position:absolute;inset:0;display:grid;place-items:center;background:rgba(0,0,0,.55);border:0;color:#fff;font-size:40px;cursor:pointer;z-index:9}
-#sound span{padding:24px 40px;background:var(--accent);border-radius:8px}
+#sound{position:absolute;right:28px;bottom:96px;border:0;border-radius:999px;padding:12px 24px;background:rgba(0,0,0,.65);color:#fff;font-size:26px;cursor:pointer;z-index:9}
+#sound span{padding:0;background:none;border-radius:0}
+body.obs #sound{display:none !important}
 #lower{position:absolute;left:3%;bottom:12%;max-width:70%;padding:16px 28px;background:rgba(0,0,0,.72);border-left:6px solid var(--accent);border-radius:4px;opacity:0;transform:translateY(12px);transition:.5s;z-index:5}
 #lower.show{opacity:1;transform:none}
 #lower small{display:block;color:var(--accent);font-weight:700;letter-spacing:.08em;font-size:20px}
@@ -42,12 +43,12 @@ body.embed #fs,body.embed #sound{display:none !important}
   <div id="ticker" class="hidden"></div>
   <div id="lower"><small></small><b></b></div>
   <div id="msg">Conectando…</div>
-  <button id="sound" class="hidden" type="button"><span>▶ Toca para ver con sonido</span></button>
+  <button id="sound" class="hidden" type="button"><span>🔇 Activar sonido</span></button>
 </div>
   <button id="fs" type="button">⛶ Pantalla completa</button>
 <script>
 (function(){var r=document.documentElement;function f(){r.style.setProperty("--s",Math.min(innerWidth/1920,innerHeight/1080));}f();addEventListener("resize",f);})();
 </script>
-<script type="module" src="../js/player.js?v=26"></script>
+<script type="module" src="../js/player.js?v=27"></script>
 </body>
 </html>

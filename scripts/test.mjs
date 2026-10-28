@@ -13,6 +13,13 @@ t("enlaces de Facebook y directos", () => {
   assert.equal(parseLiveLink("https://youtu.be/dQw4w9WgXcQ").kind, "youtube"); assert.equal(parseLiveLink("https://www.facebook.com/x/videos/1").kind, "facebook"); assert.equal(parseLiveLink("https://x.com"), null);
 });
 
+t("comercial con duración al aire: solo dura ese tiempo", () => {
+  const lib = [{ id: "p", title: "P", kind: "programa", url: "p.mp4", duration: 60 }, { id: "a", title: "A", kind: "comercial", url: "a.mp4", duration: 30, playFor: 10 }, { id: "b", title: "B", kind: "comercial", url: "b.mp4", duration: 20 }];
+  const c = buildCycle(lib, { order: ["p"], mode: "programs", everyN: 1, breakCount: 2, breakRepeat: 1, breakAtEnd: true });
+  const ads = c.filter((x) => x.type === "comercial");
+  assert.equal(ads.find((x) => x.id === "a").duration, 10); assert.equal(ads.find((x) => x.id === "b").duration, 20);
+});
+
 t("duraciones y enlaces", () => {
   assert.equal(parseDuration("1:30"), 90); assert.equal(parseDuration("1:00:05"), 3605); assert.equal(parseDuration("45"), 45);
   assert.ok(Number.isNaN(parseDuration("abc")));
