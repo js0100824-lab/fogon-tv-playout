@@ -29,6 +29,7 @@ body.obs #sound{display:none !important}
 #lower b{font-size:46px}
 #fs{position:fixed;right:1rem;bottom:1rem;border:0;border-radius:6px;padding:.5rem .8rem;background:rgba(0,0,0,.6);color:#fff;cursor:pointer;opacity:0;transition:.3s;z-index:7}
 body:hover #fs{opacity:1}
+body.isfs #fs{display:none !important}
 body.embed #fs,body.embed #sound{display:none !important}
 #msg{position:absolute;inset:0;display:grid;place-items:center;text-align:center;padding:32px;font-size:36px;z-index:8;pointer-events:none}
 .hidden{display:none !important}
@@ -53,6 +54,6 @@ body.embed #fs,body.embed #sound{display:none !important}
 <script>
 (function(){var r=document.documentElement;function f(){r.style.setProperty("--s",Math.min(innerWidth/1920,innerHeight/1080));}f();addEventListener("resize",f);})();
 </script>
-<script type="module" src="../js/player.js?v=40"></script>
+<script type="module" src="../js/player.js?v=41"></script>
 </body>
 </html>

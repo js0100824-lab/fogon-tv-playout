@@ -22,7 +22,13 @@ let fbPlayer = null, fbPaused = false, fbEnded = false, fbSyncAt = Infinity, ytP
 let ytPlayer = null, ytReady = null, unmuted = obs, lastLogged = "", lowerT = null;
 const clockReady = startClock();
 
-$("fs").addEventListener("click", () => (document.fullscreenElement ? document.exitFullscreen() : document.documentElement.requestFullscreen()));
+$("fs").addEventListener("click", () => { if (document.fullscreenElement) document.exitFullscreen(); else document.documentElement.requestFullscreen?.().catch(() => {}); });
+// En pantalla completa (botón o F11) el botón desaparece; se sale con Esc / F11.
+function syncFs() {
+  const full = !!(document.fullscreenElement || document.webkitFullscreenElement) || (innerWidth >= screen.width - 2 && innerHeight >= screen.height - 2);
+  document.body.classList.toggle("isfs", full);
+}
+document.addEventListener("fullscreenchange", syncFs); document.addEventListener("webkitfullscreenchange", syncFs); addEventListener("resize", syncFs); syncFs();
 function say(t) { if (liveCfg) t = ""; $("msg").textContent = t; $("msg").classList.toggle("hidden", !t); }
 let onair = null;
 // En el Studio (vista previa) manda el VIDEO: `shift` mueve la hora de la barra para que siga al video y nunca se le obliga a saltar.
@@ -183,12 +189,12 @@ function prime(slot, item, key) {
 /* ---------- Transiciones suaves ---------- */
 const FADE_MS = 700;
 function rampVolume(el, to, ms) {
-  clearInterval(el._vr);
+  clearInterval(el._vr); el._ramping = true;
   const from = Number.isFinite(el.volume) ? el.volume : 1, t0 = Date.now();
   el._vr = setInterval(() => {
     const k = Math.min(1, (Date.now() - t0) / ms);
     try { el.volume = Math.max(0, Math.min(1, from + (to - from) * k)); } catch { /* sin control de volumen */ }
-    if (k >= 1) clearInterval(el._vr);
+    if (k >= 1) { clearInterval(el._vr); el._ramping = false; }
   }, 40);
 }
 function fadeIn(el) { el.style.transition = `opacity ${FADE_MS}ms ease`; el.style.opacity = "1"; try { el.volume = 0; } catch { /* iOS */ } rampVolume(el, 1, FADE_MS); }
@@ -212,6 +218,7 @@ function playFile(loc, key) {
   active = slot;
   const v = slot.el;
   v.classList.remove("hidden"); v.style.zIndex = 2;
+  v.muted = !unmuted || soundBlocked;   // el video precargado nace silenciado (atributo muted): se corrige YA, no solo cuando carga
   const fresh = previous !== slot;
   if (fresh) { v.style.transition = "none"; v.style.opacity = "0"; void v.offsetWidth; }   // entra desde transparente y se funde sobre el anterior
   const go = () => {
@@ -435,7 +442,14 @@ function guardPaused(loc) {
   if (!unmuted || obs || soundBlocked) { pausedSince = 0; return; }
   const it = loc.item; let paused = false;
   try {
-    if (it.src === "file" && active) paused = active.el.paused && !active.el.ended && active.el.readyState >= 1;
+    if (it.src === "file" && active) {
+      paused = active.el.paused && !active.el.ended && active.el.readyState >= 1;
+      if (paused && pausedSince && Date.now() - pausedSince >= 2000) {   // primero se intenta reanudar CON sonido; solo si el navegador lo rechaza se silencia
+        pausedSince = Date.now();
+        active.el.play().then(() => { pausedSince = 0; }).catch((e) => { if (e?.name === "NotAllowedError") blockSound(); });
+        return;
+      }
+    }
     else if (it.src === "facebook") paused = !!fbPlayer && fbPaused;
     else if (it.src === "youtube" && ytPlayer?.getPlayerState) paused = ytPlayer.getPlayerState() === 2;
   } catch { /* aún no listo */ }
@@ -499,6 +513,10 @@ function watch() {
   guardPaused(loc);
   if (loc.item.src === "file" && active) {
     const v = active.el;
+    if (unmuted && !soundBlocked) {   // red de seguridad: tras una transición el sonido siempre vuelve
+      if (v.muted) v.muted = false;
+      if (!v._ramping && v.volume < 1) { try { v.volume = 1; } catch { /* iOS */ } }
+    }
     if (v.readyState < 3 && !v.ended) return;                          // cargando: se espera
     const drift = v.currentTime - loc.filePos;                         // + adelantado, − atrasado
     if (Math.abs(drift) > 2 || v.ended) {
