@@ -268,3 +268,35 @@ export function settleChannel(ch, now) {
   ch.items = next; ch.epoch = ch.nextAt; delete ch.nextSeq; delete ch.nextAt;
   return true;
 }
+
+
+/* ---------------- Programa al aire y el que sigue (para mostrar en la página) ----------------
+   Devuelve { now, next, ad }: cada programa con título, hora de inicio/fin (ms, hora del servidor) y duración (s).
+   Los anuncios no cuentan como programa: durante un corte sigue figurando el programa al que pertenece. */
+const startsProgram = (i) => i.type === "programa" && (!i.part || i.part === 1);
+export function nowNext(items, epochMs, nowMs, nextItems) {
+  const loc = locate(items, epochMs, nowMs); if (!loc) return null;
+  const cumOf = (list) => { const c = []; let a = 0; for (const i of list) { c.push(a); a += i.duration; } return { c, total: a }; };
+  const { c: cum, total } = cumOf(items);
+  const t0 = nowMs - (cum[loc.index] + loc.offset) * 1000;
+  const prog = (list, k, base, c) => {
+    const it = list[k]; let last = k;
+    if (it.parts > 1) for (let j = k + 1; j < list.length; j++) {
+      const x = list[j];
+      if (x.type === "programa" && x.id === it.id && x.part > 1) { last = j; if (x.part >= it.parts) break; }
+      else if (x.type === "programa") break;
+    }
+    const dur = it.parts > 1 ? (list[last].startAt || 0) + list[last].duration - (it.startAt || 0) : it.duration;
+    return { title: it.title, start: Math.round(base + c[k] * 1000), end: Math.round(base + (c[last] + list[last].duration) * 1000), duration: Math.round(dur), last };
+  };
+  let s = -1; for (let k = loc.index; k >= 0; k--) if (startsProgram(items[k])) { s = k; break; }
+  const now = s >= 0 ? prog(items, s, t0, cum) : null;
+  let next = null;
+  for (let k = (now ? now.last : loc.index) + 1; k < items.length && !next; k++) if (startsProgram(items[k])) next = prog(items, k, t0, cum);
+  if (!next) {
+    const list = nextItems?.length ? nextItems : items, { c } = cumOf(list), base = t0 + total * 1000;
+    const k = list.findIndex(startsProgram); if (k >= 0) next = prog(list, k, base, c);
+  }
+  const strip = (x) => x && { title: x.title, start: x.start, end: x.end, duration: x.duration };
+  return { now: strip(now), next: strip(next), ad: items[loc.index].type === "comercial" };
+}

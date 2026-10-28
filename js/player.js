@@ -1,6 +1,6 @@
 import { db, isConfigured } from "./firebase.js";
 import { doc, getDoc, onSnapshot, addDoc, collection, serverTimestamp } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore.js";
-import { locate, expandChannel, cycleLength, itemLabel, settleChannel } from "./engine.js?v=29";
+import { locate, expandChannel, cycleLength, itemLabel, settleChannel, nowNext } from "./engine.js?v=30";
 import { serverNow, startClock } from "./clock.js";
 
 const $ = (id) => document.getElementById(id);
@@ -177,6 +177,7 @@ function tick(force) {
   say("");
   if (force || !current || current.key !== key) begin(loc, key);
   timer = setTimeout(() => tick(false), Math.max(80, loc.remaining * 1000 + 25));
+  postInfo();
 }
 
 function begin(loc, key) {
@@ -572,3 +573,22 @@ if (params.has("debug")) {
     d.textContent = `fuente:${it?.src || "-"}  FB silenciado:${m}  volumen:${v}\nFB pausado:${fbPaused}  sonido pedido:${unmuted}  bloqueado:${soundBlocked}\nsin permiso autoplay:${noAutoplay}  dentro de iframe:${inFrame}`;
   }, 500);
 }
+
+
+/* ---------- Programa al aire / a continuación → página que incrusta el reproductor ---------- */
+function postInfo() {
+  if (studio || window.parent === window) return;
+  let msg = { type: "fogon-onair" };
+  if (liveCfg) msg.live = true;
+  else if (!channel?.items?.length || channel.live === false) msg.off = true;
+  else {
+    const now = serverNow();
+    settleChannel(channel, now - shift);
+    const pend = channel.nextSeq ? expandChannel({ media: channel.media, seq: channel.nextSeq }) : null;
+    const r = nowNext(channel.items, channel.epoch + shift, now, pend);
+    if (!r) msg.off = true; else { msg.now = r.now; msg.next = r.next; msg.ad = r.ad; msg.at = Math.round(now); }
+  }
+  try { window.parent.postMessage(msg, "*"); } catch { /* sin página padre */ }
+}
+setInterval(postInfo, 4000);
+addEventListener("message", (e) => { if (e.data?.type === "fogon-onair-request") postInfo(); });
