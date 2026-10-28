@@ -17,7 +17,7 @@ if (studio) document.body.classList.add("studio");   // solo el Studio puede toc
 const slots = [{ el: $("fileA"), key: "", url: "" }, { el: $("fileB"), key: "", url: "" }];
 let channel = null, sig = "", current = null, active = null, timer = null;
 let liveCfg = null, liveKey = "";
-let fbPauseCount = 0, fbUnmutedAt = 0;
+let fbPauseCount = 0, fbUnmutedAt = 0, fbSoundBlocked = false;   // fbSoundBlocked: el navegador no dejó activar el sonido de Facebook sin un toque del usuario
 let fbPlayer = null, fbPaused = false, fbEnded = false, fbSyncAt = Infinity, ytPlayed = false, restored = false;
 let ytPlayer = null, ytReady = null, unmuted = obs, lastLogged = "", lowerT = null;
 const clockReady = startClock();
@@ -167,7 +167,7 @@ function begin(loc, key) {
   lowerThird(loc.item);
   log(loc.item, key);
   if (loc.item.src === "file") playFile(loc, key); else if (loc.item.src === "facebook") playFB(loc); else playYT(loc);
-  setTimeout(() => { if (!unmuted && current) needTap(); }, 1200);   // el botón «toca para ver» siempre aparece si aún no hay sonido
+  setTimeout(() => { if ((!unmuted || fbSoundBlocked) && current) needTap(); }, 1200);   // el botón «toca para ver» siempre aparece si aún no hay sonido
 }
 
 /* ---------- Archivos de video ---------- */
@@ -228,8 +228,14 @@ function loadFB() {
           if (m.type !== "video" || !m.instance) return;
           fbPlayer = m.instance;
           try {
-            if (!unmuted) fbPlayer.mute(); else fbPlayer.unmute();
+            fbPlayer.mute();   // siempre arranca en silencio: el navegador lo permite y nunca se congela
             fbPlayer.play();
+            let tried = false;
+            fbPlayer.subscribe("startedPlaying", () => {   // ya está corriendo: ahora se intenta el sonido (si el navegador lo bloquea, se vuelve a silenciar y sigue)
+              if (tried || !unmuted || fbSoundBlocked) return; tried = true;
+              fbUnmutedAt = Date.now(); fbPauseCount = 0;
+              setTimeout(() => { try { fbPlayer?.unmute(); } catch { /* sin reproductor */ } }, 400);
+            });
             fbPlayer.subscribe("finishedPlaying", () => { fbEnded = true; });
             fbPlayer.subscribe("startedPlaying", () => { fbPaused = false; fbEnded = false; $("fb").classList.remove("manual"); if (fbWant >= 3) { try { fbPlayer.seek(fbWant); } catch { /* sin salto */ } fbWant = 0; } fbSyncAt = Date.now() + 3000; });
             fbPlayer.subscribe("continuedPlaying", () => { fbPaused = false; });
@@ -248,12 +254,21 @@ function loadFB() {
 // En la página pública nadie puede pausar: si Facebook se pausa (p. ej. al activar el sonido), se le da play otra vez.
 // Si el navegador no deja reproducir con sonido, se vuelve a silenciar para que el video no se quede parado.
 function onFbPaused() {
-  if (Date.now() - fbUnmutedAt < 5000 && ++fbPauseCount >= 3) {
+  if (Date.now() - fbUnmutedAt < 6000 && ++fbPauseCount >= 2) {
+    fbSoundBlocked = true;
     try { fbPlayer.mute(); } catch { /* sin reproductor */ }
-    say("Tu navegador no permite el sonido de este video; se muestra sin sonido."); setTimeout(() => say(""), 6000);
+    needTap();   // vuelve a aparecer «Activar sonido»: un toque lo activa sin congelar el video
   }
   setTimeout(() => { try { fbPlayer?.play(); } catch { /* sin reproductor */ } }, 250);
 }
+// Facebook crea su propio iframe: se le da permiso de autoplay/sonido para que no se pause al activar el sonido.
+new MutationObserver((ms) => {
+  for (const m of ms) for (const n of m.addedNodes) {
+    if (n.nodeType !== 1) continue;
+    const list = n.tagName === "IFRAME" ? [n] : [...n.querySelectorAll("iframe")];
+    list.forEach((i) => { try { i.setAttribute("allow", "autoplay; encrypted-media; fullscreen; picture-in-picture"); } catch { /* sin permiso */ } });
+  }
+}).observe($("fb"), { childList: true, subtree: true });
 function showFB(href, startSec, isLive) {
   const f = $("fb"), token = ++fbToken;
   f.innerHTML = ""; fbPlayer = null; fbSyncAt = Infinity; fbPaused = false; fbEnded = false; fbPauseCount = 0; fbWant = isLive ? 0 : startSec;
@@ -329,14 +344,14 @@ function loadYT() {
 }
 
 /* ---------- Sonido ---------- */
-function needTap() { if (!unmuted && !embed) $("sound").classList.remove("hidden"); }
+function needTap() { if ((!unmuted || fbSoundBlocked) && !embed && !obs) $("sound").classList.remove("hidden"); }
 $("sound").addEventListener("click", () => {
   unmuted = true; $("sound").classList.add("hidden");
   for (const x of slots) x.el.muted = false;
   active?.el.play().catch(() => {});
   ytPlayer?.unMute?.(); ytPlayer?.playVideo?.();
   try {
-    fbUnmutedAt = Date.now(); fbPauseCount = 0; fbPlayer?.unmute(); fbPlayer?.play();
+    fbSoundBlocked = false; fbUnmutedAt = Date.now(); fbPauseCount = 0; fbPlayer?.unmute(); fbPlayer?.play();
     [400, 1200].forEach((ms) => setTimeout(() => { try { if (fbPlayer && !studio) fbPlayer.play(); } catch { /* sin reproductor */ } }, ms));   // por si Facebook se pausa al activar el sonido
   } catch { /* sin reproductor */ }
 });
