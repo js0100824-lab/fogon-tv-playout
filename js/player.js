@@ -1,6 +1,6 @@
 import { db, isConfigured } from "./firebase.js";
 import { doc, getDoc, onSnapshot, addDoc, collection, serverTimestamp } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore.js";
-import { locate, expandChannel, cycleLength, itemLabel } from "./engine.js?v=28";
+import { locate, expandChannel, cycleLength, itemLabel, settleChannel } from "./engine.js?v=29";
 import { serverNow, startClock } from "./clock.js";
 
 const $ = (id) => document.getElementById(id);
@@ -35,7 +35,9 @@ let onair = null;
 let shift = 0;
 const clockLoc = () => {
   if (!channel?.items?.length) return null;
-  const now = serverNow(), loc = locate(channel.items, channel.epoch + shift, now);
+  const now = serverNow();
+  settleChannel(channel, now - shift);   // relevo a la lista nueva al terminar el ciclo en curso (sin reiniciar la emisión)
+  const loc = locate(channel.items, channel.epoch + shift, now);
   if (loc) loc.loop = Math.floor((now - (channel.epoch + shift)) / 1000 / cycleLength(channel.items));   // nº de vuelta: así un ciclo de un solo video también se reinicia
   return loc;
 };
@@ -134,9 +136,9 @@ else {
     const data = s.exists() ? s.data() : null;
     const items = data ? expandChannel(data) : [];
     if (!items.length) { channel = null; sig = ""; stop(); say("Sin programación publicada por ahora."); return; }
-    const newSig = `${data.epoch}|${items.length}|${Math.round(cycleLength(items))}|${items[0].id}|${items.at(-1).id}`;
+    const newSig = `${data.epoch}|${data.nextAt || 0}|${items.length}|${Math.round(cycleLength(items))}|${items[0].id}|${items.at(-1).id}`;
     const wasLive = channel ? channel.live !== false : false;
-    channel = { epoch: data.epoch, items, live: studio ? true : data.live !== false };
+    channel = { epoch: data.epoch, items, live: studio ? true : data.live !== false, media: data.media, ...(data.nextSeq ? { nextSeq: data.nextSeq, nextAt: data.nextAt } : {}) };
     if (!channel.live) { stop(); say("Transmisión en pausa. Volvemos pronto."); return; }
     await clockReady;
     // Si solo cambió "cortar/reanudar" no se reinicia lo que ya está sonando.
@@ -245,6 +247,7 @@ function maybePreload(loc) {
   if (loc.remaining > 25) return;
   const n = channel.items.length, ni = (loc.index + 1) % n, nx = channel.items[ni];
   if (nx.src !== "file") return;
+  if (channel.nextSeq && ni === 0) return;   // al cerrar este ciclo entra la lista nueva: no se precarga la vieja
   const nkey = keyAt(ni, (loc.loop || 0) + (ni === 0 ? 1 : 0));
   if (nkey === current.key || slots.some((x) => x.key === nkey)) return;
   const idle = slots.find((x) => x !== active); if (!idle) return;

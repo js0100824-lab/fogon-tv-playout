@@ -7,7 +7,7 @@ import {
   doc, getDoc, setDoc, addDoc, deleteDoc, updateDoc, getDocs, collection, query, orderBy, limit, serverTimestamp
 } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore.js";
 import { ref as sRef, uploadBytesResumable, getDownloadURL, deleteObject } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-storage.js";
-import { parseDuration, fmtDuration, youtubeId, facebookUrl, parseLiveLink, buildCycle, cycleLength, locate, planWithDefaults, compactChannel, expandChannel, describeCuts, itemLabel, intervalSeconds } from "./engine.js?v=28";
+import { parseDuration, fmtDuration, youtubeId, facebookUrl, parseLiveLink, buildCycle, cycleLength, locate, planWithDefaults, compactChannel, expandChannel, describeCuts, itemLabel, intervalSeconds, seamlessPublish, settleChannel } from "./engine.js?v=29";
 import { serverNow, startClock } from "./clock.js";
 
 const $ = (id) => document.getElementById(id);
@@ -456,7 +456,8 @@ async function toggleLive() {
   if (!state.channel) { toast("Aún no hay emisión publicada.", "error"); return; }
   const live = state.channel.live === false;
   try {
-    const upd = live ? { live, epoch: Math.round(serverNow()) } : { live };   // al reanudar, empieza desde el principio
+    if (live) settleChannel(state.channel, Infinity);   // si había un relevo pendiente, se queda la lista nueva
+    const upd = live ? { live, epoch: Math.round(serverNow()), ...compactChannel(state.channel.items), nextSeq: null, nextAt: null } : { live };   // al reanudar, empieza desde el principio
     await updateDoc(doc(db, "public", "channel"), upd);
     state.channel.live = live; if (live) state.channel.epoch = upd.epoch; renderLive(); renderNow();
     toast(live ? "Emisión reanudada." : "Emisión cortada. El público ve el aviso de pausa.", "ok");
@@ -467,15 +468,23 @@ async function toggleLive() {
 async function publish(auto) {
   const items = buildCycle(state.lib, state.plan);
   if (!items.length && !auto && !confirm("La parrilla está vacía. ¿Publicar sin programación? El público verá “Sin programación”.")) return;
-  const epoch = Math.round(serverNow());   // al publicar, la emisión siempre arranca desde el principio del primer programa
   try {
     await savePlan();
-    const live = state.channel?.live !== false;
-    const channel = { epoch, live, ...compactChannel(items), updatedAt: serverTimestamp() };
+    const now = serverNow(), live = state.channel?.live !== false;
+    // Emisión en marcha: NO se reinicia. Lo que está al aire sigue; lo nuevo por debajo entra en este ciclo y lo nuevo por encima, en la próxima repetición.
+    let plan = null; const old = state.channel;
+    if (!auto && live && old?.items?.length && items.length) {
+      settleChannel(old, now);
+      const loc = studioLoc(old, now);
+      if (loc) plan = seamlessPublish(old.items, loc.index, loc.offset, items, now);
+    }
+    if (!plan) plan = { items, epoch: Math.round(now), next: null, nextAt: 0 };   // primera publicación, directo, pausa o borrado: empieza desde el principio
+    const cur = compactChannel(plan.items), nxt = plan.next ? compactChannel(plan.next) : null;
+    const channel = { epoch: plan.epoch, live, media: nxt ? { ...nxt.media, ...cur.media } : cur.media, seq: cur.seq, nextSeq: nxt ? nxt.seq : null, nextAt: nxt ? plan.nextAt : null, updatedAt: serverTimestamp() };
     await setDoc(doc(db, "public", "channel"), channel);
-    state.channel = { epoch, items, live };
+    state.channel = { epoch: plan.epoch, items: plan.items, live, media: channel.media, seq: channel.seq, ...(nxt ? { nextSeq: nxt.seq, nextAt: plan.nextAt } : {}) };
     renderCycle(); renderNow();
-    toast("Emisión publicada. El reproductor se actualiza solo.", "ok");
+    toast(plan.next ? "Publicado. La emisión sigue sin reiniciarse: lo que añadiste arriba entra en la próxima repetición." : "Emisión publicada. El reproductor se actualiza solo.", "ok");
   } catch (err) { fail(err); }
 }
 let tlKey = "";
@@ -499,6 +508,7 @@ function studioLoc(c, now) {
 }
 function renderNow() {
   const now = serverNow();
+  settleChannel(state.channel, now);   // si toca el relevo a la lista nueva del ciclo
   $("clock").textContent = hms(now);
   const c = state.channel;
   const paused = c?.live === false;

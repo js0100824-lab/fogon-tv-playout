@@ -224,3 +224,47 @@ export function describeCuts(library, rawPlan) {
     return { title: p.title, duration: p.duration, cuts, end: plan.mode === "time" ? !!plan.breakAtEnd : false };
   });
 }
+
+
+/* ---------------- Publicar sin reiniciar el ciclo ----------------
+   Al editar la parrilla con la emisión en marcha, lo que ya pasó o está sonando no se toca:
+   · Cambios por DEBAJO del programa actual → entran en este mismo ciclo, cuando se llegue a ellos.
+   · Cambios por ENCIMA del programa actual → esperan a la próxima repetición del ciclo.
+   Se logra con una lista de "transición" (lo viejo hasta terminar el programa actual + lo nuevo que le sigue)
+   que se emite una vez; al acabar, entra la lista nueva completa (campos nextSeq / nextAt del canal). */
+const isProgramStart = (i) => i.type === "programa" && (!i.part || i.part === 1);
+const programStarts = (items) => { const out = []; items.forEach((it, n) => { if (isProgramStart(it)) out.push(n); }); return out; };
+const nearest = (list, target) => list.reduce((best, j) => (best < 0 || Math.abs(j - target) < Math.abs(best - target) || (Math.abs(j - target) === Math.abs(best - target) && j > best) ? j : best), -1);
+const sameSeq = (a, b) => a.length === b.length && compactChannel(a).seq.join("\n") === compactChannel(b).seq.join("\n");
+
+// oldItems: lista que está al aire · index/offset: tramo y segundo exactos que suenan ahora · newItems: ciclo recién construido.
+// Devuelve { items, epoch, next, nextAt } o null si no se puede (entonces se publica desde cero).
+export function seamlessPublish(oldItems, index, offset, newItems, now) {
+  if (!oldItems?.length || !newItems?.length || !(index >= 0 && index < oldItems.length)) return null;
+  const oS = programStarts(oldItems), nS = programStarts(newItems);
+  if (!oS.length) return null;
+  let c = 0; for (let k = 0; k < oS.length; k++) if (oS[k] <= index) c = k;          // programa que está al aire (los anuncios cuentan para el programa anterior)
+  const headEnd = c + 1 < oS.length ? oS[c + 1] : oldItems.length;                   // lo viejo llega hasta que acaba el programa actual y su corte
+  const head = oldItems.slice(0, headEnd);
+  const nIds = nS.map((k) => newItems[k].id);
+  const hits = (id) => nIds.map((x, j) => (x === id ? j : -1)).filter((j) => j >= 0);
+  let tailProgram = -1;                                                              // primer programa NUEVO que se emite tras el actual
+  const same = nearest(hits(oldItems[oS[c]].id), c);
+  if (same >= 0) tailProgram = same + 1;
+  else for (let q = c + 1; q < oS.length && tailProgram < 0; q++) { const j = nearest(hits(oldItems[oS[q]].id), q); if (j >= 0) tailProgram = j; }   // el actual fue quitado: sigue con el siguiente que aún exista
+  const tail = tailProgram >= 0 && tailProgram < nS.length ? newItems.slice(nS[tailProgram]) : [];
+  const hybrid = head.concat(tail);
+  const start = oldItems.slice(0, index).reduce((a, i) => a + i.duration, 0);
+  const epoch = Math.round(now - (start + offset) * 1000);
+  if (sameSeq(hybrid, newItems)) return { items: newItems, epoch, next: null, nextAt: 0 };
+  return { items: hybrid, epoch, next: newItems, nextAt: Math.round(epoch + cycleLength(hybrid) * 1000) };
+}
+
+// Si ya pasó la hora de relevo, el canal pasa a la lista nueva (cada cliente lo hace solo, con el mismo resultado).
+export function settleChannel(ch, now) {
+  if (!ch || !ch.nextSeq || !(now >= ch.nextAt)) return false;
+  const next = expandChannel({ media: ch.media, seq: ch.nextSeq });
+  if (!next.length) return false;
+  ch.items = next; ch.epoch = ch.nextAt; delete ch.nextSeq; delete ch.nextAt;
+  return true;
+}
