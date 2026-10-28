@@ -13,6 +13,9 @@ html,body{margin:0;height:100%;background:#000;color:#fff;font-family:system-ui,
 #fb{position:absolute;inset:0;width:100%;height:100%;border:0;background:#000;overflow:hidden}
 body:not(.studio) #fb:not(.manual){pointer-events:none}
 #fb span,#fb iframe,#fb .fb-video{display:block;width:100% !important;height:100% !important;border:0}
+#dip{position:absolute;inset:0;background:#000;opacity:0;pointer-events:none;z-index:3}
+@keyframes fin{from{opacity:0}to{opacity:1}}
+#yt:not(.hidden),#fb:not(.hidden){animation:fin .6s ease}
 #ytmask{position:absolute;left:0;right:0;top:0;height:13%;background:#000;z-index:4}
 #logo{position:absolute;top:3%;right:3%;width:14%;height:auto;opacity:.9;z-index:5;pointer-events:none}
 #ticker{position:absolute;left:0;right:0;bottom:0;padding:14px 32px;background:var(--accent);font-weight:600;font-size:30px;z-index:5}
@@ -37,6 +40,7 @@ body.embed #fs,body.embed #sound{display:none !important}
   <video id="fileB" playsinline muted class="hidden"></video>
   <div id="yt" class="hidden"></div>
   <div id="fb" class="hidden"></div>
+  <div id="dip"></div>
   <div id="ytmask" class="hidden"></div>
   <div id="name" class="hidden"></div>
   <img id="logo" class="hidden" alt="">
@@ -49,6 +53,6 @@ body.embed #fs,body.embed #sound{display:none !important}
 <script>
 (function(){var r=document.documentElement;function f(){r.style.setProperty("--s",Math.min(innerWidth/1920,innerHeight/1080));}f();addEventListener("resize",f);})();
 </script>
-<script type="module" src="../js/player.js?v=39"></script>
+<script type="module" src="../js/player.js?v=40"></script>
 </body>
 </html>

@@ -1,6 +1,6 @@
 import { db, isConfigured } from "./firebase.js";
 import { doc, getDoc, onSnapshot, addDoc, collection, serverTimestamp } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore.js";
-import { locate, expandChannel, cycleLength, itemLabel } from "./engine.js?v=27";
+import { locate, expandChannel, cycleLength, itemLabel } from "./engine.js?v=28";
 import { serverNow, startClock } from "./clock.js";
 
 const $ = (id) => document.getElementById(id);
@@ -145,7 +145,7 @@ else {
 
 function stop() {
   clearTimeout(timer); current = null; active = null;
-  for (const x of slots) { x.el.pause(); x.el.removeAttribute("src"); x.el.classList.add("hidden"); x.key = ""; x.url = ""; }
+  for (const x of slots) { x.el.pause(); x.el.removeAttribute("src"); x.el.classList.add("hidden"); x.el.style.opacity = ""; x.key = ""; x.url = ""; }
   ytPlayer?.stopVideo?.(); $("yt").classList.add("hidden"); hideFB();
 }
 
@@ -180,6 +180,30 @@ function prime(slot, item, key) {
   v.onerror = () => { if (current && slot === active) say(`No se pudo cargar “${item.title}”. Continuará con el siguiente elemento.`); };
 }
 
+/* ---------- Transiciones suaves ---------- */
+const FADE_MS = 700;
+function rampVolume(el, to, ms) {
+  clearInterval(el._vr);
+  const from = Number.isFinite(el.volume) ? el.volume : 1, t0 = Date.now();
+  el._vr = setInterval(() => {
+    const k = Math.min(1, (Date.now() - t0) / ms);
+    try { el.volume = Math.max(0, Math.min(1, from + (to - from) * k)); } catch { /* sin control de volumen */ }
+    if (k >= 1) clearInterval(el._vr);
+  }, 40);
+}
+function fadeIn(el) { el.style.transition = `opacity ${FADE_MS}ms ease`; el.style.opacity = "1"; try { el.volume = 0; } catch { /* iOS */ } rampVolume(el, 1, FADE_MS); }
+function fadeOutHide(x, keepIf) {   // x: ranura; se atenúa y luego se oculta si nadie la volvió a usar
+  x.el.style.transition = `opacity ${FADE_MS}ms ease`; x.el.style.opacity = "0"; rampVolume(x.el, 0, FADE_MS);
+  setTimeout(() => { if (keepIf && keepIf(x)) return; x.el.pause(); x.el.classList.add("hidden"); x.el.style.zIndex = 1; x.el.style.opacity = ""; try { x.el.volume = 1; } catch { /* iOS */ } }, FADE_MS + 60);
+}
+// Para YouTube/Facebook (iframes): un fundido a negro breve mientras cargan.
+let dipT = null;
+function dip() {
+  const d = $("dip"); clearTimeout(dipT);
+  d.style.transition = "opacity .3s ease"; d.style.opacity = "1";
+  dipT = setTimeout(() => { d.style.transition = "opacity .9s ease"; d.style.opacity = "0"; }, 1800);
+}
+
 function playFile(loc, key) {
   hideFB(); ytPlayer?.stopVideo?.(); $("yt").classList.add("hidden"); $("ytmask").classList.add("hidden");
   let slot = slots.find((x) => x.key === key);
@@ -188,6 +212,8 @@ function playFile(loc, key) {
   active = slot;
   const v = slot.el;
   v.classList.remove("hidden"); v.style.zIndex = 2;
+  const fresh = previous !== slot;
+  if (fresh) { v.style.transition = "none"; v.style.opacity = "0"; void v.offsetWidth; }   // entra desde transparente y se funde sobre el anterior
   const go = () => {
     if (!current || current.key !== key) return;
     const l = nowLoc(); if (!l || keyOf(l) !== key) return;           // se pasó de tramo mientras cargaba
@@ -198,8 +224,13 @@ function playFile(loc, key) {
   };
   if (v.readyState >= 1) go(); else v.addEventListener("loadedmetadata", go, { once: true });
   // Se oculta el reproductor anterior cuando el nuevo ya está mostrando imagen (sin parpadeo negro).
-  const hidePrev = () => { if (previous && previous !== slot) { previous.el.pause(); previous.el.classList.add("hidden"); previous.el.style.zIndex = 1; } };
-  v.addEventListener("playing", hidePrev, { once: true }); setTimeout(hidePrev, 1500);
+  let shown = false;
+  const showNew = () => {
+    if (shown || active !== slot) return; shown = true;
+    if (fresh) fadeIn(v);
+    if (previous && previous !== slot) fadeOutHide(previous, (x) => x === active);
+  };
+  v.addEventListener("playing", showNew, { once: true }); setTimeout(showNew, 1500);
 }
 
 // En los últimos segundos del tramo deja listo el siguiente en el reproductor libre.
@@ -294,9 +325,10 @@ function showFB(href, startSec, isLive) {
     }
   });
 }
+function leaveFiles() { for (const x of slots) if (!x.el.classList.contains("hidden")) fadeOutHide(x, (y) => y === active); }
 function playFB(loc) {
   $("ytmask").classList.add("hidden");
-  for (const x of slots) { x.el.pause(); x.el.classList.add("hidden"); }
+  leaveFiles(); dip();
   active = null; ytPlayer?.stopVideo?.(); $("yt").classList.add("hidden");
   showFB(loc.item.ref, (nowLoc() || loc).filePos, false);
 }
@@ -322,7 +354,7 @@ function playYT(loc) {
   hideFB();
   // YouTube muestra su título y canal al empezar: se oculta con una banda negra los primeros segundos.
   $("ytmask").classList.remove("hidden"); clearTimeout(ytMaskT); ytMaskT = setTimeout(() => $("ytmask").classList.add("hidden"), 8000);
-  for (const x of slots) { x.el.pause(); x.el.classList.add("hidden"); }
+  leaveFiles(); dip();
   active = null;
   $("yt").classList.remove("hidden");
   loadYT().then(() => {

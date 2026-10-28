@@ -7,7 +7,7 @@ import {
   doc, getDoc, setDoc, addDoc, deleteDoc, updateDoc, getDocs, collection, query, orderBy, limit, serverTimestamp
 } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore.js";
 import { ref as sRef, uploadBytesResumable, getDownloadURL, deleteObject } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-storage.js";
-import { parseDuration, fmtDuration, youtubeId, facebookUrl, parseLiveLink, buildCycle, cycleLength, locate, planWithDefaults, compactChannel, expandChannel, describeCuts, itemLabel, intervalSeconds } from "./engine.js?v=27";
+import { parseDuration, fmtDuration, youtubeId, facebookUrl, parseLiveLink, buildCycle, cycleLength, locate, planWithDefaults, compactChannel, expandChannel, describeCuts, itemLabel, intervalSeconds } from "./engine.js?v=28";
 import { serverNow, startClock } from "./clock.js";
 
 const $ = (id) => document.getElementById(id);
@@ -338,10 +338,10 @@ function renderCutSummary(plan) {
   const per = plan.breakCount * plan.breakRepeat;
   let html = "";
   if (!ads.length) html += '<p class="msg error">No hay comerciales activos: no se hará ningún corte. Marca al menos uno abajo.</p>';
-  if (plan.mode === "time") {
+  if (plan.mode === "time" || plan.mode === "continuous") {
     if (!(intervalSeconds(plan) > 0)) html += '<p class="msg error">Escribe cada cuánto tiempo va el corte.</p>';
     const rows = describeCuts(state.lib, plan);
-    html += rows.length ? rows.map((r) => `<p><b>${esc(r.title)}</b> (${fmtDuration(r.duration)}): ${r.cuts.length ? "cortes en " + r.cuts.map(fmtDuration).join(", ") : "sin cortes dentro del video"}${r.end ? (r.cuts.length ? " y " : "") + "al terminar" : ""}.</p>`).join("")
+    html += rows.length ? rows.map((r) => `<p><b>${esc(r.title)}</b> (${fmtDuration(r.duration)}): ${[r.lead ? "al empezar" : "", r.cuts.length ? "cortes en " + r.cuts.map(fmtDuration).join(", ") : "", r.end ? "al terminar" : ""].filter(Boolean).join(" y ") || "sin cortes (sigue al próximo programa)"}.</p>`).join("")
       : '<p class="hint">Añade programas a la parrilla para ver dónde caen los cortes.</p>';
   } else html += `<p>Habrá un corte cada ${plan.everyN} programas.</p>`;
   html += `<p class="hint">Cada corte: ${plan.breakCount} anuncio(s) en orden${plan.breakRepeat > 1 ? `, la tanda repetida ${plan.breakRepeat} veces` : ""} = ${per} anuncios por corte.</p>`;
@@ -349,7 +349,7 @@ function renderCutSummary(plan) {
 }
 function previewPlan() {
   const p = readPlanForm();
-  $("plan-time-box").classList.toggle("hidden", p.mode !== "time"); $("plan-prog-box").classList.toggle("hidden", p.mode !== "programs");
+  $("plan-time-box").classList.toggle("hidden", p.mode === "programs"); $("plan-end-row").classList.toggle("hidden", p.mode === "continuous"); $("plan-prog-box").classList.toggle("hidden", p.mode !== "programs");
   renderCutSummary(p);
 }
 function renderAds() {
@@ -381,7 +381,7 @@ function renderAds() {
 }
 async function savePlanFromCommercial() {
   const p = readPlanForm();
-  if (p.mode === "time" && !(intervalSeconds(p) >= 5)) { toast("Escribe un intervalo de al menos 5 segundos.", "error"); return; }
+  if (p.mode !== "programs" && !(intervalSeconds(p) >= 5)) { toast("Escribe un intervalo de al menos 5 segundos.", "error"); return; }
   state.plan = p;
   try { await savePlan(); renderCycle(); renderAds(); toast("Control comercial guardado. Pulsa «Publicar cambios» para aplicarlo.", "ok"); } catch (err) { fail(err); }
 }

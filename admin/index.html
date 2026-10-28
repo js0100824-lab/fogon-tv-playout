@@ -116,11 +116,12 @@
         <section id="tab-comercial" class="tab hidden">
           <div class="help"><b>Cómo funcionan los cortes</b>
             <p>Elige cada cuánto tiempo sale un corte. La página mira la duración de cada programa, calcula sola los puntos de corte, reproduce los anuncios y continúa el programa exactamente donde se quedó.</p>
-            <p>Ejemplo: programa de 30 minutos, “cada 10 minutos” → cortes en 10:00 y 20:00 (y al terminar si lo marcas).</p></div>
-          <label class="field"><span>Tipo de corte</span><select id="plan-mode"><option value="time">Por tiempo, dentro de cada programa</option><option value="programs">Entre programas (cada N programas)</option></select></label>
+            <p><b>Tiempo corrido</b> (recomendado): cuenta el tiempo de programación seguido, programa tras programa. Con “cada 10 minutos” sale un anuncio cada 10 minutos de programas, aunque sean varios programas cortos; si el minuto 10 cae a mitad de un programa, se corta ahí y continúa donde iba.</p>
+            <p>Ejemplo (modo “dentro de cada programa”): programa de 30 minutos, “cada 10 minutos” → cortes en 10:00 y 20:00 (y al terminar si lo marcas).</p></div>
+          <label class="field"><span>Tipo de corte</span><select id="plan-mode"><option value="continuous">Por tiempo corrido (cada X minutos de programación, entre varios programas)</option><option value="time">Por tiempo, dentro de cada programa</option><option value="programs">Entre programas (cada N programas)</option></select></label>
           <div id="plan-time-box">
             <label class="field"><span>Un corte cada…</span><div class="row2"><input id="plan-iv" type="number" min="1" step="any"><select id="plan-iu"><option value="m">minutos</option><option value="s">segundos</option></select></div></label>
-            <label class="field"><span><input id="plan-end" type="checkbox"> También poner un corte al terminar cada programa</span></label>
+            <label class="field" id="plan-end-row"><span><input id="plan-end" type="checkbox"> También poner un corte al terminar cada programa</span></label>
           </div>
           <div id="plan-prog-box" class="hidden"><label class="field"><span>Corte cada N programas</span><input id="plan-every" type="number" min="0" max="20"></label></div>
           <label class="field"><span>Anuncios por corte (se toman en el orden de la lista)</span><input id="plan-count" type="number" min="0" max="20"></label>
@@ -177,6 +178,6 @@
   </div>
 </div>
 
-<script type="module" src="../js/admin.js?v=39"></script>
+<script type="module" src="../js/admin.js?v=40"></script>
 </body>
 </html>

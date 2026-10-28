@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import {
+  continuousLayout,
   parseDuration, fmtDuration, youtubeId, buildCycle, cycleLength, locate, cutPoints, intervalSeconds,
   compactChannel, expandChannel, describeCuts, activeAds, itemLabel, toSource, parseLiveLink
 } from "../js/engine.js";
@@ -111,6 +112,39 @@ t("formato compacto: ida y vuelta y tamaño razonable", () => {
   const noNested = (v, inArr = false) => Array.isArray(v) ? (inArr ? false : v.every((x) => noNested(x, true))) : (v && typeof v === "object" ? Object.values(v).every((x) => noNested(x, false)) : v !== undefined);
   assert.ok(noNested(compactChannel(cyc)), "Firestore no admite listas dentro de listas ni valores undefined");
   assert.deepEqual(expandChannel({ items: [{ id: "x" }] }), [{ id: "x" }], "acepta el formato antiguo");
+});
+
+t("cortes por tiempo corrido: cada 10 min de programación, a través de varios programas", () => {
+  const L = [
+    { id: "a", kind: "programa", title: "A", url: "https://x/a.mp4", duration: 180 },
+    { id: "b", kind: "programa", title: "B", url: "https://x/b.mp4", duration: 76 },
+    { id: "c", kind: "programa", title: "C", url: "https://x/c.mp4", duration: 147 },
+    { id: "d", kind: "programa", title: "D", url: "https://x/d.mp4", duration: 158 },
+    { id: "e", kind: "programa", title: "E", url: "https://x/e.mp4", duration: 400 },
+    { id: "ad", kind: "comercial", title: "AD", url: "https://x/ad.mp4", duration: 30 }
+  ];
+  const plan = { order: ["a", "b", "c", "d", "e"], mode: "continuous", intervalValue: 10, intervalUnit: "m", breakCount: 1, breakRepeat: 1, minTailSec: 15 };
+  const cyc = buildCycle(L, plan);
+  // entre corte y corte hay 600 s de programa (salvo el último tramo del ciclo)
+  let acc = 0; const gaps = [];
+  for (const i of cyc) { if (i.type === "comercial") { gaps.push(acc); acc = 0; } else acc += i.duration; }
+  assert.ok(gaps.length >= 2 && gaps.slice(0, -1).every((g) => Math.abs(g - 600) < 1e-6) && gaps.at(-1) <= 600, "intervalos: " + gaps);   // el último corte cierra el ciclo y puede ser más corto
+  // un programa no se corta por dentro si ya terminó antes del intervalo
+  assert.equal(cyc[0].id, "a"); assert.equal(cyc[0].duration, 180);
+  assert.equal(cyc[1].id, "b"); assert.equal(cyc[2].id, "c");
+  // la duración de programa emitida se conserva (todo se emite una vez)
+  const prog = cyc.filter((i) => i.type === "programa").reduce((n, i) => n + i.duration, 0);
+  assert.equal(prog, 180 + 76 + 147 + 158 + 400);
+  // un programa partido continúa donde se quedó
+  const partsE = cyc.filter((i) => i.id === "e");
+  for (let k = 1; k < partsE.length; k++) assert.equal(partsE[k].startAt, partsE[k - 1].startAt + partsE[k - 1].duration);
+  assert.deepEqual(describeCuts(L, plan).map((r) => r.title), ["A", "B", "C", "D", "E"]);
+});
+
+t("tiempo corrido: sin anuncios no se parte nada", () => {
+  const L = [{ id: "a", kind: "programa", title: "A", url: "https://x/a.mp4", duration: 900 }];
+  const cyc = buildCycle(L, { order: ["a"], mode: "continuous", intervalValue: 5, intervalUnit: "m" });
+  assert.equal(cyc.length, 1);
 });
 
 t("resumen de cortes para el panel", () => {

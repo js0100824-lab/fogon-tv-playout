@@ -46,7 +46,7 @@ export function parseLiveLink(url) {
 /* ---------------- Plan de cortes ---------------- */
 export const PLAN_DEFAULTS = {
   order: [], adOrder: [],
-  mode: "time",            // "time" = cada X minutos/segundos dentro del programa · "programs" = cada N programas
+  mode: "continuous",      // "continuous" = cada X minutos de programación corrida (entre varios programas) · "time" = dentro de cada programa · "programs" = cada N programas
   intervalValue: 10, intervalUnit: "m",
   breakCount: 3,           // anuncios distintos por corte
   breakRepeat: 1,          // cuántas veces se repite esa tanda en cada corte
@@ -85,6 +85,30 @@ function toItem(i, type, extra = {}) {
   return { id: i.id, type, title: i.title, duration: dur, startAt: 0, ...toSource(i.url), ...extra };
 }
 
+// Modo «continuous»: el reloj de cortes corre a través de todos los programas. Cada `intervalo` de programación
+// emitida sale un corte, aunque haya pasado de un programa a otro (un corte puede caer a mitad de un programa).
+// Devuelve, por programa: lead (corte antes de empezarlo), cuts (segundos internos) y end (corte al terminarlo),
+// y tailBreak (corte al cerrar el ciclo, para que la cadencia no se rompa al repetirse).
+export function continuousLayout(programs, rawPlan) {
+  const plan = planWithDefaults(rawPlan);
+  const T = intervalSeconds(plan), tail = Math.max(0, Number(plan.minTailSec) || 0);
+  const rows = []; let acc = 0;
+  for (const p of programs) {
+    const D = p.duration, row = { lead: false, cuts: [], end: false };
+    let pos = 0, guard = 0;
+    while (T > 0 && guard++ < 2000) {
+      const at = pos + (T - acc);                        // punto del programa donde toca el siguiente corte
+      if (at > D) { acc += D - pos; break; }              // el intervalo no se cumple en este programa: sigue en el próximo
+      if (at >= D - tail) { row.end = true; acc = 0; break; }   // cae al final (o a pocos segundos): corte al terminar
+      if (pos === 0 && !row.cuts.length && !row.lead && T > tail && at < tail) { row.lead = true; acc = 0; continue; }   // cae justo al empezar: corte antes
+      row.cuts.push(at); pos = at; acc = 0;
+    }
+    if (!(T > 0)) acc += D;
+    rows.push(row);
+  }
+  return { rows, tailBreak: T > 0 && acc > 0 && acc >= T / 2 };
+}
+
 // Construye el ciclo de emisión como lista de tramos. Un programa largo se parte en varios
 // tramos (cada uno con su `startAt` dentro del archivo) y entre ellos van los anuncios,
 // de modo que al volver el programa continúa exactamente donde se quedó.
@@ -107,7 +131,19 @@ export function buildCycle(library, rawPlan) {
     for (let r = 0; r < repeat; r++) for (const ad of tanda) out.push(toItem(ad, "comercial", { breakNo }));
   };
 
+  const cont = plan.mode === "continuous" && canBreak ? continuousLayout(programs, plan) : null;
   programs.forEach((p, idx) => {
+    if (cont) {
+      const r = cont.rows[idx];
+      if (r.lead) addBreak();
+      const edges = [0, ...r.cuts, p.duration], parts = edges.length - 1;
+      for (let k = 0; k < parts; k++) {
+        out.push(toItem(p, "programa", { startAt: edges[k], duration: edges[k + 1] - edges[k], ...(parts > 1 ? { part: k + 1, parts } : {}) }));
+        if (k < parts - 1) addBreak();
+      }
+      if (r.end) addBreak();
+      return;
+    }
     if (plan.mode === "programs") {
       out.push(toItem(p, "programa"));
       const every = Math.max(0, plan.everyN | 0);
@@ -123,6 +159,7 @@ export function buildCycle(library, rawPlan) {
     }
     if (plan.breakAtEnd) addBreak();
   });
+  if (cont && cont.tailBreak) addBreak();
   // En modo "entre programas" siempre hay un corte al cierre del ciclo.
   if (plan.mode === "programs" && programs.length) addBreak();
   return out;
@@ -177,7 +214,12 @@ export function itemLabel(i) {
 export function describeCuts(library, rawPlan) {
   const plan = planWithDefaults(rawPlan);
   const byId = new Map(library.map((i) => [i.id, i]));
-  return (plan.order || []).map((id) => byId.get(id)).filter((i) => i && i.duration > 0).map((p) => {
+  const progs = (plan.order || []).map((id) => byId.get(id)).filter((i) => i && i.duration > 0);
+  if (plan.mode === "continuous") {
+    const { rows, tailBreak } = continuousLayout(progs, plan);
+    return progs.map((p, n) => ({ title: p.title, duration: p.duration, cuts: rows[n].cuts, lead: rows[n].lead, end: rows[n].end || (tailBreak && n === progs.length - 1) }));
+  }
+  return progs.map((p) => {
     const cuts = plan.mode === "time" ? cutPoints(p.duration, plan) : [];
     return { title: p.title, duration: p.duration, cuts, end: plan.mode === "time" ? !!plan.breakAtEnd : false };
   });
