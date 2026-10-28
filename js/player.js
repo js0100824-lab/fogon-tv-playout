@@ -363,7 +363,7 @@ function armFbTap() {
 function disarmFbTap() { fbTapWanted = false; tapHint.style.display = "none"; }
 function wantSoundFB() {
   if (!unmuted || studio) return;   // en OBS (obs=1) el audio está permitido: el video de Facebook se desmutea solo al empezar
-  { fbUnmutedAt = Date.now(); fbPauseCount = 0; setTimeout(() => { try { fbPlayer?.unmute(); fbPlayer?.play(); } catch { /* sin reproductor */ } }, 400); }   // la página dio permiso de autoplay: basta con activar el sonido
+  { fbUnmutedAt = Date.now(); fbPauseCount = 0; setTimeout(() => { try { fbPlayer?.unmute(); fbPlayer?.setVolume?.(1); fbPlayer?.play(); } catch { /* sin reproductor */ } }, 400); setTimeout(() => { try { fbPlayer?.setVolume?.(1); } catch { /* sin reproductor */ } }, 1500); }   // activa el sonido y sube el volumen (Facebook puede arrancar con volumen 0)
 }
 // Cuando el espectador toca dentro del video de Facebook, el foco pasa a ese iframe: ahí el navegador ya permite el sonido.
 window.addEventListener("blur", () => setTimeout(() => {
@@ -373,7 +373,7 @@ window.addEventListener("blur", () => setTimeout(() => {
 }, 0));
 function onFbTapped() {
   disarmFbTap(); soundBlocked = false; fbTapAt = fbUnmutedAt = Date.now(); fbPauseCount = 0;
-  const go = () => { try { fbPlayer?.unmute(); fbPlayer?.play(); } catch { /* sin reproductor */ } };
+  const go = () => { try { fbPlayer?.unmute(); fbPlayer?.setVolume?.(1); fbPlayer?.play(); } catch { /* sin reproductor */ } };
   [100, 500, 1200].forEach((ms) => setTimeout(go, ms));
   setTimeout(() => { if (!fbTapWanted) $("fb").classList.remove("manual"); }, 1500);   // el público vuelve a no poder pausar
 }
@@ -468,4 +468,17 @@ document.addEventListener("visibilitychange", () => { if (!document.hidden) { ti
 async function log(item, key) {
   if (embed || key === lastLogged || (item.type === "programa" && item.part > 1)) return; lastLogged = key;
   try { await addDoc(collection(db, "stats"), { at: serverTimestamp(), sid, title: String(item.title).slice(0, 200), type: item.type }); } catch { /* sin registro */ }
+}
+
+/* ---------- Diagnóstico: abre el reproductor con ?debug=1 y verás un cuadro con el estado del sonido ---------- */
+if (params.has("debug")) {
+  const d = document.createElement("div");
+  d.style.cssText = "position:absolute;left:12px;top:12px;z-index:20;padding:8px 14px;background:rgba(0,0,0,.85);color:#0f0;font:24px monospace;pointer-events:none;white-space:pre";
+  $("stage").appendChild(d);
+  setInterval(() => {
+    let m = "-", v = "-";
+    try { m = fbPlayer?.isMuted?.(); v = fbPlayer?.getVolume?.(); } catch { /* sin reproductor */ }
+    const it = channel?.items?.[current?.index];
+    d.textContent = `fuente:${it?.src || "-"}  FB silenciado:${m}  volumen:${v}\nFB pausado:${fbPaused}  sonido pedido:${unmuted}  bloqueado:${soundBlocked}\nsin permiso autoplay:${noAutoplay}  dentro de iframe:${inFrame}`;
+  }, 500);
 }
