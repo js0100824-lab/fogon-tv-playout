@@ -122,9 +122,10 @@ function applyBrand(b) {
 }
 
 function lowerThird(item) {
-  if (item.type === "programa" && item.part > 1) return;   // al volver de los anuncios no se repite el rótulo
   const el = $("lower");
-  el.querySelector("small").textContent = item.type === "comercial" ? "PUBLICIDAD" : "AHORA";
+  if (item.type !== "programa") { clearTimeout(lowerT); el.classList.remove("show"); return; }   // en la publicidad no sale rótulo
+  if (item.part > 1) return;   // al volver de los anuncios no se repite el rótulo
+  el.querySelector("small").textContent = "AHORA";
   el.querySelector("b").textContent = item.title;
   el.classList.add("show"); clearTimeout(lowerT); lowerT = setTimeout(() => el.classList.remove("show"), 7000);
 }

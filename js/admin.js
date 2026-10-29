@@ -96,6 +96,7 @@ async function initPanel() {
   $("lib-form").addEventListener("submit", addItem);
   $("lib-cancel").addEventListener("click", resetEdit);
   initTimeline();
+  $("lib-toggle").addEventListener("click", () => { $("lib-list").classList.toggle("lib-collapsed"); updateLibToggle(); });
   $("monitor").src = new URL("../player/?embed=1&studio=1", location.href).href;
   // La vista previa es la señal maestra: lo que ella emite se publica para que el reproductor público la siga.
   let lastOn = "", lastOnAt = 0, lastO = null;
@@ -328,6 +329,11 @@ async function uploadFiles(files, kind) {
     }
   }
 }
+function updateLibToggle() {
+  const open = !$("lib-list").classList.contains("lib-collapsed");
+  $("lib-toggle").textContent = open ? "Ocultar programas" : `Mostrar todos los programas (${state.lib.length})`;
+  $("lib-toggle").setAttribute("aria-expanded", String(open));
+}
 function renderLibrary() {
   const el = $("lib-list");
   if (!state.lib.length) { el.innerHTML = '<p class="hint">Aún no hay contenidos.</p>'; return; }
@@ -353,6 +359,7 @@ function renderLibrary() {
       if (state.channel?.items?.some((x) => x.id === it.id)) { await publish(true); }
     } catch (err) { fail(err); }
   }));
+  updateLibToggle();
 }
 
 /* Control comercial */
@@ -652,10 +659,11 @@ function renderNow() {
   renderTimeline(items, loc, total, before, `${c.epoch}:${n}:${total}`);
 
   // Tabla de emisión con horas reales
-  let t = now - loc.offset * 1000, rows = "";
-  for (let k = 0; k < Math.min(n * 2, 14); k++) {
+  // (solo programas: las filas de publicidad no se muestran en esta tabla)
+  let t = now - loc.offset * 1000, rows = "", shown = 0;
+  for (let k = 0; k < n * 2 && shown < 12; k++) {
     const it = items[(loc.index + k) % n];
-    rows += `<tr class="${k === 0 ? "cur" : it.type === "comercial" ? "ad" : "prog"}"><td>${hms(t)}</td><td>${esc(itemLabel(it))}</td><td>${it.type}</td><td>${fmtDuration(it.duration)}</td></tr>`;
+    if (it.type !== "comercial") { rows += `<tr class="${k === 0 ? "cur" : "prog"}"><td>${hms(t)}</td><td>${esc(itemLabel(it))}</td><td>${it.type}</td><td>${fmtDuration(it.duration)}</td></tr>`; shown++; }
     t += it.duration * 1000;
   }
   $("live-body").innerHTML = rows;
