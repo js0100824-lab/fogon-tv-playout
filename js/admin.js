@@ -80,7 +80,7 @@ if (!isConfigured) {
 /* ---------- Panel ---------- */
 let media = { cloud: "", preset: "" };
 let liveCfg = null;
-const state = { lib: [], plan: planWithDefaults(), brand: { name: "", showName: false, accent: "#0E6B73", logo: "", ticker: "", logoPos: "top-right", logoSize: 14, logoOpacity: 0.9 } };
+const state = { lib: [], plan: planWithDefaults(), brand: { name: "", showName: false, accent: "#0E6B73", logo: "", ticker: "", tickerMove: true, tickerSep: "●", tickerSpeed: 120, logoPos: "top-right", logoSize: 14, logoOpacity: 0.9 } };
 let inited = false;
 
 function esc(t) { return String(t ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c])); }
@@ -689,11 +689,11 @@ function renderNow() {
   renderTimeline(items, loc, total, before, `${c.epoch}:${n}:${total}`);
 
   // Tabla de emisión con horas reales
-  // (solo programas: las filas de publicidad no se muestran en esta tabla)
+  // Programas y comerciales (los comerciales salen en ámbar)
   let t = now - loc.offset * 1000, rows = "", shown = 0;
-  for (let k = 0; k < n * 2 && shown < 12; k++) {
-    const it = items[(loc.index + k) % n];
-    if (it.type !== "comercial") { rows += `<tr class="${k === 0 ? "cur" : "prog"}"><td>${hms(t)}</td><td>${esc(itemLabel(it))}</td><td>${it.type}</td><td>${fmtDuration(it.duration)}</td></tr>`; shown++; }
+  for (let k = 0; k < n * 2 && shown < 16; k++) {
+    const it = items[(loc.index + k) % n], ad = it.type === "comercial";
+    rows += `<tr class="${k === 0 ? "cur" : ad ? "ad" : "prog"}"><td>${hms(t)}</td><td>${esc(itemLabel(it))}${ad && it.breakNo ? ` · corte ${it.breakNo}` : ""}</td><td>${it.type}</td><td>${fmtDuration(it.duration)}</td></tr>`; shown++;
     t += it.duration * 1000;
   }
   $("live-body").innerHTML = rows;
@@ -718,9 +718,10 @@ function renderBrand() {
   $("b-accent").value = state.brand.accent || "#0E6B73";
   $("b-logo-prev").src = state.brand.logo || ""; $("b-logo-prev").classList.toggle("hidden", !state.brand.logo);
   $("b-logo-rm").classList.toggle("hidden", !state.brand.logo); $("b-ticker").value = state.brand.ticker || "";
+  $("b-tk-move").checked = state.brand.tickerMove !== false; $("b-tk-sep").value = state.brand.tickerSep ?? "●"; $("b-tk-speed").value = state.brand.tickerSpeed || 120;
 }
 async function saveBrand(keep) {
-  state.brand = { name: "", showName: false, accent: $("b-accent").value, logo: state.brand.logo || "", ticker: $("b-ticker").value.trim(), logoPos: $("b-logo-pos").value, logoSize: Number($("b-logo-size").value), logoOpacity: Number($("b-logo-op").value) / 100 };
+  state.brand = { name: "", showName: false, accent: $("b-accent").value, logo: state.brand.logo || "", ticker: $("b-ticker").value.split("\n").map((x) => x.trim()).filter(Boolean).join("\n"), tickerMove: $("b-tk-move").checked, tickerSep: ($("b-tk-sep").value.trim() || "●").slice(0, 3), tickerSpeed: Number($("b-tk-speed").value) || 120, logoPos: $("b-logo-pos").value, logoSize: Number($("b-logo-size").value), logoOpacity: Number($("b-logo-op").value) / 100 };
   try { await setDoc(doc(db, "public", "brand"), state.brand); toast("Personalización publicada.", "ok"); } catch (err) { fail(err); }
 }
 

@@ -41,6 +41,8 @@ section[aria-label="Biblioteca"] .col-b{overflow-x:hidden}
 #timeline .tl-in i span{position:absolute;left:6px;right:4px;top:8px;font-size:12px;font-weight:600;color:#eafff5;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;pointer-events:none}
 #timeline .tl-in u{position:absolute;top:0;bottom:0;width:3px;margin-left:-1px;background:#fff;box-shadow:0 0 8px rgba(255,255,255,.9);z-index:2;pointer-events:none}
 @media (max-width:700px){#timeline{height:96px}.tl-btns .btn{min-width:46px;min-height:40px}}
+#b-ticker{width:100%;box-sizing:border-box;min-height:110px;padding:8px;font:inherit;line-height:1.4;color:inherit;background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.18);border-radius:6px;resize:vertical}
+table.live tr.ad td{color:#f2bd3a}
 #lib-toggle{display:none}
 /* Móvil: tarjetas simples — nombre grande, tipo y duración en una línea, botones grandes, enlace aparte */
 @media (max-width:700px){
@@ -235,7 +237,10 @@ html,body{max-width:100%;overflow-x:hidden}
             <label class="field"><span>Posición del logo</span><select id="b-logo-pos"><option value="top-left">Arriba a la izquierda</option><option value="top-right">Arriba a la derecha</option><option value="bottom-left">Abajo a la izquierda</option><option value="bottom-right">Abajo a la derecha</option></select></label>
             <label class="field"><span>Tamaño del logo (% del ancho)</span><input id="b-logo-size" type="range" min="4" max="40"></label>
             <label class="field"><span>Opacidad del logo</span><input id="b-logo-op" type="range" min="10" max="100"></label>
-            <label class="field"><span>Rótulo inferior</span><input id="b-ticker" maxlength="200"></label>
+            <label class="field"><span>Rótulo inferior (una frase por línea)</span><textarea id="b-ticker" rows="5" maxlength="2000" placeholder="Escribe cada noticia en una línea nueva. Pasarán una tras otra y se repetirán."></textarea></label>
+            <label class="field"><span><input id="b-tk-move" type="checkbox"> Mover el texto como en un noticiero</span></label>
+            <label class="field"><span>Símbolo entre frases</span><input id="b-tk-sep" maxlength="3" placeholder="●"></label>
+            <label class="field"><span>Velocidad del texto</span><input id="b-tk-speed" type="range" min="40" max="300" step="10"></label>
             <button class="btn" type="submit">Guardar y publicar</button>
           </form>
         </section>
@@ -262,6 +267,6 @@ html,body{max-width:100%;overflow-x:hidden}
   </div>
 </div>
 
-<script type="module" src="../js/admin.js?v=52"></script>
+<script type="module" src="../js/admin.js?v=54"></script>
 </body>
 </html>

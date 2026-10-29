@@ -103,6 +103,40 @@ const keyAt = (index, loop) => { const it = channel.items[index]; return `${chan
 
 /* ---------- Marca ---------- */
 const POS = { "top-left": ["top", "left"], "top-right": ["top", "right"], "bottom-left": ["bottom", "left"], "bottom-right": ["bottom", "right"] };
+/* TICKER-START */
+// Rótulo inferior: una frase por línea. En movimiento pasa de derecha a izquierda y se repite sin cortes (tipo noticiero).
+let lastBrand = null;
+function buildTicker(b) {
+  const t = $("ticker");
+  const lines = String(b.ticker || "").split(/\n+/).map((x) => x.trim()).filter(Boolean);
+  const sep = (String(b.tickerSep ?? "●").trim() || "●").slice(0, 3);
+  const speed = Math.min(400, Math.max(20, Number(b.tickerSpeed) || 120));   // píxeles por segundo (escenario de 1920)
+  const move = b.tickerMove !== false;
+  const key = JSON.stringify([lines, sep, speed, move]);
+  if (key === t._k) return;   // nada cambió: no se reinicia el desplazamiento
+  t._k = key; t.textContent = "";
+  t.classList.toggle("hidden", !lines.length);
+  t.classList.toggle("move", move && lines.length > 0);
+  if (!lines.length) return;
+  if (!move) { t.textContent = lines.join(`   ${sep}   `); return; }
+  const mk = (n) => {
+    const g = document.createElement("div"); g.className = "tk-g";
+    for (let r = 0; r < n; r++) for (const l of lines) {
+      const sp = document.createElement("span"); sp.textContent = l; g.appendChild(sp);
+      const d = document.createElement("i"); d.textContent = sep; g.appendChild(d);
+    }
+    return g;
+  };
+  const track = document.createElement("div"); track.className = "tk-track"; t.appendChild(track);
+  let g = mk(1); track.appendChild(g);
+  const w1 = g.offsetWidth || 1;
+  if (w1 < 1920) { track.removeChild(g); g = mk(Math.ceil(1920 / w1)); track.appendChild(g); }   // se repite hasta cubrir todo el ancho
+  const W = g.offsetWidth || 1;
+  track.appendChild(g.cloneNode(true));   // segunda copia: al terminar la primera, la segunda ocupa su lugar sin salto
+  track.style.setProperty("--w", `-${W}px`); track.style.setProperty("--d", `${(W / speed).toFixed(2)}s`);
+}
+if (document.fonts?.ready) document.fonts.ready.then(() => { const t = document.getElementById("ticker"); if (t && lastBrand) { t._k = ""; buildTicker(lastBrand); } });
+/* TICKER-END */
 function applyBrand(b) {
   document.documentElement.style.setProperty("--accent", b.accent || "#0E6B73");
   document.title = b.name || "Transmisión en vivo";
@@ -117,7 +151,7 @@ function applyBrand(b) {
   logo.style[v] = "3%"; logo.style[h] = "3%";
   logo.style.width = `${Math.min(40, Math.max(4, Number(b.logoSize) || 14))}%`;
   logo.style.opacity = String(Math.min(1, Math.max(0.1, b.logoOpacity ?? 0.9)));
-  $("ticker").textContent = b.ticker || ""; $("ticker").classList.toggle("hidden", !b.ticker);
+  lastBrand = b; buildTicker(b);
   $("name").style.top = b.logoPos === "top-left" ? "auto" : "3%"; $("name").style.bottom = b.logoPos === "top-left" ? "12%" : "auto";
 }
 
