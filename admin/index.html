@@ -19,10 +19,25 @@ section[aria-label="Biblioteca"] .col-b{overflow-x:hidden}
 #lib-list .lib-meta{display:flex;flex-wrap:wrap;align-items:center;gap:6px 8px;min-width:0}
 #lib-list .lib-meta .tag{white-space:nowrap}
 #lib-list .lib-dur{white-space:nowrap;font-variant-numeric:tabular-nums}
-#lib-list .lib-meta .btn{margin-left:auto;white-space:nowrap}
+#lib-list .lib-actions{margin-left:auto;display:flex;gap:6px}
+#lib-list .lib-actions .btn,#lib-list .lib-link .btn{white-space:nowrap}
+#lib-list .lib-link .btn{display:block;margin-top:6px}
+#lib-cancel[hidden]{display:none}
 #lib-list .lib-link{min-width:0;max-width:100%;font-size:.8em;opacity:.8}
 #lib-list .lib-link summary{cursor:pointer;display:inline-block;opacity:.8}
 #lib-list .lib-link span{display:block;margin-top:4px;overflow-wrap:anywhere;word-break:break-all;user-select:all}
+/* Móvil: tarjetas simples — nombre grande, tipo y duración en una línea, botones grandes, enlace aparte */
+@media (max-width:700px){
+  #lib-form input,#lib-form select{font-size:16px}
+  #lib-list .lib-item{padding:12px;margin-bottom:10px;border:1px solid rgba(255,255,255,.1);border-radius:10px;background:rgba(255,255,255,.03);gap:10px}
+  #lib-list .lib-main b{font-size:16px;line-height:1.3}
+  #lib-list .lib-meta{gap:8px}
+  #lib-list .lib-actions{margin-left:0;width:100%}
+  #lib-list .lib-actions .btn{flex:1;min-height:42px;font-size:14px}
+  #lib-list .lib-link summary{padding:8px 0;font-size:14px}
+  #lib-list .lib-link span{font-size:13px;line-height:1.4}
+  #lib-list .lib-link .btn{width:100%;min-height:42px}
+}
 </style>
 </head>
 <body>
@@ -92,6 +107,7 @@ section[aria-label="Biblioteca"] .col-b{overflow-x:hidden}
             <label class="mini-l">Solo comerciales: cuánto dura al aire (opcional)</label>
             <div class="row2"><input id="lib-play-m" type="number" min="0" placeholder="Minutos"><input id="lib-play-s" type="number" min="0" max="59" placeholder="Segundos"></div>
             <button class="btn small" type="submit">Guardar enlace</button>
+            <button class="btn small" type="button" id="lib-cancel" hidden>Cancelar edición</button>
           </form>
         </details>
         <div id="lib-list"></div>
@@ -186,6 +202,6 @@ section[aria-label="Biblioteca"] .col-b{overflow-x:hidden}
   </div>
 </div>
 
-<script type="module" src="../js/admin.js?v=45"></script>
+<script type="module" src="../js/admin.js?v=47"></script>
 </body>
 </html>

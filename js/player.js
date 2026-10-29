@@ -1,6 +1,6 @@
 import { db, isConfigured } from "./firebase.js";
 import { doc, getDoc, onSnapshot, addDoc, collection, serverTimestamp } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore.js";
-import { locate, expandChannel, cycleLength, itemLabel, settleChannel, nowNext } from "./engine.js?v=30";
+import { locate, expandChannel, cycleLength, itemLabel, settleChannel, nowNext } from "./engine.js?v=31";
 import { serverNow, startClock } from "./clock.js";
 
 const $ = (id) => document.getElementById(id);
@@ -54,10 +54,15 @@ function shiftFromOnair(o, sg) {
   sh = ((sh % total) + total) % total; if (sh > total / 2) sh -= total;
   return sh;
 }
+// El público se alinea con el Studio una vez y luego solo acepta correcciones pequeñas. Un salto grande (el Studio se atascó,
+// recargó o volvió atrás) NO arrastra al público: solo se acepta si se mantiene ~60 s, así no se "reinicia" a media emisión.
+let synced = false, pendSh = null, pendAt = 0;
 function applyOnair() {
-  const sh = shiftFromOnair(onair, sig); if (sh === null) return;
-  const moved = Math.abs(sh - shift) > 300; shift = sh;
-  if (moved && current) tick(false);
+  const sh = shiftFromOnair(onair, sig); if (sh === null || Math.abs(sh) > MAX_SHIFT) return;   // un Studio muy desfasado no arrastra al público: se queda con la parrilla
+  if (!synced) { synced = true; const mv = Math.abs(sh - shift) > 300; shift = sh; if (mv && current) tick(false); return; }
+  if (Math.abs(sh - shift) <= 1500) { pendSh = null; const mv = Math.abs(sh - shift) > 300; shift = sh; if (mv && current) tick(false); return; }
+  if (pendSh === null || Math.abs(sh - pendSh) > 1500) { pendSh = sh; pendAt = Date.now(); return; }
+  if (Date.now() - pendAt >= 60000) { pendSh = null; shift = sh; if (current) tick(false); }
 }
 let lastSeekAt = 0;
 function exposeOnAir(loc) {
@@ -85,10 +90,13 @@ function mediaState(loc) {
   } catch { /* el reproductor aún no está listo */ }
   return null;
 }
-// Al abrir o recargar el Studio, retoma donde iba (usa lo último guardado en public/onair).
+// Tope de desfase: lo que se ve (Studio/OBS y público) nunca queda a más de 60 s de la parrilla; pasado eso se vuelve a la hora de la parrilla.
+const MAX_SHIFT = 60000;
+function hardResync() { shift = 0; synced = false; pendSh = null; slots.forEach((x) => { x.key = ""; }); current = null; tick(false); }
+// Al abrir o recargar el Studio, retoma donde iba (usa lo último guardado en public/onair), solo si el desfase es razonable.
 async function restoreShift(newSig) {
   const snap = await getDoc(doc(db, "public", "onair")); if (!snap.exists()) return;
-  const sh = shiftFromOnair(snap.data(), newSig); if (sh !== null) shift = sh;
+  const sh = shiftFromOnair(snap.data(), newSig); if (sh !== null && Math.abs(sh) <= MAX_SHIFT) shift = sh;
 }
 const keyOf = (loc) => `${channel.epoch}:${loc.index}:${loc.item.id}:${loc.item.startAt || 0}:${loc.loop || 0}`;
 const keyAt = (index, loop) => { const it = channel.items[index]; return `${channel.epoch}:${index}:${it.id}:${it.startAt || 0}:${loop || 0}`; };
@@ -144,7 +152,7 @@ else {
     await clockReady;
     // Si solo cambió "cortar/reanudar" no se reinicia lo que ya está sonando.
     if (newSig !== sig) {
-      shift = 0;
+      shift = 0; synced = false; pendSh = null;
       // Si el tramo que suena es el mismo y va en su sitio, NO se reinicia nada (ni video, ni transición, ni sonido): solo se actualiza la clave.
       const nl = current ? nowLoc() : null;
       const ms = nl && nl.item.id === current.id && (nl.item.startAt || 0) === current.startAt ? mediaState(nl) : null;
@@ -156,7 +164,7 @@ else {
     }
     sig = newSig;
     if (!studio) applyOnair();
-    if (studio && !restored) { restored = true; try { await restoreShift(newSig); } catch { /* sin datos guardados */ } }
+    if (studio && !restored) { restored = true; try { await restoreShift(newSig); } catch { /* sin datos guardados */ } window.__restored = true; }
     if (!wasLive || !current) current = null;
     tick(false);
   }, () => say("No se pudo conectar con la emisión."));
@@ -519,7 +527,7 @@ function watch() {
         else try { fbPlayer.play(); } catch { /* sin reproductor */ }
       }
       const d = m.pos - loc.filePos;
-      if (Math.abs(d) > m.thr) { shift -= d * 1000; tick(false); }
+      if (Math.abs(d) > m.thr) { shift -= d * 1000; if (Math.abs(shift) > MAX_SHIFT) { hardResync(); return; } tick(false); }
     } else if (loc.item.src === "youtube" && ytPlayer?.getPlayerState) {
       const st = ytPlayer.getPlayerState(); if (st === 5 || st === -1) ytPlayer.playVideo?.();
     } else if (loc.item.src === "file" && active?.el.paused && !active.played) active.el.play().catch(() => {});

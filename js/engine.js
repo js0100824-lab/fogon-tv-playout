@@ -262,7 +262,7 @@ export function seamlessPublish(oldItems, index, offset, newItems, now) {
 
 // Si ya pasó la hora de relevo, el canal pasa a la lista nueva (cada cliente lo hace solo, con el mismo resultado).
 export function settleChannel(ch, now) {
-  if (!ch || !ch.nextSeq || !(now >= ch.nextAt)) return false;
+  if (!ch || ch.live === false || !ch.nextSeq || !(now >= ch.nextAt)) return false;
   const next = expandChannel({ media: ch.media, seq: ch.nextSeq });
   if (!next.length) return false;
   ch.items = next; ch.epoch = ch.nextAt; delete ch.nextSeq; delete ch.nextAt;

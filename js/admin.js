@@ -4,10 +4,10 @@ import {
   signInWithEmailAndPassword, signOut, onAuthStateChanged
 } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-auth.js";
 import {
-  doc, getDoc, setDoc, addDoc, deleteDoc, updateDoc, getDocs, collection, query, orderBy, limit, serverTimestamp
+  doc, getDoc, setDoc, addDoc, deleteDoc, updateDoc, deleteField, getDocs, collection, query, orderBy, limit, serverTimestamp
 } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore.js";
 import { ref as sRef, uploadBytesResumable, getDownloadURL, deleteObject } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-storage.js";
-import { parseDuration, fmtDuration, youtubeId, facebookUrl, parseLiveLink, buildCycle, cycleLength, locate, planWithDefaults, compactChannel, expandChannel, describeCuts, itemLabel, intervalSeconds, seamlessPublish, settleChannel } from "./engine.js?v=30";
+import { parseDuration, fmtDuration, youtubeId, facebookUrl, parseLiveLink, buildCycle, cycleLength, locate, planWithDefaults, compactChannel, expandChannel, describeCuts, itemLabel, intervalSeconds, seamlessPublish, settleChannel } from "./engine.js?v=31";
 import { serverNow, startClock } from "./clock.js";
 
 const $ = (id) => document.getElementById(id);
@@ -94,13 +94,14 @@ async function initPanel() {
   if (inited) return; inited = true;
   document.querySelectorAll("#nav button").forEach((b) => b.addEventListener("click", () => openTab(b.dataset.tab)));
   $("lib-form").addEventListener("submit", addItem);
+  $("lib-cancel").addEventListener("click", resetEdit);
   $("monitor").src = new URL("../player/?embed=1&studio=1", location.href).href;
   // La vista previa es la señal maestra: lo que ella emite se publica para que el reproductor público la siga.
   let lastOn = "", lastOnAt = 0, lastO = null;
   setInterval(async () => {
     try {
       const o = $("monitor").contentWindow.__onair;
-      if (!o || state.channel?.live === false) return;
+      if (!o || !$("monitor").contentWindow.__restored || state.channel?.live === false) return;
       const key = `${o.epoch}:${o.index}:${o.sig}`;
       const exp = lastO ? (lastO.p ? lastO.filePos : lastO.filePos + (o.at - lastO.at) / 1000) : 0;
       const jumped = !!lastO && key === lastOn && (Math.abs(o.filePos - exp) > 2 || !!o.p !== !!lastO.p);   // pausa o salto: se guarda enseguida
@@ -223,6 +224,33 @@ function ytDuration(id) {
     setTimeout(() => done(NaN), 15000);
   });
 }
+// ---- Editar un contenido de la biblioteca (título, enlace, tipo, duración) sin crear otro nuevo ----
+let editing = null;   // { id, url, dur, play }
+function resetEdit() {
+  editing = null; $("lib-form").reset();
+  $("lib-form").querySelector('button[type="submit"]').textContent = "Guardar enlace";
+  $("lib-cancel").hidden = true; document.querySelector(".link-add summary").textContent = "Añadir por enlace (YouTube, Facebook o .mp4)";
+}
+function startEdit(id) {
+  const it = state.lib.find((x) => x.id === id); if (!it) return;
+  const pf = it.playFor > 0 ? Math.min(it.playFor, it.duration) : 0;
+  editing = { id, url: it.url, dur: it.duration, play: pf };
+  $("lib-title").value = it.title; $("lib-url").value = it.url; $("lib-kind").value = it.kind;
+  $("lib-dur-m").value = Math.floor(it.duration / 60); $("lib-dur-s").value = Math.round(it.duration % 60);
+  $("lib-play-m").value = pf ? Math.floor(pf / 60) : ""; $("lib-play-s").value = pf ? Math.round(pf % 60) : "";
+  $("lib-form").querySelector('button[type="submit"]').textContent = "Guardar cambios";
+  $("lib-cancel").hidden = false;
+  const box = document.querySelector(".link-add"); box.open = true; box.querySelector("summary").textContent = `Editando: ${it.title}`;
+  box.scrollIntoView({ behavior: "smooth", block: "start" }); $("lib-title").focus();
+}
+async function updateItem(id, d) {
+  const it = state.lib.find((x) => x.id === id), { playFor, ...rest } = d;
+  if (rest.kind !== it.kind && (state.plan.order.includes(id) || (state.plan.adOrder || []).includes(id))) throw new Error("Para cambiar el tipo, primero quítalo de la parrilla / de los comerciales.");
+  await updateDoc(doc(db, "library", id), { ...rest, playFor: playFor > 0 ? playFor : deleteField() });
+  Object.assign(it, rest); if (playFor > 0) it.playFor = playFor; else delete it.playFor;
+  state.lib.sort((a, b) => a.title.localeCompare(b.title));
+  renderAll();
+}
 async function addItem(e) {
   e.preventDefault();
   let url = $("lib-url").value.trim();
@@ -232,6 +260,8 @@ async function addItem(e) {
   const yt = youtubeId(url), fb = !!facebookUrl(url);
   const ms = (a, b) => Math.max(0, Math.floor(Number($(a).value) || 0)) * 60 + Math.max(0, Math.floor(Number($(b).value) || 0));
   let duration = ms("lib-dur-m", "lib-dur-s"), playFor = ms("lib-play-m", "lib-play-s");
+  // Al editar: si cambiaste el enlace y no tocaste la duración, se vuelve a detectar la del video nuevo.
+  if (editing && url !== editing.url && duration === editing.dur) duration = 0;
   if (fb && !(duration > 0)) { toast("Facebook no permite detectar la duración. Escribe los minutos y segundos del video en los campos de Duración.", "error"); return; }
   if (!(duration > 0)) { toast("Detectando la duración…", "ok"); duration = yt ? await ytDuration(yt) : await detectDuration(url); }
   if (!(duration > 0)) {
@@ -241,8 +271,10 @@ async function addItem(e) {
   }
   try {
     const kind = $("lib-kind").value, extra = kind === "comercial" && playFor > 0 ? { playFor: Math.min(playFor, duration) } : {};
-    await saveItem({ title: $("lib-title").value.trim(), kind, url, duration, ...extra });
-    $("lib-form").reset(); toast("Contenido guardado.", "ok");
+    if (editing) {
+      await updateItem(editing.id, { title: $("lib-title").value.trim(), kind, url, duration, playFor: extra.playFor || 0 });
+      resetEdit(); toast("Cambios guardados. Pulsa “Publicar cambios” para que la emisión use el enlace nuevo.", "ok");
+    } else { await saveItem({ title: $("lib-title").value.trim(), kind, url, duration, ...extra }); $("lib-form").reset(); toast("Contenido guardado.", "ok"); }
   } catch (err) { fail(err); }
 }
 async function saveItem(d) {
@@ -303,9 +335,11 @@ function renderLibrary() {
     const onGrid = i.kind === "programa" && n > 0 ? `<span class="tag ok">✓ En parrilla${n > 1 ? ` ×${n}` : ""}</span>` : "";
     const dur = fmtDuration(i.duration) + (i.kind === "comercial" && i.playFor > 0 ? ` · al aire ${fmtDuration(Math.min(i.playFor, i.duration))}` : "");
     return `<div class="item lib-item"><div class="lib-main"><b>${esc(i.title)}</b></div>
-    <div class="lib-meta"><span class="tag">${esc(i.kind)}</span>${onGrid}<span class="lib-dur">${dur}</span><button class="btn del small" data-del="${esc(i.id)}" type="button" title="Eliminar de la biblioteca">Eliminar</button></div>
-    <details class="lib-link"><summary>Ver enlace</summary><span>${esc(i.url)}</span></details></div>`;
+    <div class="lib-meta"><span class="tag">${esc(i.kind)}</span>${onGrid}<span class="lib-dur">${dur}</span><span class="lib-actions"><button class="btn small" data-edit="${esc(i.id)}" type="button" title="Cambiar título, enlace o duración">Editar</button><button class="btn del small" data-del="${esc(i.id)}" type="button" title="Eliminar de la biblioteca">Eliminar</button></span></div>
+    <details class="lib-link"><summary>Ver enlace</summary><span>${esc(i.url)}</span><button class="btn small" data-copy="${esc(i.url)}" type="button">Copiar enlace</button></details></div>`;
   }).join("");
+  el.querySelectorAll("[data-edit]").forEach((b) => b.addEventListener("click", () => startEdit(b.dataset.edit)));
+  el.querySelectorAll("[data-copy]").forEach((b) => b.addEventListener("click", async () => { try { await navigator.clipboard.writeText(b.dataset.copy); b.textContent = "Copiado ✓"; setTimeout(() => { b.textContent = "Copiar enlace"; }, 1500); } catch { toast("No se pudo copiar. Mantén pulsado el enlace para copiarlo.", "error"); } }));
   el.querySelectorAll("[data-del]").forEach((b) => b.addEventListener("click", async () => {
     const it = state.lib.find((x) => x.id === b.dataset.del);
     if (!confirm(`¿Eliminar “${it.title}”?`)) return;
@@ -467,13 +501,34 @@ function renderLive() {
 }
 async function toggleLive() {
   if (!state.channel) { toast("Aún no hay emisión publicada.", "error"); return; }
-  const live = state.channel.live === false;
+  const c = state.channel, live = c.live === false, now = Math.round(serverNow());
   try {
-    if (live) settleChannel(state.channel, Infinity);   // si había un relevo pendiente, se queda la lista nueva
-    const upd = live ? { live, epoch: Math.round(serverNow()), ...compactChannel(state.channel.items), nextSeq: null, nextAt: null } : { live };   // al reanudar, empieza desde el principio
+    let upd;
+    if (!live) {
+      // CORTAR: se guarda el punto exacto (lo que el Studio está emitiendo) y la hora del corte.
+      settleChannel(c, now);
+      upd = { live: false, pausedAt: now };
+      const loc = c.items?.length ? studioLoc(c, now) : null;
+      if (loc) {
+        const start = c.items.slice(0, loc.index).reduce((a, i) => a + i.duration, 0);
+        upd.epoch = Math.round(now - (start + loc.offset) * 1000);
+        if (c.nextSeq) upd.nextAt = c.nextAt + (upd.epoch - c.epoch);
+      }
+    } else if (c.pausedAt > 0 && now >= c.pausedAt) {
+      // REANUDAR: continúa donde se cortó (el reloj del ciclo se corre lo que duró el corte).
+      const d = now - c.pausedAt;
+      upd = { live: true, epoch: c.epoch + d, pausedAt: null };
+      if (c.nextSeq) upd.nextAt = c.nextAt + d;
+      else Object.assign(upd, compactChannel(c.items), { nextSeq: null, nextAt: null });
+    } else {
+      settleChannel(c, Infinity);   // emisión cortada con una versión anterior: no hay punto guardado, empieza de cero
+      upd = { live: true, epoch: now, pausedAt: null, ...compactChannel(c.items), nextSeq: null, nextAt: null };
+    }
     await updateDoc(doc(db, "public", "channel"), upd);
-    state.channel.live = live; if (live) state.channel.epoch = upd.epoch; renderLive(); renderNow();
-    toast(live ? "Emisión reanudada." : "Emisión cortada. El público ve el aviso de pausa.", "ok");
+    Object.assign(c, { live, ...(upd.epoch != null ? { epoch: upd.epoch } : {}), pausedAt: upd.pausedAt ?? null });
+    if (upd.nextAt === null) { delete c.nextSeq; delete c.nextAt; } else if (upd.nextAt != null) c.nextAt = upd.nextAt;
+    renderLive(); renderNow();
+    toast(live ? "Emisión reanudada: continúa desde donde se cortó." : "Emisión cortada. El público ve el aviso de pausa.", "ok");
   } catch (err) { fail(err); }
 }
 
