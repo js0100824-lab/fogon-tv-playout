@@ -146,7 +146,8 @@ else {
     const data = s.exists() ? s.data() : null;
     const items = data ? expandChannel(data) : [];
     if (!items.length) { channel = null; sig = ""; stop(); say("Sin programación publicada por ahora."); return; }
-    const newSig = `${data.epoch}|${data.nextAt || 0}|${items.length}|${Math.round(cycleLength(items))}|${items[0].id}|${items.at(-1).id}`;
+    const mediaSig = (() => { let h = 0; for (const m of Object.values(data.media || {})) for (const c of `${m.s}|${m.r}|${m.t}|`) h = (h * 31 + c.charCodeAt(0)) | 0; return h; })();   // cambia si editas el enlace/título de un contenido
+    const newSig = `${data.epoch}|${data.nextAt || 0}|${items.length}|${Math.round(cycleLength(items))}|${items[0].id}|${items.at(-1).id}|${mediaSig}`;
     const wasLive = channel ? channel.live !== false : false;
     channel = { epoch: data.epoch, items, live: studio ? true : data.live !== false, media: data.media, ...(data.nextSeq ? { nextSeq: data.nextSeq, nextAt: data.nextAt } : {}) };
     if (!channel.live) { stop(); say("Transmisión en pausa. Volvemos pronto."); return; }
@@ -156,11 +157,11 @@ else {
       shift = 0; synced = false; pendSh = null;
       // Si el tramo que suena es el mismo y va en su sitio, NO se reinicia nada (ni video, ni transición, ni sonido): solo se actualiza la clave.
       const nl = current ? nowLoc() : null;
-      const ms = nl && nl.item.id === current.id && (nl.item.startAt || 0) === current.startAt ? mediaState(nl) : null;
+      const ms = nl && nl.item.id === current.id && (nl.item.startAt || 0) === current.startAt && nl.item.ref === current.ref && nl.item.src === current.src ? mediaState(nl) : null;   // si el enlace cambió, NO se conserva lo que suena: se recarga
       if (ms && !liveCfg && Math.abs(ms.pos - nl.filePos) < 2.5) {
         const nk = keyOf(nl);
         slots.forEach((x) => { x.key = x === active ? nk : ""; });
-        current = { key: nk, index: nl.index, id: nl.item.id, startAt: nl.item.startAt || 0 };
+        current = { key: nk, index: nl.index, id: nl.item.id, startAt: nl.item.startAt || 0, ref: nl.item.ref, src: nl.item.src };
       } else { slots.forEach((x) => { x.key = ""; }); current = null; }
     }
     sig = newSig;
@@ -191,7 +192,7 @@ function tick(force) {
 }
 
 function begin(loc, key) {
-  current = { key, index: loc.index, id: loc.item.id, startAt: loc.item.startAt || 0 };
+  current = { key, index: loc.index, id: loc.item.id, startAt: loc.item.startAt || 0, ref: loc.item.ref, src: loc.item.src };
   exposeOnAir(loc);
   lowerThird(loc.item);
   log(loc.item, key);

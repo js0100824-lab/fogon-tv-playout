@@ -274,8 +274,12 @@ async function addItem(e) {
   try {
     const kind = $("lib-kind").value, extra = kind === "comercial" && playFor > 0 ? { playFor: Math.min(playFor, duration) } : {};
     if (editing) {
-      await updateItem(editing.id, { title: $("lib-title").value.trim(), kind, url, duration, playFor: extra.playFor || 0 });
-      resetEdit(); toast("Cambios guardados. Pulsa “Publicar cambios” para que la emisión use el enlace nuevo.", "ok");
+      const eid = editing.id, inChannel = !!(state.channel?.items?.some((x) => x.id === eid) || (state.channel?.media && state.channel.media[eid]));
+      await updateItem(eid, { title: $("lib-title").value.trim(), kind, url, duration, playFor: extra.playFor || 0 });
+      resetEdit();
+      // Si ese contenido está en la emisión, se publica solo para que el aire use el enlace nuevo (sin tener que pulsar nada más).
+      if (inChannel) { toast("Cambios guardados. Actualizando la emisión…", "ok"); await publish(true); }
+      else toast("Cambios guardados. Pulsa “Publicar cambios” cuando quieras que la emisión los use.", "ok");
     } else { await saveItem({ title: $("lib-title").value.trim(), kind, url, duration, ...extra }); $("lib-form").reset(); toast("Contenido guardado.", "ok"); }
   } catch (err) { fail(err); }
 }
@@ -565,8 +569,16 @@ async function publish(auto) {
       if (loc) {
         // Si se borró un video de la biblioteca, se saca de lo que falta por emitir; si justo ese estaba al aire, se empieza de cero.
         const gone = (it) => !state.lib.some((x) => x.id === it.id);
-        if (!gone(old.items[loc.index])) {
-          const base = old.items.filter((it, k) => k === loc.index || !gone(it));
+        // Si editaste el enlace/título de algo que ya estaba en la emisión, lo viejo se actualiza con lo nuevo de la biblioteca.
+        const fresh = new Map(); for (const n of items) if (!fresh.has(`${n.id}:${n.part || 0}`)) fresh.set(`${n.id}:${n.part || 0}`, n);
+        const anyFresh = new Map(); for (const n of items) if (!anyFresh.has(n.id)) anyFresh.set(n.id, n);
+        const refresh = (it) => { const f = anyFresh.get(it.id); return f && (f.src !== it.src || f.ref !== it.ref || f.title !== it.title) ? { ...it, title: f.title, src: f.src, ref: f.ref } : it; };
+        const cur0 = old.items[loc.index], f0 = fresh.get(`${cur0.id}:${cur0.part || 0}`);
+        const sourceChanged = !!f0 && (f0.src !== cur0.src || f0.ref !== cur0.ref);
+        const durationChanged = !!f0 && (Math.abs(f0.duration - cur0.duration) > 0.5 || Math.abs((f0.startAt || 0) - (cur0.startAt || 0)) > 0.5);
+        // Cambió el video que está al aire Y dura distinto: los tiempos viejos ya no sirven; se vuelve a empezar con lo nuevo.
+        if (!gone(cur0) && !(sourceChanged && durationChanged)) {
+          const base = old.items.filter((it, k) => k === loc.index || !gone(it)).map(refresh);
           const idx = old.items.slice(0, loc.index).filter((it) => !gone(it)).length;
           plan = seamlessPublish(base, idx, loc.offset, items, now);
         }
@@ -574,7 +586,7 @@ async function publish(auto) {
     }
     if (!plan) plan = { items, epoch: Math.round(now), next: null, nextAt: 0 };   // primera publicación, directo, pausa o borrado: empieza desde el principio
     const cur = compactChannel(plan.items), nxt = plan.next ? compactChannel(plan.next) : null;
-    const channel = { epoch: plan.epoch, live, media: nxt ? { ...nxt.media, ...cur.media } : cur.media, seq: cur.seq, nextSeq: nxt ? nxt.seq : null, nextAt: nxt ? plan.nextAt : null, updatedAt: serverTimestamp() };
+    const channel = { epoch: plan.epoch, live, media: nxt ? { ...cur.media, ...nxt.media } : cur.media, seq: cur.seq, nextSeq: nxt ? nxt.seq : null, nextAt: nxt ? plan.nextAt : null, updatedAt: serverTimestamp() };
     await setDoc(doc(db, "public", "channel"), channel);
     state.channel = { epoch: plan.epoch, items: plan.items, live, media: channel.media, seq: channel.seq, ...(nxt ? { nextSeq: nxt.seq, nextAt: plan.nextAt } : {}) };
     renderCycle(); renderNow();

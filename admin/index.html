@@ -2,7 +2,7 @@
 <html lang="es">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="viewport" content="width=device-width, initial-scale=1, minimum-scale=1, viewport-fit=cover">
 <meta name="robots" content="noindex">
 <title>Panel · Fogón TV Playout</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -53,6 +53,42 @@ section[aria-label="Biblioteca"] .col-b{overflow-x:hidden}
   #lib-list .lib-link summary{padding:8px 0;font-size:14px}
   #lib-list .lib-link span{font-size:13px;line-height:1.4}
   #lib-list .lib-link .btn{width:100%;min-height:42px}
+}
+
+/* ===== MÓVIL: nada puede ensanchar la página; la vista previa siempre se ve ===== */
+html,body{max-width:100%;overflow-x:hidden}
+#timeline{max-width:100%;contain:inline-size}
+@media (max-width:900px){
+  .studio,.studio .cols,.studio .col,.studio .col-b{min-width:0;max-width:100%;box-sizing:border-box}
+  .studio .cols{display:flex !important;flex-direction:column;grid-template-columns:minmax(0,1fr) !important;gap:12px;width:100%}
+  .studio .col{width:100%}
+  .studio .col.center{order:-1}              /* la vista previa va primero */
+  .studio .col-b{overflow-x:hidden}
+  .studio .top{display:flex;flex-wrap:wrap;gap:8px;max-width:100%;box-sizing:border-box}
+  .studio .top .grow{display:none}
+  .studio .top .btn{flex:1 1 auto;min-height:40px;text-align:center}
+  .studio .top .who{flex:1 1 100%;min-width:0;overflow-wrap:anywhere}
+  .studio .dash{display:grid !important;grid-template-columns:repeat(2,minmax(0,1fr)) !important;max-width:100%}
+  .studio .dash .lcd{min-width:0;overflow:hidden}
+  .studio .dash .lcd.wide2{grid-column:1 / -1}
+  .studio .dash .lcd b{overflow-wrap:anywhere}
+  /* Vista previa 16:9 con tamaño propio (no depende de que el iframe "mida" algo) */
+  .studio .monitor{position:relative !important;display:block;width:100% !important;max-width:100%;height:auto !important;aspect-ratio:16/9;padding:0 !important;overflow:hidden;background:#000;border-radius:8px}
+  .studio .monitor iframe{position:absolute !important;left:0;top:0;width:100% !important;height:100% !important;border:0;display:block;background:#000}
+  .studio .tl-tools{flex-wrap:wrap}
+  .studio #timeline{width:100%}
+  .studio .live-wrap{max-width:100%;overflow-x:auto;-webkit-overflow-scrolling:touch}
+  .studio table.live{width:100%;min-width:0}
+  .studio table.live td,.studio table.live th{overflow-wrap:anywhere}
+  .studio input,.studio select,.studio textarea{max-width:100%;min-width:0;box-sizing:border-box}
+  .studio .row2{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}
+  .studio .row{display:flex;flex-wrap:wrap;gap:8px}
+  .studio .row>select,.studio .row>input{flex:1 1 140px}
+  .studio .tabs{display:flex;overflow-x:auto;max-width:100%;-webkit-overflow-scrolling:touch}
+  .studio .tabs li{flex:none}
+  .studio .link-add summary{overflow-wrap:anywhere}
+  .studio .btn{max-width:100%}
+  .studio .cycle,.studio #order-list,.studio #ads-list,.studio #cut-summary{max-width:100%;overflow-wrap:anywhere}
 }
 </style>
 </head>
@@ -220,6 +256,6 @@ section[aria-label="Biblioteca"] .col-b{overflow-x:hidden}
   </div>
 </div>
 
-<script type="module" src="../js/admin.js?v=50"></script>
+<script type="module" src="../js/admin.js?v=51"></script>
 </body>
 </html>
