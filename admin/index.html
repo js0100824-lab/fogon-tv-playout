@@ -26,6 +26,19 @@ section[aria-label="Biblioteca"] .col-b{overflow-x:hidden}
 #lib-list .lib-link{min-width:0;max-width:100%;font-size:.8em;opacity:.8}
 #lib-list .lib-link summary{cursor:pointer;display:inline-block;opacity:.8}
 #lib-list .lib-link span{display:block;margin-top:4px;overflow-wrap:anywhere;word-break:break-all;user-select:all}
+/* Línea de tiempo grande: se desplaza, se acerca/aleja y sigue a la raya blanca */
+.tl-tools{display:flex;justify-content:space-between;align-items:center;gap:8px;margin:12px 0 4px;font-size:12px;opacity:.9}
+.tl-btns{display:flex;gap:6px}.tl-btns .btn{min-width:40px;min-height:32px}
+#timeline{position:relative;display:block;height:88px;overflow-x:auto;overflow-y:hidden;background:#0b0f0d;border-radius:8px;cursor:grab;scrollbar-width:thin;touch-action:pan-x;user-select:none}
+#timeline.drag{cursor:grabbing}
+#timeline .tl-in{position:relative;height:100%;display:flex;min-width:100%}
+#timeline .tl-in i{flex:none;display:block;position:relative;height:100%;background:#2f7d5d;box-shadow:inset -1px 0 0 rgba(0,0,0,.55);overflow:hidden}
+#timeline .tl-in i.ad{background:#d9a21f}
+#timeline .tl-in i.cur{background:#3fae82}
+#timeline .tl-in i.ad.cur{background:#f2bd3a}
+#timeline .tl-in i span{position:absolute;left:6px;right:4px;top:8px;font-size:12px;font-weight:600;color:#eafff5;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;pointer-events:none}
+#timeline .tl-in u{position:absolute;top:0;bottom:0;width:3px;margin-left:-1px;background:#fff;box-shadow:0 0 8px rgba(255,255,255,.9);z-index:2;pointer-events:none}
+@media (max-width:700px){#timeline{height:96px}.tl-btns .btn{min-width:46px;min-height:40px}}
 /* Móvil: tarjetas simples — nombre grande, tipo y duración en una línea, botones grandes, enlace aparte */
 @media (max-width:700px){
   #lib-form input,#lib-form select{font-size:16px}
@@ -118,6 +131,7 @@ section[aria-label="Biblioteca"] .col-b{overflow-x:hidden}
       <h2 class="col-h">Programa (lo que ve el público)</h2>
       <div class="col-b">
         <div class="monitor"><iframe id="monitor" title="Vista previa en vivo" allow="autoplay; fullscreen"></iframe></div>
+        <div class="tl-tools"><span>Línea de tiempo · arrastra para moverte</span><span class="tl-btns"><button class="btn small" id="tl-minus" type="button" title="Alejar">−</button><button class="btn small" id="tl-plus" type="button" title="Acercar">+</button><button class="btn small" id="tl-now" type="button" title="Volver al programa al aire">Ahora</button></span></div>
         <div id="timeline" class="timeline" aria-label="Línea de tiempo del ciclo"></div>
         <div class="live-wrap"><table class="live"><thead><tr><th>Inicio</th><th>Nombre</th><th>Tipo</th><th>Duración</th></tr></thead><tbody id="live-body"></tbody></table></div>
         <p class="hint">El monitor está en silencio. Para escuchar, abre el reproductor.</p>
@@ -202,6 +216,6 @@ section[aria-label="Biblioteca"] .col-b{overflow-x:hidden}
   </div>
 </div>
 
-<script type="module" src="../js/admin.js?v=47"></script>
+<script type="module" src="../js/admin.js?v=48"></script>
 </body>
 </html>

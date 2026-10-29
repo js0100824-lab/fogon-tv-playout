@@ -95,6 +95,7 @@ async function initPanel() {
   document.querySelectorAll("#nav button").forEach((b) => b.addEventListener("click", () => openTab(b.dataset.tab)));
   $("lib-form").addEventListener("submit", addItem);
   $("lib-cancel").addEventListener("click", resetEdit);
+  initTimeline();
   $("monitor").src = new URL("../player/?embed=1&studio=1", location.href).href;
   // La vista previa es la señal maestra: lo que ella emite se publica para que el reproductor público la siga.
   let lastOn = "", lastOnAt = 0, lastO = null;
@@ -502,6 +503,7 @@ function renderLive() {
 async function toggleLive() {
   if (!state.channel) { toast("Aún no hay emisión publicada.", "error"); return; }
   const c = state.channel, live = c.live === false, now = Math.round(serverNow());
+  const where = () => { const l = locate(c.items, c.epoch, now); return l ? `«${l.item.type === "comercial" ? "Comercial" : l.item.title}» · minuto ${fmtDuration((l.item.startAt || 0) + l.offset)}` : ""; };
   try {
     let upd;
     if (!live) {
@@ -521,14 +523,23 @@ async function toggleLive() {
       if (c.nextSeq) upd.nextAt = c.nextAt + d;
       else Object.assign(upd, compactChannel(c.items), { nextSeq: null, nextAt: null });
     } else {
-      settleChannel(c, Infinity);   // emisión cortada con una versión anterior: no hay punto guardado, empieza de cero
-      upd = { live: true, epoch: now, pausedAt: null, ...compactChannel(c.items), nextSeq: null, nextAt: null };
+      // Se cortó con una versión anterior (sin punto guardado): se usa lo último que el Studio dejó anotado.
+      settleChannel(c, Infinity);
+      let epoch = now;
+      try {
+        const snap = await getDoc(doc(db, "public", "onair")), o = snap.exists() ? snap.data() : null, it = o && c.items[o.index];
+        if (it && it.id === o.id) {
+          const before = c.items.slice(0, o.index).reduce((a, x) => a + x.duration, 0);
+          epoch = Math.round(now - (before + Math.max(0, o.filePos - (it.startAt || 0))) * 1000);
+        }
+      } catch { /* sin datos: empieza de cero */ }
+      upd = { live: true, epoch, pausedAt: null, ...compactChannel(c.items), nextSeq: null, nextAt: null };
     }
     await updateDoc(doc(db, "public", "channel"), upd);
     Object.assign(c, { live, ...(upd.epoch != null ? { epoch: upd.epoch } : {}), pausedAt: upd.pausedAt ?? null });
     if (upd.nextAt === null) { delete c.nextSeq; delete c.nextAt; } else if (upd.nextAt != null) c.nextAt = upd.nextAt;
     renderLive(); renderNow();
-    toast(live ? "Emisión reanudada: continúa desde donde se cortó." : "Emisión cortada. El público ve el aviso de pausa.", "ok");
+    toast(live ? `Emisión reanudada en ${where()}.` : `Emisión cortada en ${where()}. El público ve el aviso de pausa.`, "ok");
   } catch (err) { fail(err); }
 }
 
@@ -564,6 +575,36 @@ async function publish(auto) {
   } catch (err) { fail(err); }
 }
 let tlKey = "";
+// ---- Línea de tiempo: grande, con desplazamiento y zoom; el cabezal (raya blanca) arrastra la barra si se sale de la vista ----
+const TL_LEVELS = [0.03, 0.06, 0.12, 0.25, 0.5, 1, 2];   // píxeles por segundo
+let tlLevel = 4, tlUserAt = 0, tlDrag = null, tlLastIdx = -1, tlRecenter = true;
+function renderTimeline(items, loc, total, before, key) {
+  const tl = $("timeline"), cw = tl.clientWidth || 600, wpx = Math.max(cw, Math.round(total * TL_LEVELS[tlLevel])), k = `${key}:${tlLevel}:${cw}`;
+  if (k !== tlKey) {
+    tlKey = k; const sc = tl.scrollLeft;
+    tl.innerHTML = `<div class="tl-in" style="width:${wpx}px">` + items.map((i) => `<i class="${i.type === "comercial" ? "ad" : ""}" style="width:${(i.duration / total) * wpx}px" title="${esc(itemLabel(i))} · ${fmtDuration(i.duration)}"><span>${i.type === "comercial" ? "" : esc(i.title)}</span></i>`).join("") + "<u></u></div>";
+    tl.scrollLeft = sc; tlLastIdx = -1;
+  }
+  const inner = tl.querySelector(".tl-in"), frac = (before + loc.offset) / total, hx = frac * wpx;
+  inner.querySelector("u").style.left = `${frac * 100}%`;
+  if (loc.index !== tlLastIdx) { tlLastIdx = loc.index; inner.querySelector("i.cur")?.classList.remove("cur"); inner.children[loc.index]?.classList.add("cur"); }
+  const l = tl.scrollLeft;
+  if (tlRecenter) { tlRecenter = false; tl.scrollLeft = Math.max(0, hx - cw * 0.3); }
+  else if (Date.now() - tlUserAt > 8000 && (hx > l + cw * 0.8 || hx < l + cw * 0.05)) tl.scrollTo({ left: Math.max(0, hx - cw * 0.3), behavior: "smooth" });   // sigue al cabezal salvo que estés moviendo la barra
+}
+function initTimeline() {
+  const tl = $("timeline"), touch = () => { tlUserAt = Date.now(); };
+  tl.addEventListener("pointerdown", (e) => { touch(); if (e.pointerType === "mouse" && e.button === 0) { tlDrag = { x: e.clientX, l: tl.scrollLeft }; tl.classList.add("drag"); try { tl.setPointerCapture(e.pointerId); } catch { /* sin captura */ } } });
+  tl.addEventListener("pointermove", (e) => { if (tlDrag) { tl.scrollLeft = tlDrag.l - (e.clientX - tlDrag.x); touch(); } });
+  ["pointerup", "pointercancel"].forEach((ev) => tl.addEventListener(ev, () => { tlDrag = null; tl.classList.remove("drag"); }));
+  tl.addEventListener("touchstart", touch, { passive: true });
+  tl.addEventListener("wheel", (e) => { e.preventDefault(); tl.scrollLeft += (Math.abs(e.deltaX) > Math.abs(e.deltaY) ? e.deltaX : e.deltaY); touch(); }, { passive: false });
+  const zoom = (d) => { tlLevel = Math.max(0, Math.min(TL_LEVELS.length - 1, tlLevel + d)); tlKey = ""; tlRecenter = true; tlUserAt = 0; renderNow(); };
+  $("tl-minus").addEventListener("click", () => zoom(-1));
+  $("tl-plus").addEventListener("click", () => zoom(1));
+  $("tl-now").addEventListener("click", () => { tlUserAt = 0; tlRecenter = true; renderNow(); });
+}
+
 const TZ = "America/Santo_Domingo";   // hora de República Dominicana
 const HMS = new Intl.DateTimeFormat("en-US", { timeZone: TZ, hour: "numeric", minute: "2-digit", second: "2-digit", hour12: true });
 const hms = (ms) => HMS.format(new Date(ms));   // 2:33:32 PM (hora de República Dominicana)
@@ -606,13 +647,9 @@ function renderNow() {
   $("next-start").textContent = hms(now + loc.remaining * 1000);
 
   // Línea de tiempo del ciclo con cabezal
-  const total = cycleLength(items), key = `${c.epoch}:${n}:${total}`;
-  if (key !== tlKey) {
-    tlKey = key;
-    $("timeline").innerHTML = items.map((i) => `<i class="${i.type === "comercial" ? "ad" : ""}" style="flex:${i.duration}" title="${esc(i.title)}"></i>`).join("") + "<u></u>";
-  }
+  const total = cycleLength(items);
   let before = 0; for (let k = 0; k < loc.index; k++) before += items[k].duration;
-  const head = $("timeline").querySelector("u"); if (head) head.style.left = `${((before + loc.offset) / total) * 100}%`;
+  renderTimeline(items, loc, total, before, `${c.epoch}:${n}:${total}`);
 
   // Tabla de emisión con horas reales
   let t = now - loc.offset * 1000, rows = "";
