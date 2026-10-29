@@ -135,6 +135,24 @@ async function initPanel() {
     const id = $("order-add").value; if (!id) return;
     state.plan.order.push(id); savePlan().then(renderAll).catch(fail);
   });
+  // Vaciar la parrilla de golpe
+  $("order-clear").addEventListener("click", () => {
+    const n = state.plan.order.length;
+    if (!n) { toast("La parrilla ya está vacía.", "error"); return; }
+    if (!confirm(`¿Quitar los ${n} programas de la parrilla? Siguen en la biblioteca. Luego pulsa «Guardar y publicar» para aplicarlo.`)) return;
+    state.plan.order = []; savePlan().then(() => { renderAll(); toast("Parrilla vaciada. Pulsa «Guardar y publicar» para aplicarlo a la emisión.", "ok"); }).catch(fail);
+  });
+  // Dejar solo el programa que está al aire y quitar los demás de la parrilla
+  $("order-keep-air").addEventListener("click", () => {
+    const c = state.channel, loc = c?.items?.length ? studioLoc(c, serverNow()) : null;
+    if (!loc) { toast("No hay ningún programa al aire ahora.", "error"); return; }
+    let k = loc.index; while (k > 0 && c.items[k].type !== "programa") k--;   // si hay un corte comercial, cuenta el programa al que pertenece
+    const air = c.items[k];
+    if (!air || air.type !== "programa" || !state.lib.some((x) => x.id === air.id)) { toast("No pude saber qué programa está al aire.", "error"); return; }
+    const others = state.plan.order.filter((id) => id !== air.id).length + Math.max(0, state.plan.order.filter((id) => id === air.id).length - 1);
+    if (!confirm(`Se quedará solo «${air.title}» en la parrilla y se quitarán los otros ${others}. ¿Continuar?`)) return;
+    state.plan.order = [air.id]; savePlan().then(() => { renderAll(); toast(`En la parrilla solo queda «${air.title}». Pulsa «Guardar y publicar» para aplicarlo; lo que está al aire no se corta.`, "ok"); }).catch(fail);
+  });
   $("publish-btn").addEventListener("click", publish);
   $("publish-btn2").addEventListener("click", publish);
   $("brand-form").addEventListener("submit", async (e) => { e.preventDefault(); await saveBrand(); });
@@ -238,8 +256,8 @@ function startEdit(id) {
   const pf = it.playFor > 0 ? Math.min(it.playFor, it.duration) : 0;
   editing = { id, url: it.url, dur: it.duration, play: pf };
   $("lib-title").value = it.title; $("lib-url").value = it.url; $("lib-kind").value = it.kind;
-  $("lib-dur-m").value = Math.floor(it.duration / 60); $("lib-dur-s").value = Math.round(it.duration % 60);
-  $("lib-play-m").value = pf ? Math.floor(pf / 60) : ""; $("lib-play-s").value = pf ? Math.round(pf % 60) : "";
+  $("lib-dur-h").value = Math.floor(it.duration / 3600) || ""; $("lib-dur-m").value = Math.floor((it.duration % 3600) / 60); $("lib-dur-s").value = Math.round(it.duration % 60);
+  $("lib-play-h").value = pf >= 3600 ? Math.floor(pf / 3600) : ""; $("lib-play-m").value = pf ? Math.floor((pf % 3600) / 60) : ""; $("lib-play-s").value = pf ? Math.round(pf % 60) : "";
   $("lib-form").querySelector('button[type="submit"]').textContent = "Guardar cambios";
   $("lib-cancel").hidden = false;
   const box = document.querySelector(".link-add"); box.open = true; box.querySelector("summary").textContent = `Editando: ${it.title}`;
@@ -260,8 +278,8 @@ async function addItem(e) {
   if (/^(?:[\w-]+\.)?(?:facebook\.com|fb\.watch)\//i.test(url)) url = `https://${url}`;
   if (!/^https?:\/\//i.test(url)) url = new URL(`../media/${encodeURIComponent(url.replace(/^\/?(media\/)?/, ""))}`, location.href).href;
   const yt = youtubeId(url), fb = !!facebookUrl(url);
-  const ms = (a, b) => Math.max(0, Math.floor(Number($(a).value) || 0)) * 60 + Math.max(0, Math.floor(Number($(b).value) || 0));
-  let duration = ms("lib-dur-m", "lib-dur-s"), playFor = ms("lib-play-m", "lib-play-s");
+  const ms = (h, a, b) => Math.max(0, Math.floor(Number($(h).value) || 0)) * 3600 + Math.max(0, Math.floor(Number($(a).value) || 0)) * 60 + Math.max(0, Math.floor(Number($(b).value) || 0));
+  let duration = ms("lib-dur-h", "lib-dur-m", "lib-dur-s"), playFor = ms("lib-play-h", "lib-play-m", "lib-play-s");
   // Al editar: si cambiaste el enlace y no tocaste la duración, se vuelve a detectar la del video nuevo.
   if (editing && url !== editing.url && duration === editing.dur) duration = 0;
   if (fb && !(duration > 0)) { toast("Facebook no permite detectar la duración. Escribe los minutos y segundos del video en los campos de Duración.", "error"); return; }

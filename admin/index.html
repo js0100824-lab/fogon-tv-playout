@@ -23,6 +23,8 @@ section[aria-label="Biblioteca"] .col-b{overflow-x:hidden}
 #lib-list .lib-actions .btn,#lib-list .lib-link .btn{white-space:nowrap}
 #lib-list .lib-link .btn{display:block;margin-top:6px}
 #lib-cancel[hidden]{display:none}
+.row3{display:grid !important;grid-template-columns:repeat(3,minmax(0,1fr)) !important;gap:8px}
+.row3 input{min-width:0;width:100%}
 #lib-list .lib-link{min-width:0;max-width:100%;font-size:.8em;opacity:.8}
 #lib-list .lib-link summary{cursor:pointer;display:inline-block;opacity:.8}
 #lib-list .lib-link span{display:block;margin-top:4px;overflow-wrap:anywhere;word-break:break-all;user-select:all}
@@ -81,7 +83,7 @@ html,body{max-width:100%;overflow-x:hidden}
   .studio table.live{width:100%;min-width:0}
   .studio table.live td,.studio table.live th{overflow-wrap:anywhere}
   .studio input,.studio select,.studio textarea{max-width:100%;min-width:0;box-sizing:border-box}
-  .studio .row2{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}
+  .studio .row2:not(.row3){display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}
   .studio .row{display:flex;flex-wrap:wrap;gap:8px}
   .studio .row>select,.studio .row>input{flex:1 1 140px}
   .studio .tabs{display:flex;overflow-x:auto;max-width:100%;-webkit-overflow-scrolling:touch}
@@ -154,10 +156,10 @@ html,body{max-width:100%;overflow-x:hidden}
             <input id="lib-title" placeholder="Título" required maxlength="120">
             <input id="lib-url" type="text" placeholder="Nombre (video1.mp4) o enlace de YouTube / Facebook" required>
             <select id="lib-kind"><option value="programa">Es un programa</option><option value="comercial">Es un comercial</option></select>
-            <label class="mini-l">Duración del video (obligatoria en Facebook)</label>
-            <div class="row2"><input id="lib-dur-m" type="number" min="0" placeholder="Minutos"><input id="lib-dur-s" type="number" min="0" max="59" placeholder="Segundos"></div>
+            <label class="mini-l">Duración del video (horas, minutos y segundos · obligatoria en Facebook)</label>
+            <div class="row2 row3"><input id="lib-dur-h" type="number" min="0" placeholder="Horas"><input id="lib-dur-m" type="number" min="0" placeholder="Minutos"><input id="lib-dur-s" type="number" min="0" max="59" placeholder="Segundos"></div>
             <label class="mini-l">Solo comerciales: cuánto dura al aire (opcional)</label>
-            <div class="row2"><input id="lib-play-m" type="number" min="0" placeholder="Minutos"><input id="lib-play-s" type="number" min="0" max="59" placeholder="Segundos"></div>
+            <div class="row2 row3"><input id="lib-play-h" type="number" min="0" placeholder="Horas"><input id="lib-play-m" type="number" min="0" placeholder="Minutos"><input id="lib-play-s" type="number" min="0" max="59" placeholder="Segundos"></div>
             <button class="btn small" type="submit">Guardar enlace</button>
             <button class="btn small" type="button" id="lib-cancel" hidden>Cancelar edición</button>
           </form>
@@ -192,6 +194,10 @@ html,body{max-width:100%;overflow-x:hidden}
           <div id="order-list"></div>
           <div class="row"><select id="order-add"></select><button class="btn secondary small" id="order-add-btn" type="button">Añadir</button></div>
           <p class="hint" id="order-hint"></p>
+          <div class="row" id="order-tools">
+            <button class="btn secondary small" id="order-keep-air" type="button" title="Quita todos los programas de la parrilla menos el que está al aire ahora">Dejar solo el que está al aire</button>
+            <button class="btn danger small" id="order-clear" type="button" title="Quita todos los programas de la parrilla de una vez">Vaciar parrilla</button>
+          </div>
           <h3 class="sub">Ciclo de emisión</h3>
           <p id="cycle-total" class="hint"></p>
           <ol id="cycle-list" class="cycle"></ol>
@@ -256,6 +262,6 @@ html,body{max-width:100%;overflow-x:hidden}
   </div>
 </div>
 
-<script type="module" src="../js/admin.js?v=51"></script>
+<script type="module" src="../js/admin.js?v=52"></script>
 </body>
 </html>
