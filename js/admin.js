@@ -569,13 +569,19 @@ function updateAirTimes(cyc, clk) {
       }
     }
   }
+  // Último tramo de cada programa (si se parte en varias partes por los cortes, termina en la última parte).
+  const endIdx = new Map();
+  startIdx.forEach((k, n) => { let e = k; const it = cyc[k]; if (it.parts > 1) for (let j = k + 1; j < cyc.length; j++) { const x = cyc[j]; if (x.type === "programa" && x.id === it.id && x.part > 1) { e = j; if (x.part >= it.parts) break; } else if (x.type === "programa") break; } endIdx.set(n, e); });
+  const L = cycleLength(cyc) * 1000;
   nodes.forEach((el) => {
     const n = Number(el.dataset.air), k = startIdx.get(n);
     if (k == null) { el.innerHTML = ""; return; }
-    if (n === airPos) { el.innerHTML = ""; return; }
-    if (!clk) { el.innerHTML = `<span class="when">Minuto ${fmtDuration(cum[k])} del ciclo</span>`; return; }
-    const t = clk.starts[k];
-    el.innerHTML = `<span class="when">Sale ${esc(hm(t))}${dayTag(t, now)}</span><span class="rel">${esc(relTime(t - now))}</span>`;
+    const e = endIdx.get(n);
+    if (!clk) { el.innerHTML = `<span class="when">Sale min ${fmtDuration(cum[k])}</span><span class="when">Termina min ${fmtDuration(cum[e] + cyc[e].duration)}</span>`; return; }
+    // El que está al aire ya empezó: su hora de inicio es la de este ciclo (no la de la próxima vuelta).
+    let t = clk.starts[k]; if (n === airPos && t > now) t -= L;
+    const tEnd = t + (cum[e] + cyc[e].duration - cum[k]) * 1000;
+    el.innerHTML = `<span class="when">Sale ${esc(hm(t))}${dayTag(t, now)}</span><span class="when">Termina ${esc(hm(tEnd))}${dayTag(tEnd, now)}</span>${n === airPos ? "" : `<span class="rel">${esc(relTime(t - now))}</span>`}`;
   });
 }
 
