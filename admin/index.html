@@ -217,7 +217,10 @@ html,body{max-width:100%;overflow-x:hidden}
       </ul>
       <div class="col-b">
         <section id="tab-programacion" class="tab">
-          <div id="order-list"></div>
+          <details class="cycle-box" id="order-box" open>
+            <summary id="order-sum">Parrilla</summary>
+            <div id="order-list"></div>
+          </details>
           <div class="row"><select id="order-add"></select><button class="btn secondary small" id="order-add-btn" type="button">Añadir</button></div>
           <div class="row" id="order-tools">
             <button class="btn secondary small" id="order-keep-air" type="button">Dejar solo el que está al aire</button>
@@ -295,6 +298,6 @@ html,body{max-width:100%;overflow-x:hidden}
   </div>
 </div>
 
-<script type="module" src="../js/admin.js?v=62"></script>
+<script type="module" src="../js/admin.js?v=63"></script>
 </body>
 </html>

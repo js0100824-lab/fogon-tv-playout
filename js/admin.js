@@ -145,9 +145,11 @@ async function initPanel() {
   $("plan-save-com").addEventListener("click", savePlanFromCommercial);
   ["plan-mode", "plan-iv", "plan-iu", "plan-count", "plan-repeat", "plan-end", "plan-every"].forEach((id) => $(id).addEventListener("input", previewPlan));
   startClock();   // hora del servidor: la misma para el panel y para todos los espectadores
-  const cbox = $("cycle-box");
-  try { if (localStorage.getItem("fogon.cycleOpen") === "0") cbox.open = false; } catch { /* sin almacenamiento */ }
-  cbox.addEventListener("toggle", () => { try { localStorage.setItem("fogon.cycleOpen", cbox.open ? "1" : "0"); } catch { /* */ } });
+  for (const [id, key] of [["order-box", "fogon.orderOpen"], ["cycle-box", "fogon.cycleOpen"]]) {
+    const box = $(id);
+    try { if (localStorage.getItem(key) === "0") box.open = false; } catch { /* sin almacenamiento */ }
+    box.addEventListener("toggle", () => { try { localStorage.setItem(key, box.open ? "1" : "0"); } catch { /* */ } });
+  }
   $("order-add-btn").addEventListener("click", () => {
     const id = $("order-add").value; if (!id) return;
     state.plan.order.push(id); savePlan().then(renderAll).catch(fail);
@@ -479,6 +481,7 @@ function renderOrder() {
   const opt = (i, mark) => `<option value="${esc(i.id)}">${mark ? `✓ ${esc(i.title)} (${fmtDuration(i.duration)})${inCount(i.id) > 1 ? ` ×${inCount(i.id)}` : ""}` : `${esc(i.title)} (${fmtDuration(i.duration)})`}</option>`;
   $("order-add").innerHTML = (fresh.length ? `<optgroup label="Sin añadir (${fresh.length})">${fresh.map((i) => opt(i, false)).join("")}</optgroup>` : "")
     + (used.length ? `<optgroup label="Ya en la parrilla (${used.length})">${used.map((i) => opt(i, true)).join("")}</optgroup>` : "");
+  $("order-sum").textContent = `Parrilla (${state.plan.order.length} programa${state.plan.order.length === 1 ? "" : "s"})`;
   const el = $("order-list");
   if (!state.plan.order.length) { el.innerHTML = '<p class="hint">Parrilla vacía</p>'; return; }
   el.innerHTML = state.plan.order.map((id, n) => {
