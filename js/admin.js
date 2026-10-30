@@ -145,6 +145,9 @@ async function initPanel() {
   $("plan-save-com").addEventListener("click", savePlanFromCommercial);
   ["plan-mode", "plan-iv", "plan-iu", "plan-count", "plan-repeat", "plan-end", "plan-every"].forEach((id) => $(id).addEventListener("input", previewPlan));
   startClock();   // hora del servidor: la misma para el panel y para todos los espectadores
+  const cbox = $("cycle-box");
+  try { if (localStorage.getItem("fogon.cycleOpen") === "0") cbox.open = false; } catch { /* sin almacenamiento */ }
+  cbox.addEventListener("toggle", () => { try { localStorage.setItem("fogon.cycleOpen", cbox.open ? "1" : "0"); } catch { /* */ } });
   $("order-add-btn").addEventListener("click", () => {
     const id = $("order-add").value; if (!id) return;
     state.plan.order.push(id); savePlan().then(renderAll).catch(fail);
@@ -480,7 +483,7 @@ function renderOrder() {
   if (!state.plan.order.length) { el.innerHTML = '<p class="hint">Parrilla vacía</p>'; return; }
   el.innerHTML = state.plan.order.map((id, n) => {
     const i = state.lib.find((x) => x.id === id);
-    return `<div class="item"><span>${n + 1}.</span><span class="grow"><b>${esc(i.title)}</b></span><span>${fmtDuration(i.duration)}</span>
+    return `<div class="item"><span>${n + 1}.</span><span class="grow"><b>${esc(i.title)}</b><div class="airt" data-air="${n}"></div></span><span>${fmtDuration(i.duration)}</span>
       <button class="btn secondary small" data-mv="${n}:-1" type="button" aria-label="Subir">↑</button>
       <button class="btn secondary small" data-mv="${n}:1" type="button" aria-label="Bajar">↓</button>
       <button class="btn secondary small" data-rm="${n}" type="button">Quitar</button></div>`;
@@ -514,6 +517,52 @@ function renderCycle() {
   $("cycle-list").innerHTML = cyc.slice(0, 400).map((i, k) => { const li = `<li class="${i.type === "comercial" ? "ad" : ""}">${clk ? hms(clk.starts[k]) : fmtDuration(t)} · ${esc(itemLabel(i))} · ${fmtDuration(i.duration)}${i.type === "comercial" ? ` (corte ${i.breakNo})` : (i.parts > 1 ? ` (del minuto ${fmtDuration(i.startAt)} al ${fmtDuration(i.startAt + i.duration)})` : "")}</li>`; t += i.duration; return li; }).join("")
     + (cyc.length > 400 ? `<li class="hint">… y ${cyc.length - 400} más</li>` : "");
   $("st-cycle").textContent = state.channel?.items?.length ? `${state.channel.items.length} elementos` : "Sin publicar";
+  updateAirTimes(cyc, clk);
+}
+// Texto corto de «en 25 min» / «en 2 h 05 min» / «hace …».
+function relTime(ms) {
+  const m = Math.round(Math.abs(ms) / 60000), t = m < 60 ? `${m} min` : `${Math.floor(m / 60)} h ${String(m % 60).padStart(2, "0")} min`;
+  return ms < 0 ? `hace ${t}` : m < 1 ? "en un momento" : `en ${t}`;
+}
+const dayKey = (ms) => new Date(ms).toLocaleDateString("en-CA", { timeZone: TZ });
+function dayTag(ms, now) {
+  const diff = Math.round((Date.parse(dayKey(ms)) - Date.parse(dayKey(now))) / 86400000);
+  return diff <= 0 ? "" : diff === 1 ? " (mañana)" : ` (${new Date(ms).toLocaleDateString("es-DO", { timeZone: TZ, weekday: "short", day: "numeric", month: "short" })})`;
+}
+// Escribe debajo de cada programa de la parrilla a qué hora sale (o «AL AIRE AHORA» / «SIGUIENTE»).
+function updateAirTimes(cyc, clk) {
+  const nodes = document.querySelectorAll("#order-list [data-air]"); if (!nodes.length) return;
+  const now = serverNow(), order = state.plan.order;
+  // Posición de la parrilla → tramo del ciclo donde ese programa arranca (buildCycle descarta los que no duran nada).
+  const orderPos = []; order.forEach((id, n) => { const i = state.lib.find((x) => x.id === id); if (i && i.duration > 0) orderPos.push(n); });
+  const startIdx = new Map(); let p = -1;
+  cyc.forEach((it, k) => { if (it.type === "programa" && (!it.part || it.part === 1)) { p++; if (orderPos[p] != null) startIdx.set(orderPos[p], k); } });
+  const cum = []; { let a = 0; for (const it of cyc) { cum.push(a); a += it.duration; } }
+  // ¿Cuál de la parrilla está al aire ahora?
+  let airPos = -1; const c = state.channel;
+  if (c?.items?.length && c.live !== false) {
+    const loc = studioLoc(c, now);
+    if (loc) {
+      let k0 = loc.index, c0 = -1; for (let k = 0; k <= loc.index; k++) if (c.items[k].type === "programa" && (!c.items[k].part || c.items[k].part === 1)) c0 = k;
+      k0 = c0; const air = k0 >= 0 ? c.items[k0] : null;
+      if (air) {
+        const seq = c.items.slice(0, k0 + 1).filter((x) => x.type === "programa" && (!x.part || x.part === 1)).length - 1;
+        const cand = order.map((id, n) => (id === air.id && startIdx.has(n) ? n : -1)).filter((n) => n >= 0);
+        airPos = cand.reduce((b, n) => (b < 0 || Math.abs(n - seq) < Math.abs(b - seq) ? n : b), -1);
+      }
+    }
+  }
+  // Siguiente = el que sale primero después de ahora (sin contar el que está al aire).
+  let nextPos = -1, best = Infinity;
+  if (clk) startIdx.forEach((k, n) => { const t = clk.starts[k]; if (n !== airPos && t >= now - 1000 && t < best) { best = t; nextPos = n; } });
+  nodes.forEach((el) => {
+    const n = Number(el.dataset.air), k = startIdx.get(n);
+    if (k == null) { el.innerHTML = ""; return; }
+    if (n === airPos) { el.innerHTML = '<span class="badge now">Al aire ahora</span>'; return; }
+    if (!clk) { el.innerHTML = `<span class="when">Minuto ${fmtDuration(cum[k])} del ciclo</span>`; return; }
+    const t = clk.starts[k];
+    el.innerHTML = `${n === nextPos ? '<span class="badge next">Siguiente</span>' : ""}<span class="when">🕒 Sale ${esc(hms(t))}${dayTag(t, now)}</span><span class="rel">${esc(relTime(t - now))}</span>`;
+  });
 }
 
 /* Directo en vivo (YouTube / Facebook) */
@@ -686,6 +735,8 @@ function renderNow() {
   settleChannel(state.channel, now);   // si toca el relevo a la lista nueva del ciclo
   $("clock").textContent = hms(now);
   const c = state.channel;
+  const airKey = c?.items?.length ? `${c.epoch}:${c.live}:${c.items.length}:${Math.floor(((now - c.epoch) / 1000) / 30)}` : "";
+  if (airKey !== renderNow.airKey) { renderNow.airKey = airKey; renderCycle(); }   // cada ~30 s y en cada cambio: las horas de la parrilla se mantienen al día
   const paused = c?.live === false;
   const loc = c?.items?.length ? studioLoc(c, now) : null;   // el Studio sigue funcionando aunque el público esté cortado
   $("onair").classList.toggle("off", !loc || paused);

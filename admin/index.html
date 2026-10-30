@@ -41,6 +41,17 @@ section[aria-label="Biblioteca"] .col-b{overflow-x:hidden}
 #lib-list .lib-link{min-width:0;max-width:100%;font-size:.8em;opacity:.8}
 #lib-list .lib-link summary{cursor:pointer;display:inline-block;opacity:.8}
 #lib-list .lib-link span{display:block;margin-top:4px;overflow-wrap:anywhere;word-break:break-all;user-select:all}
+/* Parrilla: hora de salida de cada programa */
+#order-list .airt{display:flex;flex-wrap:wrap;align-items:center;gap:4px 8px;margin-top:4px;font-size:12px;font-variant-numeric:tabular-nums;opacity:.9}
+#order-list .airt .when{opacity:.85}
+#order-list .airt .rel{opacity:.6}
+#order-list .airt .badge{padding:1px 8px;border-radius:999px;font-size:11px;font-weight:700;letter-spacing:.03em;text-transform:uppercase}
+#order-list .airt .badge.now{background:#d93a3a;color:#fff}
+#order-list .airt .badge.next{background:#1fb5c4;color:#001012}
+/* Ciclo de emisión plegable (igual que «Añadir contenido» en la Biblioteca) */
+details.cycle-box{margin:14px 0 10px}
+details.cycle-box>summary{cursor:pointer;font-weight:700;font-size:15px;padding:8px 0;list-style:revert}
+details.cycle-box:not([open])>summary{opacity:.8}
 /* Línea de tiempo grande: se desplaza, se acerca/aleja y sigue a la raya blanca */
 .tl-tools{display:flex;justify-content:space-between;align-items:center;gap:8px;margin:12px 0 4px;font-size:12px;opacity:.9}
 .tl-btns{display:flex;gap:6px}.tl-btns .btn{min-width:40px;min-height:32px}
@@ -208,9 +219,11 @@ html,body{max-width:100%;overflow-x:hidden}
             <button class="btn secondary small" id="order-keep-air" type="button">Dejar solo el que está al aire</button>
             <button class="btn danger small" id="order-clear" type="button">Vaciar parrilla</button>
           </div>
-          <h3 class="sub">Ciclo de emisión</h3>
-          <p id="cycle-total" class="hint"></p>
-          <ol id="cycle-list" class="cycle"></ol>
+          <details class="cycle-box" id="cycle-box" open>
+            <summary>Ciclo de emisión</summary>
+            <p id="cycle-total" class="hint"></p>
+            <ol id="cycle-list" class="cycle"></ol>
+          </details>
           <div class="row"><button class="btn" id="publish-btn2" type="button">Guardar y publicar</button><button class="btn danger" id="publish-restart" type="button">Publicar y reiniciar</button></div>
         </section>
 
@@ -278,6 +291,6 @@ html,body{max-width:100%;overflow-x:hidden}
   </div>
 </div>
 
-<script type="module" src="../js/admin.js?v=56"></script>
+<script type="module" src="../js/admin.js?v=57"></script>
 </body>
 </html>
