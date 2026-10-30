@@ -565,16 +565,13 @@ function updateAirTimes(cyc, clk) {
       }
     }
   }
-  // Siguiente = el que sale primero después de ahora (sin contar el que está al aire).
-  let nextPos = -1, best = Infinity;
-  if (clk) startIdx.forEach((k, n) => { const t = clk.starts[k]; if (n !== airPos && t >= now - 1000 && t < best) { best = t; nextPos = n; } });
   nodes.forEach((el) => {
     const n = Number(el.dataset.air), k = startIdx.get(n);
     if (k == null) { el.innerHTML = ""; return; }
-    if (n === airPos) { el.innerHTML = '<span class="badge now">Al aire ahora</span>'; return; }
+    if (n === airPos) { el.innerHTML = ""; return; }
     if (!clk) { el.innerHTML = `<span class="when">Minuto ${fmtDuration(cum[k])} del ciclo</span>`; return; }
     const t = clk.starts[k];
-    el.innerHTML = `${n === nextPos ? '<span class="badge next">Siguiente</span>' : ""}<span class="when">🕒 Sale ${esc(hms(t))}${dayTag(t, now)}</span><span class="rel">${esc(relTime(t - now))}</span>`;
+    el.innerHTML = `<span class="when">Sale ${esc(hms(t))}${dayTag(t, now)}</span><span class="rel">${esc(relTime(t - now))}</span>`;
   });
 }
 
