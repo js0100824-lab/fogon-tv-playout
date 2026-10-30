@@ -14,6 +14,16 @@
 section[aria-label="Biblioteca"] .col-b{overflow-x:hidden}
 #lib-list{min-width:0;max-width:100%;overflow-x:hidden}
 #lib-list .lib-item{display:flex;flex-direction:column;align-items:stretch;gap:8px;padding:10px 4px;min-width:0;max-width:100%;box-sizing:border-box}
+.seg{display:flex;gap:6px;margin:10px 0}
+.seg button{flex:1;min-height:42px;padding:8px;border:1px solid rgba(255,255,255,.15);border-radius:8px;background:transparent;color:inherit;font:inherit;font-weight:600;cursor:pointer}
+.seg button.active{background:#1fb5c4;border-color:#1fb5c4;color:#001012}
+.dlg{position:fixed;inset:0;z-index:9999;display:flex;align-items:center;justify-content:center;padding:16px;background:rgba(0,0,0,.65)}
+.dlg.hidden{display:none !important}
+.dlg-box{width:100%;max-width:360px;background:#14181d;color:#e8eaed;border:1px solid rgba(255,255,255,.14);border-radius:14px;padding:20px;box-shadow:0 20px 60px rgba(0,0,0,.6)}
+.dlg-box h3{margin:0 0 8px;font-size:18px}
+.dlg-box p{margin:0 0 16px;opacity:.8;line-height:1.4;overflow-wrap:anywhere}
+.dlg-actions{display:flex;gap:10px;justify-content:flex-end}
+.dlg-actions .btn{min-height:42px;padding:0 18px}
 #lib-list .lib-sec{margin:14px 0 6px;font-size:13px;letter-spacing:.04em;text-transform:uppercase;opacity:.85}
 #lib-list .lib-count{opacity:.6;font-weight:400}
 #lib-list .lib-num{display:inline-block;min-width:1.6em;opacity:.65;font-variant-numeric:tabular-nums}
@@ -46,12 +56,9 @@ section[aria-label="Biblioteca"] .col-b{overflow-x:hidden}
 @media (max-width:700px){#timeline{height:96px}.tl-btns .btn{min-width:46px;min-height:40px}}
 #b-ticker{width:100%;box-sizing:border-box;min-height:110px;padding:8px;font:inherit;line-height:1.4;color:inherit;background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.18);border-radius:6px;resize:vertical}
 table.live tr.ad td{color:#f2bd3a}
-#lib-toggle{display:none}
 /* Móvil: tarjetas simples — nombre grande, tipo y duración en una línea, botones grandes, enlace aparte */
 @media (max-width:700px){
   #lib-form input,#lib-form select{font-size:16px}
-  #lib-toggle{display:block;width:100%;min-height:46px;margin:10px 0;font-size:15px}
-  #lib-list.lib-collapsed{display:none}
   #lib-list .lib-item{padding:12px;margin-bottom:10px;border:1px solid rgba(255,255,255,.1);border-radius:10px;background:rgba(255,255,255,.03);gap:10px}
   #lib-list .lib-main b{font-size:16px;line-height:1.3}
   #lib-list .lib-meta{gap:8px}
@@ -156,32 +163,31 @@ html,body{max-width:100%;overflow-x:hidden}
       <h2 class="col-h">Biblioteca</h2>
       <div class="col-b">
         <details class="link-add" open>
-          <summary>Añadir por enlace (YouTube, Facebook o .mp4)</summary>
+          <summary>Añadir contenido</summary>
           <form id="lib-form">
             <input id="lib-title" placeholder="Título" required maxlength="120">
-            <input id="lib-url" type="text" placeholder="Nombre (video1.mp4) o enlace de YouTube / Facebook" required>
-            <select id="lib-kind"><option value="programa">Es un programa</option><option value="comercial">Es un comercial</option></select>
-            <label class="mini-l">Duración del video (horas, minutos y segundos · obligatoria en Facebook)</label>
+            <input id="lib-url" type="text" placeholder="Enlace" required>
+            <select id="lib-kind"><option value="programa">Programa</option><option value="comercial">Anuncio</option></select>
+            <label class="mini-l">Duración del video de Facebook</label>
             <div class="row2 row3"><input id="lib-dur-h" type="number" min="0" placeholder="Horas"><input id="lib-dur-m" type="number" min="0" placeholder="Minutos"><input id="lib-dur-s" type="number" min="0" max="59" placeholder="Segundos"></div>
-            <label class="mini-l">Solo comerciales: cuánto dura al aire (opcional)</label>
+            <label class="mini-l">Duración al aire (anuncio)</label>
             <div class="row2 row3"><input id="lib-play-h" type="number" min="0" placeholder="Horas"><input id="lib-play-m" type="number" min="0" placeholder="Minutos"><input id="lib-play-s" type="number" min="0" max="59" placeholder="Segundos"></div>
-            <button class="btn small" type="submit">Guardar enlace</button>
-            <button class="btn small" type="button" id="lib-cancel" hidden>Cancelar edición</button>
+            <button class="btn small" type="submit">Guardar</button>
+            <button class="btn small" type="button" id="lib-cancel" hidden>Cancelar</button>
           </form>
         </details>
-        <button class="btn small" id="lib-toggle" type="button" aria-expanded="false">Mostrar todos los programas</button>
-        <div id="lib-list" class="lib-collapsed"></div>
+        <div class="seg" id="lib-filter"><button type="button" class="active" data-kind="programa">Programas</button><button type="button" data-kind="comercial">Anuncios</button></div>
+        <div id="lib-list"></div>
       </div>
     </section>
 
     <section class="col center" aria-label="Monitor">
-      <h2 class="col-h">Programa (lo que ve el público)</h2>
+      <h2 class="col-h">Vista previa</h2>
       <div class="col-b">
         <div class="monitor"><iframe id="monitor" title="Vista previa en vivo" allow="autoplay; fullscreen"></iframe></div>
-        <div class="tl-tools"><span>Línea de tiempo · arrastra para moverte</span><span class="tl-btns"><button class="btn small" id="tl-minus" type="button" title="Alejar">−</button><button class="btn small" id="tl-plus" type="button" title="Acercar">+</button><button class="btn small" id="tl-now" type="button" title="Volver al programa al aire">Ahora</button></span></div>
+        <div class="tl-tools"><span>Línea de tiempo</span><span class="tl-btns"><button class="btn small" id="tl-minus" type="button">−</button><button class="btn small" id="tl-plus" type="button">+</button><button class="btn small" id="tl-now" type="button">Ahora</button></span></div>
         <div id="timeline" class="timeline" aria-label="Línea de tiempo del ciclo"></div>
         <div class="live-wrap"><table class="live"><thead><tr><th>Inicio</th><th>Nombre</th><th>Tipo</th><th>Duración</th></tr></thead><tbody id="live-body"></tbody></table></div>
-        <p class="hint">El monitor está en silencio. Para escuchar, abre el reproductor.</p>
       </div>
     </section>
 
@@ -198,53 +204,46 @@ html,body{max-width:100%;overflow-x:hidden}
         <section id="tab-programacion" class="tab">
           <div id="order-list"></div>
           <div class="row"><select id="order-add"></select><button class="btn secondary small" id="order-add-btn" type="button">Añadir</button></div>
-          <p class="hint" id="order-hint"></p>
           <div class="row" id="order-tools">
-            <button class="btn secondary small" id="order-keep-air" type="button" title="Quita todos los programas de la parrilla menos el que está al aire ahora">Dejar solo el que está al aire</button>
-            <button class="btn danger small" id="order-clear" type="button" title="Quita todos los programas de la parrilla de una vez">Vaciar parrilla</button>
+            <button class="btn secondary small" id="order-keep-air" type="button">Dejar solo el que está al aire</button>
+            <button class="btn danger small" id="order-clear" type="button">Vaciar parrilla</button>
           </div>
           <h3 class="sub">Ciclo de emisión</h3>
           <p id="cycle-total" class="hint"></p>
           <ol id="cycle-list" class="cycle"></ol>
-          <div class="row"><button class="btn" id="publish-btn2" type="button">Guardar y publicar</button><button class="btn danger" id="publish-restart" type="button" title="Publica y vuelve a empezar la emisión desde el primer programa, ahora mismo">Publicar y reiniciar</button></div>
-          <p class="hint">«Guardar y publicar» no corta lo que está al aire (lo nuevo de arriba entra en la próxima repetición). «Publicar y reiniciar» empieza de cero ya.</p>
+          <div class="row"><button class="btn" id="publish-btn2" type="button">Guardar y publicar</button><button class="btn danger" id="publish-restart" type="button">Publicar y reiniciar</button></div>
         </section>
 
         <section id="tab-comercial" class="tab hidden">
-          <label class="field"><span>Tipo de corte</span><select id="plan-mode"><option value="continuous">Por tiempo corrido (cada X minutos de programación, entre varios programas)</option><option value="time">Por tiempo, dentro de cada programa</option><option value="programs">Entre programas (cada N programas)</option></select></label>
+          <label class="field"><span>Tipo de corte</span><select id="plan-mode"><option value="continuous">Tiempo corrido</option><option value="time">Dentro de cada programa</option><option value="programs">Entre programas</option></select></label>
           <div id="plan-time-box">
-            <label class="field"><span>Un corte cada…</span><div class="row2"><input id="plan-iv" type="number" min="1" step="any"><select id="plan-iu"><option value="m">minutos</option><option value="s">segundos</option></select></div></label>
-            <label class="field" id="plan-end-row"><span><input id="plan-end" type="checkbox"> También poner un corte al terminar cada programa</span></label>
+            <label class="field"><span>Un corte cada</span><div class="row2"><input id="plan-iv" type="number" min="1" step="any"><select id="plan-iu"><option value="m">minutos</option><option value="s">segundos</option></select></div></label>
+            <label class="field" id="plan-end-row"><span><input id="plan-end" type="checkbox"> Corte al terminar cada programa</span></label>
           </div>
           <div id="plan-prog-box" class="hidden"><label class="field"><span>Corte cada N programas</span><input id="plan-every" type="number" min="0" max="20"></label></div>
-          <label class="field"><span>Anuncios por corte (se toman en el orden de la lista)</span><input id="plan-count" type="number" min="0" max="20"></label>
-          <label class="field"><span>Repetir la tanda (1 = una sola vez; 3 = A, B, C, A, B, C, A, B, C)</span><input id="plan-repeat" type="number" min="1" max="10"></label>
+          <label class="field"><span>Anuncios por corte</span><input id="plan-count" type="number" min="0" max="20"></label>
+          <label class="field"><span>Repetir la tanda</span><input id="plan-repeat" type="number" min="1" max="10"></label>
           <button class="btn small" id="plan-save-com" type="button">Guardar</button>
-          <h3 class="sub">Dónde caerán los cortes</h3>
+          <h3 class="sub">Cortes</h3>
           <div id="cut-summary"></div>
-          <h3 class="sub">Comerciales (orden y activos)</h3>
+          <h3 class="sub">Anuncios</h3>
           <div id="ads-list"></div>
         </section>
 
         <section id="tab-envivo" class="tab hidden">
-          <label class="field"><span>Enlace del directo</span><input id="lv-url" type="text" placeholder="https://www.youtube.com/watch?v=…  o  https://www.facebook.com/…/videos/…" autocomplete="off"></label>
+          <label class="field"><span>Enlace del directo</span><input id="lv-url" type="text" placeholder="Enlace" autocomplete="off"></label>
           <div class="row"><button class="btn small" id="lv-on" type="button">Poner en vivo</button><button class="btn secondary small" id="lv-off" type="button">Quitar directo</button></div>
           <p class="hint" id="lv-state"></p>
         </section>
 
         <section id="tab-personalizacion" class="tab hidden">
           <form id="brand-form">
-            <label class="field"><span>Color de acento</span><input id="b-accent" type="color"></label>
             <div class="field"><span>Logotipo</span>
               <div class="logo-row"><img id="b-logo-prev" alt="" class="hidden"><input id="b-logo-file" type="file" accept="image/*">
               <button class="btn secondary small hidden" id="b-logo-rm" type="button">Quitar logo</button></div></div>
             <label class="field"><span>Posición del logo</span><select id="b-logo-pos"><option value="top-left">Arriba a la izquierda</option><option value="top-right">Arriba a la derecha</option><option value="bottom-left">Abajo a la izquierda</option><option value="bottom-right">Abajo a la derecha</option></select></label>
-            <label class="field"><span>Tamaño del logo (% del ancho)</span><input id="b-logo-size" type="range" min="4" max="40"></label>
+            <label class="field"><span>Tamaño del logo</span><input id="b-logo-size" type="range" min="4" max="40"></label>
             <label class="field"><span>Opacidad del logo</span><input id="b-logo-op" type="range" min="10" max="100"></label>
-            <label class="field"><span>Rótulo inferior (una frase por línea)</span><textarea id="b-ticker" rows="5" maxlength="2000" placeholder="Escribe cada noticia en una línea nueva. Pasarán una tras otra y se repetirán."></textarea></label>
-            <label class="field"><span><input id="b-tk-move" type="checkbox"> Mover el texto como en un noticiero</span></label>
-            <label class="field"><span>Símbolo entre frases</span><input id="b-tk-sep" maxlength="3" placeholder="●"></label>
-            <label class="field"><span>Velocidad del texto</span><input id="b-tk-speed" type="range" min="40" max="300" step="10"></label>
             <button class="btn" type="submit">Guardar y publicar</button>
           </form>
         </section>
@@ -271,6 +270,14 @@ html,body{max-width:100%;overflow-x:hidden}
   </div>
 </div>
 
-<script type="module" src="../js/admin.js?v=55"></script>
+<div id="dlg" class="dlg hidden" role="dialog" aria-modal="true" aria-labelledby="dlg-title">
+  <div class="dlg-box">
+    <h3 id="dlg-title"></h3>
+    <p id="dlg-text"></p>
+    <div class="dlg-actions"><button class="btn secondary" id="dlg-cancel" type="button">Cancelar</button><button class="btn" id="dlg-ok" type="button">Aceptar</button></div>
+  </div>
+</div>
+
+<script type="module" src="../js/admin.js?v=56"></script>
 </body>
 </html>

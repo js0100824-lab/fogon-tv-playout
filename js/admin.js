@@ -88,6 +88,20 @@ function toast(text, kind = "ok") {
   const t = $("toast"); t.textContent = text; t.className = `msg ${kind}`;
   clearTimeout(toast.t); toast.t = setTimeout(() => t.classList.add("hidden"), 5000);
 }
+let libKind = "programa";   // qué se ve en la Biblioteca: programa | comercial
+// Alerta propia (reemplaza el confirm() del navegador). Devuelve true/false.
+function askConfirm({ title, text = "", ok = "Aceptar", cancel = "Cancelar", danger = false }) {
+  return new Promise((resolve) => {
+    const d = $("dlg"), okB = $("dlg-ok"), noB = $("dlg-cancel");
+    $("dlg-title").textContent = title; $("dlg-text").textContent = text; $("dlg-text").classList.toggle("hidden", !text);
+    okB.textContent = ok; noB.textContent = cancel; okB.classList.toggle("danger", !!danger);
+    d.classList.remove("hidden"); okB.focus();
+    const key = (e) => { if (e.key === "Escape") done(false); };
+    const done = (v) => { d.classList.add("hidden"); okB.onclick = noB.onclick = d.onclick = null; document.removeEventListener("keydown", key); resolve(v); };
+    okB.onclick = () => done(true); noB.onclick = () => done(false); d.onclick = (e) => { if (e.target === d) done(false); };
+    document.addEventListener("keydown", key);
+  });
+}
 const fail = (err) => toast(`Error: ${err.code || err.message}`, "error");
 
 async function initPanel() {
@@ -96,7 +110,7 @@ async function initPanel() {
   $("lib-form").addEventListener("submit", addItem);
   $("lib-cancel").addEventListener("click", resetEdit);
   initTimeline();
-  $("lib-toggle").addEventListener("click", () => { $("lib-list").classList.toggle("lib-collapsed"); updateLibToggle(); });
+  document.querySelectorAll("#lib-filter [data-kind]").forEach((b) => b.addEventListener("click", () => { libKind = b.dataset.kind; renderLibrary(); }));
   $("monitor").src = new URL("../player/?embed=1&studio=1", location.href).href;
   // La vista previa es la señal maestra: lo que ella emite se publica para que el reproductor público la siga.
   let lastOn = "", lastOnAt = 0, lastO = null;
@@ -136,22 +150,22 @@ async function initPanel() {
     state.plan.order.push(id); savePlan().then(renderAll).catch(fail);
   });
   // Vaciar la parrilla de golpe
-  $("order-clear").addEventListener("click", () => {
+  $("order-clear").addEventListener("click", async () => {
     const n = state.plan.order.length;
     if (!n) { toast("La parrilla ya está vacía.", "error"); return; }
-    if (!confirm(`¿Quitar los ${n} programas de la parrilla? Siguen en la biblioteca. Luego pulsa «Guardar y publicar» para aplicarlo.`)) return;
-    state.plan.order = []; savePlan().then(() => { renderAll(); toast("Parrilla vaciada. Pulsa «Guardar y publicar» para aplicarlo a la emisión.", "ok"); }).catch(fail);
+    if (!(await askConfirm({ title: "¿Vaciar la parrilla?", text: `Se quitan los ${n} programas. Siguen en la biblioteca.`, ok: "Vaciar", danger: true }))) return;
+    state.plan.order = []; savePlan().then(() => { renderAll(); toast("Parrilla vaciada.", "ok"); }).catch(fail);
   });
   // Dejar solo el programa que está al aire y quitar los demás de la parrilla
-  $("order-keep-air").addEventListener("click", () => {
+  $("order-keep-air").addEventListener("click", async () => {
     const c = state.channel, loc = c?.items?.length ? studioLoc(c, serverNow()) : null;
     if (!loc) { toast("No hay ningún programa al aire ahora.", "error"); return; }
     let k = loc.index; while (k > 0 && c.items[k].type !== "programa") k--;   // si hay un corte comercial, cuenta el programa al que pertenece
     const air = c.items[k];
     if (!air || air.type !== "programa" || !state.lib.some((x) => x.id === air.id)) { toast("No pude saber qué programa está al aire.", "error"); return; }
     const others = state.plan.order.filter((id) => id !== air.id).length + Math.max(0, state.plan.order.filter((id) => id === air.id).length - 1);
-    if (!confirm(`Se quedará solo «${air.title}» en la parrilla y se quitarán los otros ${others}. ¿Continuar?`)) return;
-    state.plan.order = [air.id]; savePlan().then(() => { renderAll(); toast(`En la parrilla solo queda «${air.title}». Pulsa «Guardar y publicar» para aplicarlo; lo que está al aire no se corta.`, "ok"); }).catch(fail);
+    if (!(await askConfirm({ title: "Dejar solo el programa al aire", text: `Se queda «${air.title}» y se quitan los otros ${others}.`, ok: "Dejar solo este" }))) return;
+    state.plan.order = [air.id]; savePlan().then(() => { renderAll(); toast(`Solo queda «${air.title}».`, "ok"); }).catch(fail);
   });
   $("publish-btn").addEventListener("click", publish);
   $("publish-btn2").addEventListener("click", publish);
@@ -283,11 +297,10 @@ async function addItem(e) {
   let duration = ms("lib-dur-h", "lib-dur-m", "lib-dur-s"), playFor = ms("lib-play-h", "lib-play-m", "lib-play-s");
   // Al editar: si cambiaste el enlace y no tocaste la duración, se vuelve a detectar la del video nuevo.
   if (editing && url !== editing.url && duration === editing.dur) duration = 0;
-  if (fb && !(duration > 0)) { toast("Facebook no permite detectar la duración. Escribe los minutos y segundos del video en los campos de Duración.", "error"); return; }
+  if (fb && !(duration > 0)) { toast("Escribe la duración del video.", "error"); return; }
   if (!(duration > 0)) { toast("Detectando la duración…", "ok"); duration = yt ? await ytDuration(yt) : await detectDuration(url); }
   if (!(duration > 0)) {
-    toast(yt ? "No pude detectar la duración de ese video de YouTube (puede tener la inserción bloqueada). Escribe los minutos y segundos del video en los campos de Duración."
-      : "No se pudo abrir ese video. Revisa: 1) que el archivo ya esté en la carpeta media de GitHub y el flujo de Actions esté en verde; 2) que el nombre esté bien escrito; 3) que sea .mp4 H.264. Si todo está bien, escribe la duración a mano.", "error");
+    toast("No pude detectar la duración. Escríbela.", "error");
     return;
   }
   try {
@@ -297,8 +310,8 @@ async function addItem(e) {
       await updateItem(eid, { title: $("lib-title").value.trim(), kind, url, duration, playFor: extra.playFor || 0 });
       resetEdit();
       // Si ese contenido está en la emisión, se publica solo para que el aire use el enlace nuevo (sin tener que pulsar nada más).
-      if (inChannel) { toast("Cambios guardados. Actualizando la emisión…", "ok"); await publish(true); }
-      else toast("Cambios guardados. Pulsa “Publicar cambios” cuando quieras que la emisión los use.", "ok");
+      if (inChannel) { toast("Guardado. Actualizando la emisión…", "ok"); await publish(true); }
+      else toast("Cambios guardados.", "ok");
     } else { await saveItem({ title: $("lib-title").value.trim(), kind, url, duration, ...extra }); $("lib-form").reset(); toast("Contenido guardado.", "ok"); }
   } catch (err) { fail(err); }
 }
@@ -352,46 +365,40 @@ async function uploadFiles(files, kind) {
     }
   }
 }
-function updateLibToggle() {
-  const open = !$("lib-list").classList.contains("lib-collapsed");
-  $("lib-toggle").textContent = open ? "Ocultar programas" : `Mostrar todos los programas (${state.lib.length})`;
-  $("lib-toggle").setAttribute("aria-expanded", String(open));
-}
 const createdMs = (i) => { const c = i.createdAt; if (!c) return 0; if (typeof c.toMillis === "function") return c.toMillis(); if (typeof c.seconds === "number") return c.seconds * 1000 + Math.round((c.nanoseconds || 0) / 1e6); return Date.now(); };   // recién guardado (aún sin hora del servidor) = el más nuevo
 function renderLibrary() {
-  const el = $("lib-list");
-  if (!state.lib.length) { el.innerHTML = '<p class="hint">Aún no hay contenidos.</p>'; return; }
+  const el = $("lib-list"), isAd = libKind === "comercial";
+  document.querySelectorAll("#lib-filter [data-kind]").forEach((b) => {
+    const ad = b.dataset.kind === "comercial";
+    b.textContent = `${ad ? "Anuncios" : "Programas"} (${state.lib.filter((i) => (i.kind === "comercial") === ad).length})`;
+    b.classList.toggle("active", b.dataset.kind === libKind);
+  });
   const card = (i, num) => {
     const n = state.plan.order.filter((x) => x === i.id).length;
     const onGrid = i.kind === "programa" && n > 0 ? `<span class="tag ok">✓ En parrilla${n > 1 ? ` ×${n}` : ""}</span>` : "";
     const dur = fmtDuration(i.duration) + (i.kind === "comercial" && i.playFor > 0 ? ` · al aire ${fmtDuration(Math.min(i.playFor, i.duration))}` : "");
     return `<div class="item lib-item"><div class="lib-main"><b><span class="lib-num">${num}.</span> ${esc(i.title)}</b></div>
-    <div class="lib-meta"><span class="tag">${i.kind === "comercial" ? "anuncio" : esc(i.kind)}</span>${onGrid}<span class="lib-dur">${dur}</span><span class="lib-actions"><button class="btn small" data-edit="${esc(i.id)}" type="button" title="Cambiar título, enlace o duración">Editar</button><button class="btn del small" data-del="${esc(i.id)}" type="button" title="Eliminar de la biblioteca">Eliminar</button></span></div>
+    <div class="lib-meta">${onGrid}<span class="lib-dur">${dur}</span><span class="lib-actions"><button class="btn small" data-edit="${esc(i.id)}" type="button">Editar</button><button class="btn del small" data-del="${esc(i.id)}" type="button">Eliminar</button></span></div>
     <details class="lib-link"><summary>Ver enlace</summary><span>${esc(i.url)}</span><button class="btn small" data-copy="${esc(i.url)}" type="button">Copiar enlace</button></details></div>`;
   };
-  // Dos apartados. El número es el orden en que los añadiste (1 = el primero); el más reciente sale arriba.
-  const section = (kinds, label, empty) => {
-    const asc = state.lib.filter((i) => kinds.includes(i.kind)).sort((a, b) => createdMs(a) - createdMs(b) || String(a.id).localeCompare(String(b.id)));
-    const num = new Map(asc.map((i, k) => [i.id, k + 1]));
-    return `<h4 class="lib-sec">${label} <span class="lib-count">(${asc.length})</span></h4>` + (asc.length ? asc.slice().reverse().map((i) => card(i, num.get(i.id))).join("") : `<p class="hint">${empty}</p>`);
-  };
-  const known = ["programa", "comercial"];
-  el.innerHTML = section(["programa", ...state.lib.map((i) => i.kind).filter((k) => !known.includes(k))], "Programas", "Aún no hay programas.") + section(["comercial"], "Anuncios", "Aún no hay anuncios.");
+  // Solo se ve lo que elijas (Programas o Anuncios). El número es el orden en que los añadiste; el más reciente sale arriba.
+  const asc = state.lib.filter((i) => (i.kind === "comercial") === isAd).sort((a, b) => createdMs(a) - createdMs(b) || String(a.id).localeCompare(String(b.id)));
+  const num = new Map(asc.map((i, k) => [i.id, k + 1]));
+  el.innerHTML = asc.length ? asc.slice().reverse().map((i) => card(i, num.get(i.id))).join("") : `<p class="hint">${isAd ? "Sin anuncios" : "Sin programas"}</p>`;
   el.querySelectorAll("[data-edit]").forEach((b) => b.addEventListener("click", () => startEdit(b.dataset.edit)));
   el.querySelectorAll("[data-copy]").forEach((b) => b.addEventListener("click", async () => { try { await navigator.clipboard.writeText(b.dataset.copy); b.textContent = "Copiado ✓"; setTimeout(() => { b.textContent = "Copiar enlace"; }, 1500); } catch { toast("No se pudo copiar. Mantén pulsado el enlace para copiarlo.", "error"); } }));
   el.querySelectorAll("[data-del]").forEach((b) => b.addEventListener("click", async () => {
     const it = state.lib.find((x) => x.id === b.dataset.del);
-    if (!confirm(`¿Eliminar “${it.title}”?`)) return;
+    if (!(await askConfirm({ title: "¿Eliminar de la biblioteca?", text: it.title, ok: "Eliminar", danger: true }))) return;
     try {
       await deleteDoc(doc(db, "library", it.id));
-      if (it.provider === "cloudinary") toast("Se quitó de la biblioteca. El archivo sigue en tu Cloudinary: bórralo desde su panel si quieres liberar espacio.", "ok");
+      if (it.provider === "cloudinary") toast("Eliminado.", "ok");
       if (it.path) { try { await deleteObject(sRef(storage, it.path)); } catch {} }
       state.lib = state.lib.filter((x) => x.id !== it.id);
       await savePlan(); renderAll();
       if (state.channel?.items?.some((x) => x.id === it.id)) { await publish(true); }
     } catch (err) { fail(err); }
   }));
-  updateLibToggle();
 }
 
 /* Control comercial */
@@ -411,16 +418,14 @@ function readPlanForm() {
 function renderCutSummary(plan) {
   const ads = allAdsOrdered().filter((i) => i.active !== false && i.duration > 0);
   const box = $("cut-summary");
-  const per = plan.breakCount * plan.breakRepeat;
   let html = "";
-  if (!ads.length) html += '<p class="msg error">No hay comerciales activos: no se hará ningún corte. Marca al menos uno abajo.</p>';
+  if (!ads.length) html += '<p class="msg error">Sin anuncios activos.</p>';
   if (plan.mode === "time" || plan.mode === "continuous") {
-    if (!(intervalSeconds(plan) > 0)) html += '<p class="msg error">Escribe cada cuánto tiempo va el corte.</p>';
+    if (!(intervalSeconds(plan) > 0)) html += '<p class="msg error">Falta el intervalo.</p>';
     const rows = describeCuts(state.lib, plan);
-    html += rows.length ? rows.map((r) => `<p><b>${esc(r.title)}</b> (${fmtDuration(r.duration)}): ${[r.lead ? "al empezar" : "", r.cuts.length ? "cortes en " + r.cuts.map(fmtDuration).join(", ") : "", r.end ? "al terminar" : ""].filter(Boolean).join(" y ") || "sin cortes (sigue al próximo programa)"}.</p>`).join("")
-      : '<p class="hint">Añade programas a la parrilla para ver dónde caen los cortes.</p>';
+    html += rows.length ? rows.map((r) => `<p><b>${esc(r.title)}</b> (${fmtDuration(r.duration)}): ${[r.lead ? "al empezar" : "", r.cuts.length ? "cortes en " + r.cuts.map(fmtDuration).join(", ") : "", r.end ? "al terminar" : ""].filter(Boolean).join(" y ") || "sin cortes"}.</p>`).join("")
+      : '';
   } else html += `<p>Habrá un corte cada ${plan.everyN} programas.</p>`;
-  html += `<p class="hint">Cada corte: ${plan.breakCount} anuncio(s) en orden${plan.breakRepeat > 1 ? `, la tanda repetida ${plan.breakRepeat} veces` : ""} = ${per} anuncios por corte.</p>`;
   box.innerHTML = html;
 }
 function previewPlan() {
@@ -435,8 +440,8 @@ function renderAds() {
   const ads = allAdsOrdered();
   $("ads-list").innerHTML = ads.length ? ads.map((i, n) => `<div class="item"><input type="checkbox" data-ad="${esc(i.id)}" ${i.active !== false ? "checked" : ""} aria-label="Activo">
     <span class="grow"><b>${n + 1}. ${esc(i.title)}</b>
-      <div class="row2 playfor">Al aire: <input type="number" min="0" data-pm="${esc(i.id)}" value="${i.playFor > 0 ? Math.floor(Math.min(i.playFor, i.duration) / 60) : ""}" placeholder="min" aria-label="Minutos al aire"><input type="number" min="0" max="59" data-ps="${esc(i.id)}" value="${i.playFor > 0 ? Math.min(i.playFor, i.duration) % 60 : ""}" placeholder="seg" aria-label="Segundos al aire"></div></span><span title="Duración total del video">${fmtDuration(i.duration)}</span>
-    <button class="btn secondary small" data-admv="${n}:-1" type="button" aria-label="Subir">↑</button><button class="btn secondary small" data-admv="${n}:1" type="button" aria-label="Bajar">↓</button></div>`).join("") : '<p class="hint">Agrega comerciales en la Biblioteca.</p>';
+      <div class="row2 playfor">Al aire: <input type="number" min="0" data-pm="${esc(i.id)}" value="${i.playFor > 0 ? Math.floor(Math.min(i.playFor, i.duration) / 60) : ""}" placeholder="min" aria-label="Minutos al aire"><input type="number" min="0" max="59" data-ps="${esc(i.id)}" value="${i.playFor > 0 ? Math.min(i.playFor, i.duration) % 60 : ""}" placeholder="seg" aria-label="Segundos al aire"></div></span><span>${fmtDuration(i.duration)}</span>
+    <button class="btn secondary small" data-admv="${n}:-1" type="button" aria-label="Subir">↑</button><button class="btn secondary small" data-admv="${n}:1" type="button" aria-label="Bajar">↓</button></div>`).join("") : '<p class="hint">Sin anuncios</p>';
   $("ads-list").querySelectorAll("[data-ad]").forEach((c) => c.addEventListener("change", async () => {
     const it = state.lib.find((x) => x.id === c.dataset.ad); it.active = c.checked;
     try { await updateDoc(doc(db, "library", it.id), { active: c.checked }); renderCycle(); previewPlan(); } catch (err) { fail(err); }
@@ -444,8 +449,8 @@ function renderAds() {
   $("ads-list").querySelectorAll("[data-pm],[data-ps]").forEach((inp) => inp.addEventListener("change", async () => {
     const id = inp.dataset.pm || inp.dataset.ps, it = state.lib.find((x) => x.id === id); if (!it) return;
     const m = Math.max(0, Math.floor(Number($(`#ads-list [data-pm="${id}"]`).value) || 0)), sc = Math.max(0, Math.floor(Number($(`#ads-list [data-ps="${id}"]`).value) || 0));
-    let playFor = m * 60 + sc; if (playFor > it.duration) { playFor = it.duration; toast(`El comercial dura ${fmtDuration(it.duration)}; no puede pasar de eso.`, "error"); }
-    try { await updateDoc(doc(db, "library", it.id), { playFor }); it.playFor = playFor; renderAds(); renderCycle(); toast(playFor > 0 ? `“${it.title}” durará ${fmtDuration(playFor)} al aire. Pulsa «Publicar cambios» para aplicarlo.` : "Se emitirá completo. Pulsa «Publicar cambios» para aplicarlo.", "ok"); } catch (err) { fail(err); }
+    let playFor = m * 60 + sc; if (playFor > it.duration) { playFor = it.duration; toast(`Máximo ${fmtDuration(it.duration)}.`, "error"); }
+    try { await updateDoc(doc(db, "library", it.id), { playFor }); it.playFor = playFor; renderAds(); renderCycle(); toast("Guardado.", "ok"); } catch (err) { fail(err); }
   }));
   $("ads-list").querySelectorAll("[data-admv]").forEach((b) => b.addEventListener("click", () => {
     const [n, d] = b.dataset.admv.split(":").map(Number), ids = ads.map((x) => x.id), m = n + d;
@@ -459,7 +464,7 @@ async function savePlanFromCommercial() {
   const p = readPlanForm();
   if (p.mode !== "programs" && !(intervalSeconds(p) >= 5)) { toast("Escribe un intervalo de al menos 5 segundos.", "error"); return; }
   state.plan = p;
-  try { await savePlan(); renderCycle(); renderAds(); toast("Control comercial guardado. Pulsa «Publicar cambios» para aplicarlo.", "ok"); } catch (err) { fail(err); }
+  try { await savePlan(); renderCycle(); renderAds(); toast("Guardado.", "ok"); } catch (err) { fail(err); }
 }
 const savePlan = () => setDoc(doc(db, "config", "plan"), state.plan);
 
@@ -468,12 +473,11 @@ function renderOrder() {
   const progs = state.lib.filter((i) => i.kind === "programa");
   const inCount = (id) => state.plan.order.filter((x) => x === id).length;
   const fresh = progs.filter((i) => !inCount(i.id)), used = progs.filter((i) => inCount(i.id));
-  const opt = (i, mark) => `<option value="${esc(i.id)}">${mark ? `✓ ${esc(i.title)} (${fmtDuration(i.duration)}) · ya está${inCount(i.id) > 1 ? ` ×${inCount(i.id)}` : ""}` : `${esc(i.title)} (${fmtDuration(i.duration)})`}</option>`;
-  $("order-add").innerHTML = (fresh.length ? `<optgroup label="Aún NO están en la parrilla (${fresh.length})">${fresh.map((i) => opt(i, false)).join("")}</optgroup>` : "")
-    + (used.length ? `<optgroup label="YA están en la parrilla (${used.length}) · si los añades se repiten">${used.map((i) => opt(i, true)).join("")}</optgroup>` : "");
-  if ($("order-hint")) $("order-hint").textContent = !progs.length ? "" : fresh.length ? `Faltan por añadir ${fresh.length} de ${progs.length} programas.` : "Todos los programas ya están en la parrilla.";
+  const opt = (i, mark) => `<option value="${esc(i.id)}">${mark ? `✓ ${esc(i.title)} (${fmtDuration(i.duration)})${inCount(i.id) > 1 ? ` ×${inCount(i.id)}` : ""}` : `${esc(i.title)} (${fmtDuration(i.duration)})`}</option>`;
+  $("order-add").innerHTML = (fresh.length ? `<optgroup label="Sin añadir (${fresh.length})">${fresh.map((i) => opt(i, false)).join("")}</optgroup>` : "")
+    + (used.length ? `<optgroup label="Ya en la parrilla (${used.length})">${used.map((i) => opt(i, true)).join("")}</optgroup>` : "");
   const el = $("order-list");
-  if (!state.plan.order.length) { el.innerHTML = '<p class="hint">Aún no hay programas en la parrilla.</p>'; return; }
+  if (!state.plan.order.length) { el.innerHTML = '<p class="hint">Parrilla vacía</p>'; return; }
   el.innerHTML = state.plan.order.map((id, n) => {
     const i = state.lib.find((x) => x.id === id);
     return `<div class="item"><span>${n + 1}.</span><span class="grow"><b>${esc(i.title)}</b></span><span>${fmtDuration(i.duration)}</span>
@@ -505,7 +509,7 @@ function renderCycle() {
   const cyc = buildCycle(state.lib, state.plan);
   const ads = cyc.filter((i) => i.type === "comercial").length, cuts = new Set(cyc.filter((i) => i.type === "comercial").map((i) => i.breakNo)).size;
   const clk = cycleClock(cyc);
-  $("cycle-total").textContent = cyc.length ? `${cuts} cortes · ${ads} anuncios · duración del ciclo ${fmtDuration(cycleLength(cyc))}. Al terminar, vuelve a empezar.${clk ? (clk.pending ? " Horas de la próxima repetición (los cambios de arriba entran ahí)." : " Horas de la próxima emisión de cada tramo.") : ""}` : "Añade programas con duración para generar el ciclo.";
+  $("cycle-total").textContent = cyc.length ? `${cuts} cortes · ${ads} anuncios · ciclo ${fmtDuration(cycleLength(cyc))}` : "Sin ciclo";
   let t = 0;
   $("cycle-list").innerHTML = cyc.slice(0, 400).map((i, k) => { const li = `<li class="${i.type === "comercial" ? "ad" : ""}">${clk ? hms(clk.starts[k]) : fmtDuration(t)} · ${esc(itemLabel(i))} · ${fmtDuration(i.duration)}${i.type === "comercial" ? ` (corte ${i.breakNo})` : (i.parts > 1 ? ` (del minuto ${fmtDuration(i.startAt)} al ${fmtDuration(i.startAt + i.duration)})` : "")}</li>`; t += i.duration; return li; }).join("")
     + (cyc.length > 400 ? `<li class="hint">… y ${cyc.length - 400} más</li>` : "");
@@ -516,7 +520,7 @@ function renderCycle() {
 function renderLiveStream() {
   const on = !!(liveCfg?.on && liveCfg.ref);
   if (liveCfg?.url) $("lv-url").value = liveCfg.url;
-  $("lv-state").textContent = on ? `EN VIVO ahora (${liveCfg.kind === "facebook" ? "Facebook" : "YouTube"}). El público ve el directo, no la parrilla.` : "Sin directo activo: se emite la parrilla.";
+  $("lv-state").textContent = on ? `EN VIVO · ${liveCfg.kind === "facebook" ? "Facebook" : "YouTube"}` : "Sin directo";
   $("lv-on").textContent = on ? "Actualizar directo" : "Poner en vivo";
 }
 async function setLiveStream(on) {
@@ -528,7 +532,7 @@ async function setLiveStream(on) {
     } else liveCfg = { ...(liveCfg || {}), on: false, updatedAt: serverTimestamp() };
     await setDoc(doc(db, "public", "live"), liveCfg);
     renderLiveStream();
-    toast(on ? "Directo activado. El reproductor lo muestra ahora." : "Directo quitado. Vuelve la parrilla.", "ok");
+    toast(on ? "Directo activado." : "Directo quitado.", "ok");
   } catch (err) { fail(err); }
 }
 
@@ -578,17 +582,17 @@ async function toggleLive() {
     Object.assign(c, { live, ...(upd.epoch != null ? { epoch: upd.epoch } : {}), pausedAt: upd.pausedAt ?? null });
     if (upd.nextAt === null) { delete c.nextSeq; delete c.nextAt; } else if (upd.nextAt != null) c.nextAt = upd.nextAt;
     renderLive(); renderNow();
-    toast(live ? `Emisión reanudada en ${where()}.` : `Emisión cortada en ${where()}. El público ve el aviso de pausa.`, "ok");
+    toast(live ? `Emisión reanudada en ${where()}.` : `Emisión cortada en ${where()}.`, "ok");
   } catch (err) { fail(err); }
 }
 
 /* Publicar */
 async function publish(auto, restart) {
   restart = restart === true;   // true solo desde el botón «Publicar y reiniciar»
-  if (restart && !confirm("Se reiniciará la emisión desde el principio del primer programa. El público y el Estudio lo verán ahora mismo. ¿Continuar?")) return;
+  if (restart && !(await askConfirm({ title: "¿Reiniciar la emisión?", text: "Empieza desde el primer programa.", ok: "Reiniciar", danger: true }))) return;
   let why = restart ? "restart" : "";
   const items = buildCycle(state.lib, state.plan);
-  if (!items.length && !auto && !confirm("La parrilla está vacía. ¿Publicar sin programación? El público verá “Sin programación”.")) return;
+  if (!items.length && !auto && !(await askConfirm({ title: "Parrilla vacía", text: "El público verá «Sin programación».", ok: "Publicar" }))) return;
   try {
     await savePlan();
     const now = serverNow(), live = state.channel?.live !== false;
@@ -625,7 +629,7 @@ async function publish(auto, restart) {
     await setDoc(doc(db, "public", "channel"), channel);
     state.channel = { epoch: plan.epoch, items: plan.items, live, media: channel.media, seq: channel.seq, ...(nxt ? { nextSeq: nxt.seq, nextAt: plan.nextAt } : {}) };
     renderCycle(); renderNow();
-    toast(plan.next ? "Publicado. La emisión sigue sin reiniciarse: lo que añadiste arriba entra en la próxima repetición. Si lo quieres ya, pulsa «Publicar y reiniciar»." : why === "restart" ? "Emisión reiniciada desde el principio con la parrilla nueva." : why === "removed" ? "Quitaste el programa que estaba al aire: la emisión se reinició desde el principio con la parrilla nueva." : "Emisión publicada. El reproductor se actualiza solo.", "ok");
+    toast(plan.next ? "Publicado. Lo nuevo de arriba entra en la próxima repetición." : why === "restart" ? "Emisión reiniciada." : why === "removed" ? "Emisión reiniciada: quitaste el programa al aire." : "Emisión publicada.", "ok");
   } catch (err) { fail(err); }
 }
 let tlKey = "";
@@ -725,21 +729,19 @@ function onLogoFile() {
     const cv = document.createElement("canvas"); cv.width = Math.round(img.width * sc); cv.height = Math.round(img.height * sc);
     cv.getContext("2d").drawImage(img, 0, 0, cv.width, cv.height);
     state.brand.logo = cv.toDataURL("image/png"); URL.revokeObjectURL(url);
-    $("b-logo-file").value = ""; renderBrand(); toast("Logo cargado. Pulsa Guardar y publicar.", "ok");
+    $("b-logo-file").value = ""; renderBrand(); toast("Logo cargado.", "ok");
   };
   img.onerror = () => toast("No se pudo leer esa imagen.", "error");
   img.src = url;
 }
 function renderBrand() {
   $("b-logo-pos").value = state.brand.logoPos || "top-right"; $("b-logo-size").value = state.brand.logoSize || 14; $("b-logo-op").value = Math.round((state.brand.logoOpacity ?? 0.9) * 100);
-  $("b-accent").value = state.brand.accent || "#0E6B73";
   $("b-logo-prev").src = state.brand.logo || ""; $("b-logo-prev").classList.toggle("hidden", !state.brand.logo);
-  $("b-logo-rm").classList.toggle("hidden", !state.brand.logo); $("b-ticker").value = state.brand.ticker || "";
-  $("b-tk-move").checked = state.brand.tickerMove !== false; $("b-tk-sep").value = state.brand.tickerSep ?? "●"; $("b-tk-speed").value = state.brand.tickerSpeed || 120;
+  $("b-logo-rm").classList.toggle("hidden", !state.brand.logo);
 }
 async function saveBrand(keep) {
-  state.brand = { name: "", showName: false, accent: $("b-accent").value, logo: state.brand.logo || "", ticker: $("b-ticker").value.split("\n").map((x) => x.trim()).filter(Boolean).join("\n"), tickerMove: $("b-tk-move").checked, tickerSep: ($("b-tk-sep").value.trim() || "●").slice(0, 3), tickerSpeed: Number($("b-tk-speed").value) || 120, logoPos: $("b-logo-pos").value, logoSize: Number($("b-logo-size").value), logoOpacity: Number($("b-logo-op").value) / 100 };
-  try { await setDoc(doc(db, "public", "brand"), state.brand); toast("Personalización publicada.", "ok"); } catch (err) { fail(err); }
+  state.brand = { name: "", showName: false, accent: state.brand.accent || "#0E6B73", logo: state.brand.logo || "", ticker: "", tickerMove: true, tickerSep: "●", tickerSpeed: 120, logoPos: $("b-logo-pos").value, logoSize: Number($("b-logo-size").value), logoOpacity: Number($("b-logo-op").value) / 100 };
+  try { await setDoc(doc(db, "public", "brand"), state.brand); toast("Publicado.", "ok"); } catch (err) { fail(err); }
 }
 
 /* Estadísticas */
@@ -767,6 +769,6 @@ async function loadStats() {
     rows.forEach((r) => count.set(norm(r.title), (count.get(norm(r.title)) || 0) + 1));
     const list = state.lib.map((i) => ({ title: i.title, kind: i.kind, n: count.get(norm(i.title)) || 0 })).sort((a, b) => b.n - a.n || a.title.localeCompare(b.title));
     $("stats-table").innerHTML = list.length ? `<table><thead><tr><th>Contenido</th><th>Tipo</th><th>Veces</th></tr></thead><tbody>${
-      list.map((x) => `<tr><td>${esc(x.title)}</td><td>${esc(x.kind)}</td><td>${x.n}</td></tr>`).join("")}</tbody></table>` : '<p class="hint">Aún no hay contenidos en la biblioteca.</p>';
+      list.map((x) => `<tr><td>${esc(x.title)}</td><td>${esc(x.kind)}</td><td>${x.n}</td></tr>`).join("")}</tbody></table>` : '<p class="hint">Sin contenidos</p>';
   } catch (err) { fail(err); }
 }
