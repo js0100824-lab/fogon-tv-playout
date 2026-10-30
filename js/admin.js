@@ -483,10 +483,11 @@ function renderOrder() {
   if (!state.plan.order.length) { el.innerHTML = '<p class="hint">Parrilla vacía</p>'; return; }
   el.innerHTML = state.plan.order.map((id, n) => {
     const i = state.lib.find((x) => x.id === id);
-    return `<div class="item"><span>${n + 1}.</span><span class="grow"><b>${esc(i.title)}</b><div class="airt" data-air="${n}"></div></span><span>${fmtDuration(i.duration)}</span>
-      <button class="btn secondary small" data-mv="${n}:-1" type="button" aria-label="Subir">↑</button>
+    return `<div class="item ord"><span class="ord-n">${n + 1}.</span><span class="grow"><b>${esc(i.title)}</b></span><span class="ord-d">${fmtDuration(i.duration)}</span>
+      <div class="ord-btns"><button class="btn secondary small" data-mv="${n}:-1" type="button" aria-label="Subir">↑</button>
       <button class="btn secondary small" data-mv="${n}:1" type="button" aria-label="Bajar">↓</button>
-      <button class="btn secondary small" data-rm="${n}" type="button">Quitar</button></div>`;
+      <button class="btn secondary small" data-rm="${n}" type="button">Quitar</button></div>
+      <div class="airt" data-air="${n}"></div></div>`;
   }).join("");
   el.querySelectorAll("[data-mv]").forEach((b) => b.addEventListener("click", () => {
     const [n, d] = b.dataset.mv.split(":").map(Number), o = state.plan.order, m = n + d;
@@ -571,7 +572,7 @@ function updateAirTimes(cyc, clk) {
     if (n === airPos) { el.innerHTML = ""; return; }
     if (!clk) { el.innerHTML = `<span class="when">Minuto ${fmtDuration(cum[k])} del ciclo</span>`; return; }
     const t = clk.starts[k];
-    el.innerHTML = `<span class="when">Sale ${esc(hms(t))}${dayTag(t, now)}</span><span class="rel">${esc(relTime(t - now))}</span>`;
+    el.innerHTML = `<span class="when">Sale ${esc(hm(t))}${dayTag(t, now)}</span><span class="rel">${esc(relTime(t - now))}</span>`;
   });
 }
 
@@ -725,6 +726,8 @@ function initTimeline() {
 
 const TZ = "America/Santo_Domingo";   // hora de República Dominicana
 const HMS = new Intl.DateTimeFormat("en-US", { timeZone: TZ, hour: "numeric", minute: "2-digit", second: "2-digit", hour12: true });
+const HM = new Intl.DateTimeFormat("en-US", { timeZone: TZ, hour: "numeric", minute: "2-digit", hour12: true });
+const hm = (ms) => HM.format(new Date(ms));   // 6:49 PM (sin segundos)
 const hms = (ms) => HMS.format(new Date(ms));   // 2:33:32 PM (hora de República Dominicana)
 // La posición real la marca el video de la vista previa (no el reloj): así la barra de abajo corre junto con él.
 function studioLoc(c, now) {

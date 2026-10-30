@@ -42,9 +42,16 @@ section[aria-label="Biblioteca"] .col-b{overflow-x:hidden}
 #lib-list .lib-link summary{cursor:pointer;display:inline-block;opacity:.8}
 #lib-list .lib-link span{display:block;margin-top:4px;overflow-wrap:anywhere;word-break:break-all;user-select:all}
 /* Parrilla: hora de salida de cada programa */
-#order-list .airt{display:flex;flex-wrap:wrap;align-items:center;gap:4px 10px;margin-top:6px;font-variant-numeric:tabular-nums}
-#order-list .airt .when{font-size:18px;font-weight:700;line-height:1.2;opacity:1}
-#order-list .airt .rel{font-size:14px;opacity:.75}
+/* Parrilla: cada programa en tarjeta — título y duración arriba, botones, y la hora abajo a la derecha */
+#order-list .item.ord{display:flex;flex-wrap:wrap;align-items:flex-start;gap:6px 8px;padding:10px 4px;min-width:0}
+#order-list .ord-n{flex:none;opacity:.65}
+#order-list .item.ord .grow{flex:1 1 0;min-width:0;overflow-wrap:anywhere}
+#order-list .ord-d{flex:none;font-variant-numeric:tabular-nums;opacity:.8}
+#order-list .ord-btns{flex:0 0 100%;display:flex;justify-content:flex-end;gap:6px}
+#order-list .airt{flex:0 0 100%;display:flex;flex-wrap:wrap;justify-content:flex-end;align-items:baseline;gap:2px 10px;text-align:right;font-variant-numeric:tabular-nums}
+#order-list .airt:empty{display:none}
+#order-list .airt .when{font-size:17px;font-weight:700;line-height:1.2;white-space:nowrap}
+#order-list .airt .rel{font-size:13px;opacity:.7;white-space:nowrap}
 /* Ciclo de emisión plegable (igual que «Añadir contenido» en la Biblioteca) */
 details.cycle-box{margin:14px 0 10px}
 details.cycle-box>summary{cursor:pointer;font-weight:700;font-size:15px;padding:8px 0;list-style:revert}
@@ -288,6 +295,6 @@ html,body{max-width:100%;overflow-x:hidden}
   </div>
 </div>
 
-<script type="module" src="../js/admin.js?v=61"></script>
+<script type="module" src="../js/admin.js?v=62"></script>
 </body>
 </html>
