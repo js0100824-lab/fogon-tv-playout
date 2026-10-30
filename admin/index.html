@@ -14,6 +14,9 @@
 section[aria-label="Biblioteca"] .col-b{overflow-x:hidden}
 #lib-list{min-width:0;max-width:100%;overflow-x:hidden}
 #lib-list .lib-item{display:flex;flex-direction:column;align-items:stretch;gap:8px;padding:10px 4px;min-width:0;max-width:100%;box-sizing:border-box}
+#lib-list .lib-sec{margin:14px 0 6px;font-size:13px;letter-spacing:.04em;text-transform:uppercase;opacity:.85}
+#lib-list .lib-count{opacity:.6;font-weight:400}
+#lib-list .lib-num{display:inline-block;min-width:1.6em;opacity:.65;font-variant-numeric:tabular-nums}
 #lib-list .lib-main{min-width:0;width:100%}
 #lib-list .lib-main b{display:block;white-space:normal;overflow-wrap:anywhere;word-break:normal;line-height:1.3}
 #lib-list .lib-meta{display:flex;flex-wrap:wrap;align-items:center;gap:6px 8px;min-width:0}
@@ -203,7 +206,8 @@ html,body{max-width:100%;overflow-x:hidden}
           <h3 class="sub">Ciclo de emisión</h3>
           <p id="cycle-total" class="hint"></p>
           <ol id="cycle-list" class="cycle"></ol>
-          <button class="btn" id="publish-btn2" type="button">Guardar y publicar</button>
+          <div class="row"><button class="btn" id="publish-btn2" type="button">Guardar y publicar</button><button class="btn danger" id="publish-restart" type="button" title="Publica y vuelve a empezar la emisión desde el primer programa, ahora mismo">Publicar y reiniciar</button></div>
+          <p class="hint">«Guardar y publicar» no corta lo que está al aire (lo nuevo de arriba entra en la próxima repetición). «Publicar y reiniciar» empieza de cero ya.</p>
         </section>
 
         <section id="tab-comercial" class="tab hidden">
@@ -267,6 +271,6 @@ html,body{max-width:100%;overflow-x:hidden}
   </div>
 </div>
 
-<script type="module" src="../js/admin.js?v=54"></script>
+<script type="module" src="../js/admin.js?v=55"></script>
 </body>
 </html>

@@ -155,6 +155,7 @@ async function initPanel() {
   });
   $("publish-btn").addEventListener("click", publish);
   $("publish-btn2").addEventListener("click", publish);
+  $("publish-restart").addEventListener("click", () => publish(false, true));
   $("brand-form").addEventListener("submit", async (e) => { e.preventDefault(); await saveBrand(); });
   $("stats-refresh").addEventListener("click", async () => { await loadStats(); toast("Actualizado.", "ok"); });
   $("player-link").href = new URL("../player/", location.href).href;
@@ -356,17 +357,26 @@ function updateLibToggle() {
   $("lib-toggle").textContent = open ? "Ocultar programas" : `Mostrar todos los programas (${state.lib.length})`;
   $("lib-toggle").setAttribute("aria-expanded", String(open));
 }
+const createdMs = (i) => { const c = i.createdAt; if (!c) return 0; if (typeof c.toMillis === "function") return c.toMillis(); if (typeof c.seconds === "number") return c.seconds * 1000 + Math.round((c.nanoseconds || 0) / 1e6); return Date.now(); };   // recién guardado (aún sin hora del servidor) = el más nuevo
 function renderLibrary() {
   const el = $("lib-list");
   if (!state.lib.length) { el.innerHTML = '<p class="hint">Aún no hay contenidos.</p>'; return; }
-  el.innerHTML = state.lib.map((i) => {
+  const card = (i, num) => {
     const n = state.plan.order.filter((x) => x === i.id).length;
     const onGrid = i.kind === "programa" && n > 0 ? `<span class="tag ok">✓ En parrilla${n > 1 ? ` ×${n}` : ""}</span>` : "";
     const dur = fmtDuration(i.duration) + (i.kind === "comercial" && i.playFor > 0 ? ` · al aire ${fmtDuration(Math.min(i.playFor, i.duration))}` : "");
-    return `<div class="item lib-item"><div class="lib-main"><b>${esc(i.title)}</b></div>
-    <div class="lib-meta"><span class="tag">${esc(i.kind)}</span>${onGrid}<span class="lib-dur">${dur}</span><span class="lib-actions"><button class="btn small" data-edit="${esc(i.id)}" type="button" title="Cambiar título, enlace o duración">Editar</button><button class="btn del small" data-del="${esc(i.id)}" type="button" title="Eliminar de la biblioteca">Eliminar</button></span></div>
+    return `<div class="item lib-item"><div class="lib-main"><b><span class="lib-num">${num}.</span> ${esc(i.title)}</b></div>
+    <div class="lib-meta"><span class="tag">${i.kind === "comercial" ? "anuncio" : esc(i.kind)}</span>${onGrid}<span class="lib-dur">${dur}</span><span class="lib-actions"><button class="btn small" data-edit="${esc(i.id)}" type="button" title="Cambiar título, enlace o duración">Editar</button><button class="btn del small" data-del="${esc(i.id)}" type="button" title="Eliminar de la biblioteca">Eliminar</button></span></div>
     <details class="lib-link"><summary>Ver enlace</summary><span>${esc(i.url)}</span><button class="btn small" data-copy="${esc(i.url)}" type="button">Copiar enlace</button></details></div>`;
-  }).join("");
+  };
+  // Dos apartados. El número es el orden en que los añadiste (1 = el primero); el más reciente sale arriba.
+  const section = (kinds, label, empty) => {
+    const asc = state.lib.filter((i) => kinds.includes(i.kind)).sort((a, b) => createdMs(a) - createdMs(b) || String(a.id).localeCompare(String(b.id)));
+    const num = new Map(asc.map((i, k) => [i.id, k + 1]));
+    return `<h4 class="lib-sec">${label} <span class="lib-count">(${asc.length})</span></h4>` + (asc.length ? asc.slice().reverse().map((i) => card(i, num.get(i.id))).join("") : `<p class="hint">${empty}</p>`);
+  };
+  const known = ["programa", "comercial"];
+  el.innerHTML = section(["programa", ...state.lib.map((i) => i.kind).filter((k) => !known.includes(k))], "Programas", "Aún no hay programas.") + section(["comercial"], "Anuncios", "Aún no hay anuncios.");
   el.querySelectorAll("[data-edit]").forEach((b) => b.addEventListener("click", () => startEdit(b.dataset.edit)));
   el.querySelectorAll("[data-copy]").forEach((b) => b.addEventListener("click", async () => { try { await navigator.clipboard.writeText(b.dataset.copy); b.textContent = "Copiado ✓"; setTimeout(() => { b.textContent = "Copiar enlace"; }, 1500); } catch { toast("No se pudo copiar. Mantén pulsado el enlace para copiarlo.", "error"); } }));
   el.querySelectorAll("[data-del]").forEach((b) => b.addEventListener("click", async () => {
@@ -573,7 +583,10 @@ async function toggleLive() {
 }
 
 /* Publicar */
-async function publish(auto) {
+async function publish(auto, restart) {
+  restart = restart === true;   // true solo desde el botón «Publicar y reiniciar»
+  if (restart && !confirm("Se reiniciará la emisión desde el principio del primer programa. El público y el Estudio lo verán ahora mismo. ¿Continuar?")) return;
+  let why = restart ? "restart" : "";
   const items = buildCycle(state.lib, state.plan);
   if (!items.length && !auto && !confirm("La parrilla está vacía. ¿Publicar sin programación? El público verá “Sin programación”.")) return;
   try {
@@ -581,7 +594,7 @@ async function publish(auto) {
     const now = serverNow(), live = state.channel?.live !== false;
     // Emisión en marcha: NO se reinicia. Lo que está al aire sigue; lo nuevo por debajo entra en este ciclo y lo nuevo por encima, en la próxima repetición.
     let plan = null; const old = state.channel;
-    if (live && old?.items?.length && items.length) {
+    if (!restart && live && old?.items?.length && items.length) {
       settleChannel(old, now);
       const loc = studioLoc(old, now);
       if (loc) {
@@ -595,7 +608,11 @@ async function publish(auto) {
         const sourceChanged = !!f0 && (f0.src !== cur0.src || f0.ref !== cur0.ref);
         const durationChanged = !!f0 && (Math.abs(f0.duration - cur0.duration) > 0.5 || Math.abs((f0.startAt || 0) - (cur0.startAt || 0)) > 0.5);
         // Cambió el video que está al aire Y dura distinto: los tiempos viejos ya no sirven; se vuelve a empezar con lo nuevo.
-        if (!gone(cur0) && !(sourceChanged && durationChanged)) {
+        // Si quitaste de la parrilla el programa que estaba al aire (o lo borraste), la emisión se reinicia ya con la parrilla nueva.
+        let k0 = loc.index; while (k0 > 0 && old.items[k0].type !== "programa") k0--;
+        const airProg = old.items[k0], airRemoved = airProg?.type === "programa" && !items.some((n) => n.id === airProg.id);
+        if (gone(cur0) || airRemoved) why = "removed";
+        if (!gone(cur0) && !airRemoved && !(sourceChanged && durationChanged)) {
           const base = old.items.filter((it, k) => k === loc.index || !gone(it)).map(refresh);
           const idx = old.items.slice(0, loc.index).filter((it) => !gone(it)).length;
           plan = seamlessPublish(base, idx, loc.offset, items, now);
@@ -608,7 +625,7 @@ async function publish(auto) {
     await setDoc(doc(db, "public", "channel"), channel);
     state.channel = { epoch: plan.epoch, items: plan.items, live, media: channel.media, seq: channel.seq, ...(nxt ? { nextSeq: nxt.seq, nextAt: plan.nextAt } : {}) };
     renderCycle(); renderNow();
-    toast(plan.next ? "Publicado. La emisión sigue sin reiniciarse: lo que añadiste arriba entra en la próxima repetición." : "Emisión publicada. El reproductor se actualiza solo.", "ok");
+    toast(plan.next ? "Publicado. La emisión sigue sin reiniciarse: lo que añadiste arriba entra en la próxima repetición. Si lo quieres ya, pulsa «Publicar y reiniciar»." : why === "restart" ? "Emisión reiniciada desde el principio con la parrilla nueva." : why === "removed" ? "Quitaste el programa que estaba al aire: la emisión se reinició desde el principio con la parrilla nueva." : "Emisión publicada. El reproductor se actualiza solo.", "ok");
   } catch (err) { fail(err); }
 }
 let tlKey = "";
