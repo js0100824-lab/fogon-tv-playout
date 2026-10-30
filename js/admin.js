@@ -7,7 +7,7 @@ import {
   doc, getDoc, setDoc, addDoc, deleteDoc, updateDoc, deleteField, getDocs, collection, query, orderBy, limit, serverTimestamp
 } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore.js";
 import { ref as sRef, uploadBytesResumable, getDownloadURL, deleteObject } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-storage.js";
-import { parseDuration, fmtDuration, youtubeId, facebookUrl, parseLiveLink, buildCycle, cycleLength, locate, planWithDefaults, compactChannel, expandChannel, describeCuts, itemLabel, intervalSeconds, seamlessPublish, jumpPublish, settleChannel } from "./engine.js?v=32";
+import { parseDuration, fmtDuration, youtubeId, facebookUrl, parseLiveLink, buildCycle, cycleLength, locate, planWithDefaults, compactChannel, expandChannel, describeCuts, itemLabel, intervalSeconds, seamlessPublish, jumpPublish, settleChannel } from "./engine.js?v=33";
 import { serverNow, startClock } from "./clock.js";
 
 const $ = (id) => document.getElementById(id);
@@ -523,7 +523,12 @@ function cycleClock(cyc) {
   const r = seamlessPublish(old.items, loc.index, loc.offset, cyc, now); if (!r) return null;
   const L = cycleLength(cyc) * 1000, st = []; let a = 0;
   for (const it of cyc) { st.push(a); a += it.duration * 1000; }
-  return r.next ? { starts: st.map((x) => r.nextAt + x), pending: true } : { starts: st.map((x, k) => (k >= loc.index ? r.epoch + x : r.epoch + L + x)), pending: false };
+  if (r.next) {
+    // Lo de abajo del programa al aire sale en ESTE ciclo (después de lo viejo que falta); lo de arriba, en la próxima vuelta.
+    const headMs = r.items.slice(0, r.headLen).reduce((a, i) => a + i.duration * 1000, 0), tf = r.tailFrom;
+    return { starts: st.map((x, k) => (k >= tf ? r.epoch + headMs + (x - st[tf]) : r.nextAt + x)), pending: true };
+  }
+  return { starts: st.map((x, k) => (k >= loc.index ? r.epoch + x : r.epoch + L + x)), pending: false };
 }
 function renderCycle() {
   const cyc = buildCycle(state.lib, state.plan);
@@ -542,10 +547,7 @@ function relTime(ms) {
   return ms < 0 ? `hace ${t}` : m < 1 ? "en un momento" : `en ${t}`;
 }
 const dayKey = (ms) => new Date(ms).toLocaleDateString("en-CA", { timeZone: TZ });
-function dayTag(ms, now) {
-  const diff = Math.round((Date.parse(dayKey(ms)) - Date.parse(dayKey(now))) / 86400000);
-  return diff <= 0 ? "" : diff === 1 ? " · mañana" : ` · ${new Date(ms).toLocaleDateString("es-DO", { timeZone: TZ, weekday: "short", day: "numeric", month: "short" })}`;
-}
+function dayTag() { return ""; }   // sin «mañana» ni fecha: solo la hora
 // Escribe debajo de cada programa de la parrilla a qué hora sale (o «AL AIRE AHORA» / «SIGUIENTE»).
 function updateAirTimes(cyc, clk) {
   const nodes = document.querySelectorAll("#order-list [data-air]"); if (!nodes.length) return;
@@ -556,13 +558,15 @@ function updateAirTimes(cyc, clk) {
   cyc.forEach((it, k) => { if (it.type === "programa" && (!it.part || it.part === 1)) { p++; if (orderPos[p] != null) startIdx.set(orderPos[p], k); } });
   const cum = []; { let a = 0; for (const it of cyc) { cum.push(a); a += it.duration; } }
   // ¿Cuál de la parrilla está al aire ahora?
-  let airPos = -1; const c = state.channel;
+  let airPos = -1, airStart = 0; const c = state.channel;
   if (c?.items?.length && c.live !== false) {
     const loc = studioLoc(c, now);
     if (loc) {
       let k0 = loc.index, c0 = -1; for (let k = 0; k <= loc.index; k++) if (c.items[k].type === "programa" && (!c.items[k].part || c.items[k].part === 1)) c0 = k;
       k0 = c0; const air = k0 >= 0 ? c.items[k0] : null;
       if (air) {
+        let el = loc.offset; for (let k = k0; k < loc.index; k++) el += c.items[k].duration;   // segundos que lleva al aire este programa
+        airStart = now - el * 1000;
         const seq = c.items.slice(0, k0 + 1).filter((x) => x.type === "programa" && (!x.part || x.part === 1)).length - 1;
         const cand = order.map((id, n) => (id === air.id && startIdx.has(n) ? n : -1)).filter((n) => n >= 0);
         airPos = cand.reduce((b, n) => (b < 0 || Math.abs(n - seq) < Math.abs(b - seq) ? n : b), -1);
@@ -572,14 +576,13 @@ function updateAirTimes(cyc, clk) {
   // Último tramo de cada programa (si se parte en varias partes por los cortes, termina en la última parte).
   const endIdx = new Map();
   startIdx.forEach((k, n) => { let e = k; const it = cyc[k]; if (it.parts > 1) for (let j = k + 1; j < cyc.length; j++) { const x = cyc[j]; if (x.type === "programa" && x.id === it.id && x.part > 1) { e = j; if (x.part >= it.parts) break; } else if (x.type === "programa") break; } endIdx.set(n, e); });
-  const L = cycleLength(cyc) * 1000;
   nodes.forEach((el) => {
     const n = Number(el.dataset.air), k = startIdx.get(n);
     if (k == null) { el.innerHTML = ""; return; }
     const e = endIdx.get(n);
     if (!clk) { el.innerHTML = `<span class="when">Sale min ${fmtDuration(cum[k])}</span><span class="when">Termina min ${fmtDuration(cum[e] + cyc[e].duration)}</span>`; return; }
     // El que está al aire ya empezó: su hora de inicio es la de este ciclo (no la de la próxima vuelta).
-    let t = clk.starts[k]; if (n === airPos && t > now) t -= L;
+    const t = n === airPos && airStart ? airStart : clk.starts[k];
     const tEnd = t + (cum[e] + cyc[e].duration - cum[k]) * 1000;
     el.innerHTML = `<span class="when">Sale ${esc(hm(t))}${dayTag(t, now)}</span><span class="when">Termina ${esc(hm(tEnd))}${dayTag(tEnd, now)}</span>${n === airPos ? "" : `<span class="rel">${esc(relTime(t - now))}</span>`}`;
   });

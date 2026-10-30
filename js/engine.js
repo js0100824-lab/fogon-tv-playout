@@ -257,7 +257,8 @@ export function seamlessPublish(oldItems, index, offset, newItems, now) {
   const start = oldItems.slice(0, index).reduce((a, i) => a + i.duration, 0);
   const epoch = Math.round(now - (start + offset) * 1000);
   if (sameSeq(hybrid, newItems)) return { items: newItems, epoch, next: null, nextAt: 0 };
-  return { items: hybrid, epoch, next: newItems, nextAt: Math.round(epoch + cycleLength(hybrid) * 1000) };
+  // tailFrom: desde qué tramo de la lista nueva se emite YA en este ciclo (lo anterior espera a la próxima vuelta) · headLen: tramos viejos que se emiten primero.
+  return { items: hybrid, epoch, next: newItems, nextAt: Math.round(epoch + cycleLength(hybrid) * 1000), tailFrom: tailProgram >= 0 && tailProgram < nS.length ? nS[tailProgram] : newItems.length, headLen: head.length };
 }
 
 // Salto inmediato a un programa de la lista nueva (sin esperar al final del actual).
