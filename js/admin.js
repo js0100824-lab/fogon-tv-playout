@@ -7,7 +7,7 @@ import {
   doc, getDoc, setDoc, addDoc, deleteDoc, updateDoc, deleteField, getDocs, collection, query, orderBy, limit, serverTimestamp
 } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore.js";
 import { ref as sRef, uploadBytesResumable, getDownloadURL, deleteObject } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-storage.js";
-import { parseDuration, fmtDuration, youtubeId, facebookUrl, parseLiveLink, buildCycle, cycleLength, locate, planWithDefaults, compactChannel, expandChannel, describeCuts, itemLabel, intervalSeconds, seamlessPublish, settleChannel } from "./engine.js?v=31";
+import { parseDuration, fmtDuration, youtubeId, facebookUrl, parseLiveLink, buildCycle, cycleLength, locate, planWithDefaults, compactChannel, expandChannel, describeCuts, itemLabel, intervalSeconds, seamlessPublish, jumpPublish, settleChannel } from "./engine.js?v=32";
 import { serverNow, startClock } from "./clock.js";
 
 const $ = (id) => document.getElementById(id);
@@ -493,9 +493,22 @@ function renderOrder() {
     if (m < 0 || m >= o.length) return;
     [o[n], o[m]] = [o[m], o[n]]; savePlan().then(renderAll).catch(fail);
   }));
-  el.querySelectorAll("[data-rm]").forEach((b) => b.addEventListener("click", () => {
-    state.plan.order.splice(Number(b.dataset.rm), 1); savePlan().then(renderAll).catch(fail);
+  el.querySelectorAll("[data-rm]").forEach((b) => b.addEventListener("click", async () => {
+    const airId = airProgramId();   // programa que suena ahora (antes de quitar)
+    state.plan.order.splice(Number(b.dataset.rm), 1);
+    try {
+      await savePlan(); renderAll();
+      // Si quitaste el que estaba al aire (y ya no queda otro igual en la parrilla), se publica al instante: salta al siguiente.
+      if (airId && !state.plan.order.includes(airId)) await publish(true);
+    } catch (err) { fail(err); }
   }));
+}
+// Id del programa que está al aire ahora (si hay un corte comercial, el programa al que pertenece).
+function airProgramId() {
+  const c = state.channel; if (!c?.items?.length || c.live === false) return null;
+  const loc = studioLoc(c, serverNow()); if (!loc) return null;
+  let k = loc.index; while (k > 0 && c.items[k].type !== "programa") k--;
+  return c.items[k]?.type === "programa" ? c.items[k].id : null;
 }
 // Hora real (República Dominicana) de la próxima emisión de cada tramo del ciclo, igual que el reloj de arriba.
 function cycleClock(cyc) {
@@ -527,7 +540,7 @@ function relTime(ms) {
 const dayKey = (ms) => new Date(ms).toLocaleDateString("en-CA", { timeZone: TZ });
 function dayTag(ms, now) {
   const diff = Math.round((Date.parse(dayKey(ms)) - Date.parse(dayKey(now))) / 86400000);
-  return diff <= 0 ? "" : diff === 1 ? " (mañana)" : ` (${new Date(ms).toLocaleDateString("es-DO", { timeZone: TZ, weekday: "short", day: "numeric", month: "short" })})`;
+  return diff <= 0 ? "" : diff === 1 ? " · mañana" : ` · ${new Date(ms).toLocaleDateString("es-DO", { timeZone: TZ, weekday: "short", day: "numeric", month: "short" })}`;
 }
 // Escribe debajo de cada programa de la parrilla a qué hora sale (o «AL AIRE AHORA» / «SIGUIENTE»).
 function updateAirTimes(cyc, clk) {
@@ -654,18 +667,19 @@ async function publish(auto, restart) {
         // Si se borró un video de la biblioteca, se saca de lo que falta por emitir; si justo ese estaba al aire, se empieza de cero.
         const gone = (it) => !state.lib.some((x) => x.id === it.id);
         // Si editaste el enlace/título de algo que ya estaba en la emisión, lo viejo se actualiza con lo nuevo de la biblioteca.
-        const fresh = new Map(); for (const n of items) if (!fresh.has(`${n.id}:${n.part || 0}`)) fresh.set(`${n.id}:${n.part || 0}`, n);
         const anyFresh = new Map(); for (const n of items) if (!anyFresh.has(n.id)) anyFresh.set(n.id, n);
         const refresh = (it) => { const f = anyFresh.get(it.id); return f && (f.src !== it.src || f.ref !== it.ref || f.title !== it.title) ? { ...it, title: f.title, src: f.src, ref: f.ref } : it; };
-        const cur0 = old.items[loc.index], f0 = fresh.get(`${cur0.id}:${cur0.part || 0}`);
-        const sourceChanged = !!f0 && (f0.src !== cur0.src || f0.ref !== cur0.ref);
-        const durationChanged = !!f0 && (Math.abs(f0.duration - cur0.duration) > 0.5 || Math.abs((f0.startAt || 0) - (cur0.startAt || 0)) > 0.5);
-        // Cambió el video que está al aire Y dura distinto: los tiempos viejos ya no sirven; se vuelve a empezar con lo nuevo.
-        // Si quitaste de la parrilla el programa que estaba al aire (o lo borraste), la emisión se reinicia ya con la parrilla nueva.
+        const cur0 = old.items[loc.index], fa = anyFresh.get(cur0.id);
+        const sourceChanged = !!fa && (fa.src !== cur0.src || fa.ref !== cur0.ref);   // cambiaste el enlace de lo que suena
         let k0 = loc.index; while (k0 > 0 && old.items[k0].type !== "programa") k0--;
         const airProg = old.items[k0], airRemoved = airProg?.type === "programa" && !items.some((n) => n.id === airProg.id);
-        if (gone(cur0) || airRemoved) why = "removed";
-        if (!gone(cur0) && !airRemoved && !(sourceChanged && durationChanged)) {
+        if (gone(cur0) || airRemoved) {
+          // Quitaste (o borraste) lo que estaba al aire: salta YA al siguiente programa de la parrilla, no al primero.
+          why = "removed"; plan = jumpPublish(old.items, k0, items, now, false);
+        } else if (sourceChanged && cur0.type === "programa") {
+          // Cambiaste el enlace del programa al aire: se recarga ese mismo programa desde el inicio con el video nuevo.
+          why = "reload"; plan = jumpPublish(old.items, k0, items, now, true);
+        } else {
           const base = old.items.filter((it, k) => k === loc.index || !gone(it)).map(refresh);
           const idx = old.items.slice(0, loc.index).filter((it) => !gone(it)).length;
           plan = seamlessPublish(base, idx, loc.offset, items, now);
@@ -678,7 +692,7 @@ async function publish(auto, restart) {
     await setDoc(doc(db, "public", "channel"), channel);
     state.channel = { epoch: plan.epoch, items: plan.items, live, media: channel.media, seq: channel.seq, ...(nxt ? { nextSeq: nxt.seq, nextAt: plan.nextAt } : {}) };
     renderCycle(); renderNow();
-    toast(plan.next ? "Publicado. Lo nuevo de arriba entra en la próxima repetición." : why === "restart" ? "Emisión reiniciada." : why === "removed" ? "Emisión reiniciada: quitaste el programa al aire." : "Emisión publicada.", "ok");
+    toast(plan.next ? "Publicado. Lo nuevo de arriba entra en la próxima repetición." : why === "restart" ? "Emisión reiniciada." : why === "removed" ? "Quitaste el programa al aire: pasó al siguiente." : why === "reload" ? "Enlace actualizado: el programa se recargó con el video nuevo." : "Emisión publicada.", "ok");
   } catch (err) { fail(err); }
 }
 let tlKey = "";

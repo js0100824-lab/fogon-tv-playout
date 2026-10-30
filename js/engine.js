@@ -260,6 +260,25 @@ export function seamlessPublish(oldItems, index, offset, newItems, now) {
   return { items: hybrid, epoch, next: newItems, nextAt: Math.round(epoch + cycleLength(hybrid) * 1000) };
 }
 
+// Salto inmediato a un programa de la lista nueva (sin esperar al final del actual).
+// stay=true  → vuelve a empezar el MISMO programa que estaba al aire (p. ej. cambiaste su enlace y debe recargarse).
+// stay=false → pasa al SIGUIENTE programa que siga existiendo (p. ej. quitaste el que estaba al aire).
+// index: cualquier tramo del programa al aire (o de su corte comercial). Devuelve { items, epoch, next, nextAt } o null.
+export function jumpPublish(oldItems, index, newItems, now, stay) {
+  if (!oldItems?.length || !newItems?.length || !(index >= 0 && index < oldItems.length)) return null;
+  const oS = programStarts(oldItems), nS = programStarts(newItems);
+  if (!oS.length || !nS.length) return null;
+  let c = 0; for (let k = 0; k < oS.length; k++) if (oS[k] <= index) c = k;
+  const hits = (id) => nS.map((k, j) => (newItems[k].id === id ? j : -1)).filter((j) => j >= 0);
+  let target = -1;
+  if (stay) target = nearest(hits(oldItems[oS[c]].id), c);
+  for (let q = c + 1; q < oS.length && target < 0; q++) target = nearest(hits(oldItems[oS[q]].id), q - 1);   // los de abajo primero
+  for (let q = 0; q < c && target < 0; q++) target = nearest(hits(oldItems[oS[q]].id), q);                    // si no queda nada abajo, vuelta al inicio
+  if (target < 0) target = 0;
+  const before = newItems.slice(0, nS[target]).reduce((a, i) => a + i.duration, 0);
+  return { items: newItems, epoch: Math.round(now - before * 1000), next: null, nextAt: 0 };
+}
+
 // Si ya pasó la hora de relevo, el canal pasa a la lista nueva (cada cliente lo hace solo, con el mismo resultado).
 export function settleChannel(ch, now) {
   if (!ch || ch.live === false || !ch.nextSeq || !(now >= ch.nextAt)) return false;
