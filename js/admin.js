@@ -88,6 +88,7 @@ function toast(text, kind = "ok") {
   const t = $("toast"); t.textContent = text; t.className = `msg ${kind}`;
   clearTimeout(toast.t); toast.t = setTimeout(() => t.classList.add("hidden"), 5000);
 }
+let libShown = [];
 let libKind = "programa";   // qué se ve en la Biblioteca: programa | comercial
 // Alerta propia (reemplaza el confirm() del navegador). Devuelve true/false.
 function askConfirm({ title, text = "", ok = "Aceptar", cancel = "Cancelar", danger = false }) {
@@ -109,6 +110,8 @@ async function initPanel() {
   document.querySelectorAll("#nav button").forEach((b) => b.addEventListener("click", () => openTab(b.dataset.tab)));
   $("lib-form").addEventListener("submit", addItem);
   $("lib-cancel").addEventListener("click", resetEdit);
+  $("lib-kind").addEventListener("change", () => { $("lib-cat").style.display = $("lib-kind").value === "programa" ? "" : "none"; });
+  initSched();
   initTimeline();
   document.querySelectorAll("#lib-filter [data-kind]").forEach((b) => b.addEventListener("click", () => { libKind = b.dataset.kind; renderLibrary(); }));
   $("monitor").src = new URL("../player/?embed=1&studio=1", location.href).href;
@@ -150,10 +153,6 @@ async function initPanel() {
     try { if (localStorage.getItem(key) === "0") box.open = false; } catch { /* sin almacenamiento */ }
     box.addEventListener("toggle", () => { try { localStorage.setItem(key, box.open ? "1" : "0"); } catch { /* */ } });
   }
-  $("order-add-btn").addEventListener("click", () => {
-    const id = $("order-add").value; if (!id) return;
-    state.plan.order.push(id); savePlan().then(renderAll).catch(fail);
-  });
   // Vaciar la parrilla de golpe
   $("order-clear").addEventListener("click", async () => {
     const n = state.plan.order.length;
@@ -190,6 +189,7 @@ async function initPanel() {
     if (brandSnap.exists()) state.brand = { ...state.brand, ...brandSnap.data() };
     state.channel = chSnap.exists() ? { ...chSnap.data(), items: expandChannel(chSnap.data()) } : null;
   } catch (err) { fail(err); }
+  ensureSched();
   renderAll();
   setInterval(renderNow, 1000);
   setInterval(renderCycle, 30000);   // las horas del ciclo se mantienen al día
@@ -209,7 +209,7 @@ function renderMedia() {
 function renderAll() {
   renderMedia();
   state.plan.order = state.plan.order.filter((id) => state.lib.some((i) => i.id === id));
-  renderLibrary(); renderAds(); renderOrder(); renderCycle(); renderBrand(); renderNow();
+  renderLibrary(); renderAds(); renderOrder(); renderCycle(); renderBrand(); renderNow(); renderSched(); renderPick();
 }
 
 /* Subida a Cloudinary (plan gratis, preset sin firma) */
@@ -269,13 +269,13 @@ let editing = null;   // { id, url, dur, play }
 function resetEdit() {
   editing = null; $("lib-form").reset();
   $("lib-form").querySelector('button[type="submit"]').textContent = "Guardar enlace";
-  $("lib-cancel").hidden = true; document.querySelector(".link-add summary").textContent = "Añadir por enlace (YouTube, Facebook o .mp4)";
+  $("lib-cancel").hidden = true; document.querySelector(".link-add summary").textContent = "Añadir contenido"; $("lib-cat").style.display = "";
 }
 function startEdit(id) {
   const it = state.lib.find((x) => x.id === id); if (!it) return;
   const pf = it.playFor > 0 ? Math.min(it.playFor, it.duration) : 0;
   editing = { id, url: it.url, dur: it.duration, play: pf };
-  $("lib-title").value = it.title; $("lib-url").value = it.url; $("lib-kind").value = it.kind;
+  $("lib-title").value = it.title; $("lib-url").value = it.url; $("lib-kind").value = it.kind; $("lib-cat").value = it.cat || ""; $("lib-cat").style.display = it.kind === "programa" ? "" : "none";
   $("lib-dur-h").value = Math.floor(it.duration / 3600) || ""; $("lib-dur-m").value = Math.floor((it.duration % 3600) / 60); $("lib-dur-s").value = Math.round(it.duration % 60);
   $("lib-play-h").value = pf >= 3600 ? Math.floor(pf / 3600) : ""; $("lib-play-m").value = pf ? Math.floor((pf % 3600) / 60) : ""; $("lib-play-s").value = pf ? Math.round(pf % 60) : "";
   $("lib-form").querySelector('button[type="submit"]').textContent = "Guardar cambios";
@@ -300,8 +300,8 @@ async function addItem(e) {
   const yt = youtubeId(url), fb = !!facebookUrl(url);
   const ms = (h, a, b) => Math.max(0, Math.floor(Number($(h).value) || 0)) * 3600 + Math.max(0, Math.floor(Number($(a).value) || 0)) * 60 + Math.max(0, Math.floor(Number($(b).value) || 0));
   let duration = ms("lib-dur-h", "lib-dur-m", "lib-dur-s"), playFor = ms("lib-play-h", "lib-play-m", "lib-play-s");
-  // Al editar: si cambiaste el enlace y no tocaste la duración, se vuelve a detectar la del video nuevo.
-  if (editing && url !== editing.url && duration === editing.dur) duration = 0;
+  // Al editar: en YouTube/.mp4, si cambiaste el enlace y no tocaste la duración, se detecta la del video nuevo. En Facebook se conserva la que hay.
+  if (editing && !fb && url !== editing.url && duration === editing.dur) duration = 0;
   if (fb && !(duration > 0)) { toast("Escribe la duración del video.", "error"); return; }
   if (!(duration > 0)) { toast("Detectando la duración…", "ok"); duration = yt ? await ytDuration(yt) : await detectDuration(url); }
   if (!(duration > 0)) {
@@ -312,12 +312,13 @@ async function addItem(e) {
     const kind = $("lib-kind").value, extra = kind === "comercial" && playFor > 0 ? { playFor: Math.min(playFor, duration) } : {};
     if (editing) {
       const eid = editing.id, inChannel = !!(state.channel?.items?.some((x) => x.id === eid) || (state.channel?.media && state.channel.media[eid]));
-      await updateItem(eid, { title: $("lib-title").value.trim(), kind, url, duration, playFor: extra.playFor || 0 });
+      const durChanged = duration !== editing.dur, air = airProgramId();
+      await updateItem(eid, { title: $("lib-title").value.trim(), kind, url, duration, playFor: extra.playFor || 0, cat: kind === "programa" ? $("lib-cat").value : "" });
       resetEdit();
-      // Si ese contenido está en la emisión, se publica solo para que el aire use el enlace nuevo (sin tener que pulsar nada más).
-      if (inChannel) { toast("Guardado. Actualizando la emisión…", "ok"); await publish(true); }
+      // Si ese contenido está en la emisión, se publica solo: el aire usa el enlace y la duración nuevos (si está al aire y cambió la duración, se reinicia).
+      if (inChannel) { toast("Guardado. Actualizando la emisión…", "ok"); await publish(true, false, { reloadId: durChanged && air === eid ? eid : null }); }
       else toast("Cambios guardados.", "ok");
-    } else { await saveItem({ title: $("lib-title").value.trim(), kind, url, duration, ...extra }); $("lib-form").reset(); toast("Contenido guardado.", "ok"); }
+    } else { await saveItem({ title: $("lib-title").value.trim(), kind, url, duration, cat: kind === "programa" ? $("lib-cat").value : "", ...extra }); $("lib-form").reset(); toast("Contenido guardado.", "ok"); }
   } catch (err) { fail(err); }
 }
 async function saveItem(d) {
@@ -379,18 +380,28 @@ function renderLibrary() {
     b.classList.toggle("active", b.dataset.kind === libKind);
   });
   const card = (i, num) => {
-    const n = state.plan.order.filter((x) => x === i.id).length;
-    const onGrid = i.kind === "programa" && n > 0 ? `<span class="tag ok">✓ En parrilla${n > 1 ? ` ×${n}` : ""}</span>` : "";
+    const n = state.plan.order.filter((x) => x === i.id).length, prog = i.kind === "programa";
+    const onGrid = prog && n > 0 ? `<span class="tag ok">✓ En parrilla${n > 1 ? ` ×${n}` : ""}</span>` : "";
+    const fbTag = i.fbOk === true ? '<span class="tag ok">✓ Se ve</span>' : i.fbOk === false ? '<span class="tag bad">✗ No se ve</span>' : "";
     const dur = fmtDuration(i.duration) + (i.kind === "comercial" && i.playFor > 0 ? ` · al aire ${fmtDuration(Math.min(i.playFor, i.duration))}` : "");
+    const catSel = prog ? `<select class="cat-sel" data-cat="${esc(i.id)}" aria-label="Categoría"><option value="">Sin categoría</option>${catsAll().map((c) => `<option value="${esc(c)}"${c === i.cat ? " selected" : ""}>${esc(c)}</option>`).join("")}</select>` : "";
     return `<div class="item lib-item"><div class="lib-main"><b><span class="lib-num">${num}.</span> ${esc(i.title)}</b></div>
-    <div class="lib-meta">${onGrid}<span class="lib-dur">${dur}</span><span class="lib-actions"><button class="btn small" data-edit="${esc(i.id)}" type="button">Editar</button><button class="btn del small" data-del="${esc(i.id)}" type="button">Eliminar</button></span></div>
+    <div class="lib-meta">${onGrid}${fbTag}<span class="lib-dur">${dur}</span>${catSel}</div>
+    <div class="lib-meta"><span class="lib-actions"><button class="btn small" data-view="${esc(i.id)}" type="button">Ver</button>${prog ? `<button class="btn small" data-grid="${esc(i.id)}" type="button">＋ Parrilla</button>` : ""}<button class="btn small" data-edit="${esc(i.id)}" type="button">Editar</button><button class="btn del small" data-del="${esc(i.id)}" type="button">Eliminar</button></span></div>
     <details class="lib-link"><summary>Ver enlace</summary><span>${esc(i.url)}</span><button class="btn small" data-copy="${esc(i.url)}" type="button">Copiar enlace</button></details></div>`;
   };
   // Solo se ve lo que elijas (Programas o Anuncios). El número es el orden en que los añadiste; el más reciente sale arriba.
   const asc = state.lib.filter((i) => (i.kind === "comercial") === isAd).sort((a, b) => createdMs(a) - createdMs(b) || String(a.id).localeCompare(String(b.id)));
   const num = new Map(asc.map((i, k) => [i.id, k + 1]));
-  el.innerHTML = asc.length ? asc.slice().reverse().map((i) => card(i, num.get(i.id))).join("") : `<p class="hint">${isAd ? "Sin anuncios" : "Sin programas"}</p>`;
+  libShown = asc.slice().reverse();
+  el.innerHTML = asc.length ? libShown.map((i) => card(i, num.get(i.id))).join("") : `<p class="hint">${isAd ? "Sin anuncios" : "Sin programas"}</p>`;
   el.querySelectorAll("[data-edit]").forEach((b) => b.addEventListener("click", () => startEdit(b.dataset.edit)));
+  el.querySelectorAll("[data-view]").forEach((b) => b.addEventListener("click", () => openView(b.dataset.view)));
+  el.querySelectorAll("[data-grid]").forEach((b) => b.addEventListener("click", () => addToGrid(b.dataset.grid)));
+  el.querySelectorAll("[data-cat]").forEach((s) => s.addEventListener("change", async () => {
+    const it = state.lib.find((x) => x.id === s.dataset.cat); if (!it) return;
+    try { await updateDoc(doc(db, "library", it.id), { cat: s.value }); it.cat = s.value; toast("Guardado.", "ok"); } catch (err) { fail(err); }
+  }));
   el.querySelectorAll("[data-copy]").forEach((b) => b.addEventListener("click", async () => { try { await navigator.clipboard.writeText(b.dataset.copy); b.textContent = "Copiado ✓"; setTimeout(() => { b.textContent = "Copiar enlace"; }, 1500); } catch { toast("No se pudo copiar. Mantén pulsado el enlace para copiarlo.", "error"); } }));
   el.querySelectorAll("[data-del]").forEach((b) => b.addEventListener("click", async () => {
     const it = state.lib.find((x) => x.id === b.dataset.del);
@@ -475,12 +486,6 @@ const savePlan = () => setDoc(doc(db, "config", "plan"), state.plan);
 
 /* Programación */
 function renderOrder() {
-  const progs = state.lib.filter((i) => i.kind === "programa");
-  const inCount = (id) => state.plan.order.filter((x) => x === id).length;
-  const fresh = progs.filter((i) => !inCount(i.id)), used = progs.filter((i) => inCount(i.id));
-  const opt = (i, mark) => `<option value="${esc(i.id)}">${mark ? `✓ ${esc(i.title)} (${fmtDuration(i.duration)})${inCount(i.id) > 1 ? ` ×${inCount(i.id)}` : ""}` : `${esc(i.title)} (${fmtDuration(i.duration)})`}</option>`;
-  $("order-add").innerHTML = (fresh.length ? `<optgroup label="Sin añadir (${fresh.length})">${fresh.map((i) => opt(i, false)).join("")}</optgroup>` : "")
-    + (used.length ? `<optgroup label="Ya en la parrilla (${used.length})">${used.map((i) => opt(i, true)).join("")}</optgroup>` : "");
   $("order-sum").textContent = `Parrilla (${state.plan.order.length} programa${state.plan.order.length === 1 ? "" : "s"})`;
   const el = $("order-list");
   if (!state.plan.order.length) { el.innerHTML = '<p class="hint">Parrilla vacía</p>'; return; }
@@ -659,10 +664,11 @@ async function toggleLive() {
 }
 
 /* Publicar */
-async function publish(auto, restart) {
+async function publish(auto, restart, opts) {
   restart = restart === true;   // true solo desde el botón «Publicar y reiniciar»
-  if (restart && !(await askConfirm({ title: "¿Reiniciar la emisión?", text: "Empieza desde el primer programa.", ok: "Reiniciar", danger: true }))) return;
-  let why = restart ? "restart" : "";
+  opts = opts && typeof opts === "object" && !(opts instanceof Event) ? opts : {};
+  if (restart && !(await askConfirm({ title: opts.alignAt ? "¿Publicar a este horario?" : "¿Reiniciar la emisión?", text: opts.alignAt ? `El primer programa queda a las ${opts.label}, igual que el reloj.` : "Empieza desde el primer programa.", ok: opts.alignAt ? "Publicar" : "Reiniciar", danger: true }))) return;
+  let why = opts.alignAt ? "align" : restart ? "restart" : "";
   const items = buildCycle(state.lib, state.plan);
   if (!items.length && !auto && !(await askConfirm({ title: "Parrilla vacía", text: "El público verá «Sin programación».", ok: "Publicar" }))) return;
   try {
@@ -686,9 +692,9 @@ async function publish(auto, restart) {
         if (gone(cur0) || airRemoved) {
           // Quitaste (o borraste) lo que estaba al aire: salta YA al siguiente programa de la parrilla, no al primero.
           why = "removed"; plan = jumpPublish(old.items, k0, items, now, false);
-        } else if (sourceChanged && cur0.type === "programa") {
-          // Cambiaste el enlace del programa al aire: se recarga ese mismo programa desde el inicio con el video nuevo.
-          why = "reload"; plan = jumpPublish(old.items, k0, items, now, true);
+        } else if ((sourceChanged && cur0.type === "programa") || (opts.reloadId && airProg?.id === opts.reloadId)) {
+          // Cambiaste el enlace o la duración del programa al aire: se recarga ese mismo programa desde el inicio.
+          why = sourceChanged ? "reload" : "dur"; plan = jumpPublish(old.items, k0, items, now, true);
         } else {
           const base = old.items.filter((it, k) => k === loc.index || !gone(it)).map(refresh);
           const idx = old.items.slice(0, loc.index).filter((it) => !gone(it)).length;
@@ -696,13 +702,13 @@ async function publish(auto, restart) {
         }
       }
     }
-    if (!plan) plan = { items, epoch: Math.round(now), next: null, nextAt: 0 };   // primera publicación, directo, pausa o borrado: empieza desde el principio
+    if (!plan) plan = { items, epoch: Math.round(opts.alignAt || now), next: null, nextAt: 0 };   // primera publicación, directo, pausa o borrado: empieza desde el principio
     const cur = compactChannel(plan.items), nxt = plan.next ? compactChannel(plan.next) : null;
     const channel = { epoch: plan.epoch, live, media: nxt ? { ...cur.media, ...nxt.media } : cur.media, seq: cur.seq, nextSeq: nxt ? nxt.seq : null, nextAt: nxt ? plan.nextAt : null, updatedAt: serverTimestamp() };
     await setDoc(doc(db, "public", "channel"), channel);
     state.channel = { epoch: plan.epoch, items: plan.items, live, media: channel.media, seq: channel.seq, ...(nxt ? { nextSeq: nxt.seq, nextAt: plan.nextAt } : {}) };
     renderCycle(); renderNow();
-    toast(plan.next ? "Publicado. Lo nuevo de arriba entra en la próxima repetición." : why === "restart" ? "Emisión reiniciada." : why === "removed" ? "Quitaste el programa al aire: pasó al siguiente." : why === "reload" ? "Enlace actualizado: el programa se recargó con el video nuevo." : "Emisión publicada.", "ok");
+    toast(plan.next ? "Publicado. Lo nuevo de arriba entra en la próxima repetición." : why === "align" ? "Emisión alineada al horario." : why === "dur" ? "Duración actualizada: el programa se reinició." : why === "restart" ? "Emisión reiniciada." : why === "removed" ? "Quitaste el programa al aire: pasó al siguiente." : why === "reload" ? "Enlace actualizado: el programa se recargó con el video nuevo." : "Emisión publicada.", "ok");
   } catch (err) { fail(err); }
 }
 let tlKey = "";
@@ -848,4 +854,184 @@ async function loadStats() {
     $("stats-table").innerHTML = list.length ? `<table><thead><tr><th>Contenido</th><th>Tipo</th><th>Veces</th></tr></thead><tbody>${
       list.map((x) => `<tr><td>${esc(x.title)}</td><td>${esc(x.kind)}</td><td>${x.n}</td></tr>`).join("")}</tbody></table>` : '<p class="hint">Sin contenidos</p>';
   } catch (err) { fail(err); }
+}
+
+/* ===== Parrilla práctica · Añadir rápido · Horarios por categoría · Verificador de videos ===== */
+const DEFAULT_CATS = ["Caricaturas", "Informativos", "Entretenimiento", "Novelas", "Películas"];
+const DEFAULT_SLOTS = [
+  { from: "06:00", to: "10:00", cat: "Caricaturas" }, { from: "10:00", to: "13:00", cat: "Informativos" },
+  { from: "13:00", to: "17:00", cat: "Entretenimiento" }, { from: "17:00", to: "18:00", cat: "*" },
+  { from: "18:00", to: "21:00", cat: "Novelas" }, { from: "21:00", to: "22:00", cat: "*" },
+  { from: "22:00", to: "00:00", cat: "Películas" }, { from: "00:00", to: "06:00", cat: "*" }
+];
+const ORDERS = { long: "Mayor a menor duración", short: "Menor a mayor duración", new: "Más recientes primero", old: "Más antiguos primero", az: "A–Z", rnd: "Al azar" };
+function ensureSched() {
+  const p = state.plan;
+  if (!Array.isArray(p.cats)) p.cats = [...DEFAULT_CATS];
+  if (!Array.isArray(p.slots)) p.slots = DEFAULT_SLOTS.map((s) => ({ ...s }));
+  p.quick = { which: "new", order: "long", cat: "", max: "", skipBad: true, replace: false, ...(p.quick || {}) };
+  p.hOpt = { order: "old", skipBad: true, ...(p.hOpt || {}) };
+}
+const catsAll = () => [...new Set([...(state.plan.cats || []), ...(state.plan.slots || []).map((s) => s.cat).filter((c) => c && c !== "*"), ...state.lib.map((i) => i.cat).filter(Boolean)])];
+function sortProgs(list, how) {
+  const a = list.slice();
+  if (how === "rnd") { for (let i = a.length - 1; i > 0; i--) { const k = Math.floor(Math.random() * (i + 1)); [a[i], a[k]] = [a[k], a[i]]; } return a; }
+  const f = { long: (x, y) => y.duration - x.duration, short: (x, y) => x.duration - y.duration, new: (x, y) => createdMs(y) - createdMs(x), old: (x, y) => createdMs(x) - createdMs(y), az: (x, y) => (x.title || "").localeCompare(y.title || "") }[how];
+  return f ? a.sort(f) : a;
+}
+const toMin = (t) => { const [hh, mm] = String(t || "0:0").split(":").map(Number); return (((hh || 0) * 60 + (mm || 0)) % 1440 + 1440) % 1440; };
+const clockTxt = (min) => { min = Math.round(((min % 1440) + 1440) % 1440); const hh = Math.floor(min / 60), mm = min % 60; return `${hh % 12 || 12}:${String(mm).padStart(2, "0")} ${hh < 12 ? "AM" : "PM"}`; };
+const plusHour = (t) => `${String((Math.floor(toMin(t) / 60) + 1) % 24).padStart(2, "0")}:${String(toMin(t) % 60).padStart(2, "0")}`;
+let schedVals = false, lastSched = null;
+
+function initSched() {
+  ["q-order", "h-order"].forEach((id) => { $(id).innerHTML = Object.entries(ORDERS).map(([k, v]) => `<option value="${k}">${v}</option>`).join(""); });
+  $("quick-btn").addEventListener("click", quickAdd);
+  $("pick-q").addEventListener("input", renderPick);
+  $("pick-list").addEventListener("click", (e) => { const b = e.target.closest("[data-pick]"); if (b) addToGrid(b.dataset.pick); });
+  $("cat-add").addEventListener("click", () => {
+    const v = $("cat-new").value.trim(); if (!v) return;
+    if (!catsAll().some((c) => c.toLowerCase() === v.toLowerCase())) state.plan.cats.push(v);
+    $("cat-new").value = ""; savePlan().then(renderAll).catch(fail);
+  });
+  $("cat-chips").addEventListener("click", (e) => { const b = e.target.closest("[data-catdel]"); if (!b) return; state.plan.cats.splice(Number(b.dataset.catdel), 1); savePlan().then(renderAll).catch(fail); });
+  $("slot-add").addEventListener("click", () => { const l = state.plan.slots.at(-1); state.plan.slots.push({ from: l ? l.to : "06:00", to: plusHour(l ? l.to : "06:00"), cat: "*" }); savePlan().then(renderSched).catch(fail); });
+  $("slot-list").addEventListener("change", (e) => {
+    const t = e.target, s = state.plan.slots;
+    if (t.dataset.sf != null) s[+t.dataset.sf].from = t.value; else if (t.dataset.st != null) s[+t.dataset.st].to = t.value; else if (t.dataset.sc != null) s[+t.dataset.sc].cat = t.value; else return;
+    savePlan().catch(fail);
+  });
+  $("slot-list").addEventListener("click", (e) => { const b = e.target.closest("[data-sd]"); if (!b) return; state.plan.slots.splice(Number(b.dataset.sd), 1); savePlan().then(renderSched).catch(fail); });
+  $("gen-btn").addEventListener("click", generateSchedule);
+  $("align-btn").addEventListener("click", publishAligned);
+  $("fbv-close").addEventListener("click", closeView);
+  $("fbv-prev").addEventListener("click", () => { if (vw.i > 0) { vw.i--; showView(); } });
+  $("fbv-next").addEventListener("click", () => { if (vw.i < vw.list.length - 1) { vw.i++; showView(); } });
+  $("fbv-ok").addEventListener("click", () => markView(true));
+  $("fbv-no").addEventListener("click", () => markView(false));
+  $("fbv").addEventListener("click", (e) => { if (e.target === $("fbv")) closeView(); });
+}
+
+function renderSched() {
+  const p = state.plan, cats = catsAll();
+  const opts = (sel) => cats.map((c) => `<option value="${esc(c)}"${c === sel ? " selected" : ""}>${esc(c)}</option>`).join("");
+  const set = (id, html) => { const el = $(id), v = el.value; el.innerHTML = html; el.value = v; };
+  set("lib-cat", `<option value="">Sin categoría</option>${opts("")}`);
+  set("q-cat", `<option value="">Todas</option>${opts("")}`);
+  $("cat-chips").innerHTML = (p.cats || []).map((c, n) => `<span class="chip">${esc(c)}<button type="button" data-catdel="${n}" aria-label="Quitar">×</button></span>`).join("");
+  $("slot-list").innerHTML = (p.slots || []).map((s, n) => `<div class="slot"><input type="time" data-sf="${n}" value="${esc(s.from)}" aria-label="Desde"><input type="time" data-st="${n}" value="${esc(s.to)}" aria-label="Hasta"><button class="btn del small" data-sd="${n}" type="button" aria-label="Quitar">×</button><select data-sc="${n}" aria-label="Categoría"><option value="*"${s.cat === "*" ? " selected" : ""}>Variado</option>${opts(s.cat)}</select></div>`).join("");
+  if (!schedVals) {
+    schedVals = true; const q = p.quick, o = p.hOpt;
+    $("q-which").value = q.which; $("q-order").value = q.order; $("q-cat").value = q.cat; $("q-max").value = q.max; $("q-skip").checked = !!q.skipBad; $("q-replace").checked = !!q.replace;
+    $("h-order").value = o.order; $("h-skip").checked = !!o.skipBad;
+  }
+  $("lib-cat").style.display = $("lib-kind").value === "programa" ? "" : "none";
+}
+
+// ---- Parrilla: lista con búsqueda y botón ＋ en cada programa (no se cierra al añadir) ----
+function renderPick() {
+  const el = $("pick-list"), q = ($("pick-q").value || "").trim().toLowerCase(), st = el.scrollTop;
+  const progs = sortProgs(state.lib.filter((i) => i.kind === "programa" && (!q || (i.title || "").toLowerCase().includes(q))), "old");
+  el.innerHTML = progs.length ? progs.map((i) => {
+    const n = state.plan.order.filter((x) => x === i.id).length;
+    return `<div class="pick-row"><span class="pick-t">${esc(i.title)}</span><span class="pick-d">${fmtDuration(i.duration)}${n ? ` · ✓${n > 1 ? ` ×${n}` : ""}` : ""}${i.fbOk === false ? " · ✗" : ""}</span><button class="btn small" data-pick="${esc(i.id)}" type="button" aria-label="Añadir">＋</button></div>`;
+  }).join("") : '<p class="hint">Sin resultados</p>';
+  el.scrollTop = st;
+}
+function addToGrid(id) {
+  if (!state.lib.some((x) => x.id === id)) return;
+  state.plan.order.push(id);
+  savePlan().then(() => { renderAll(); toast("Añadido a la parrilla.", "ok"); }).catch(fail);
+}
+
+// ---- Añadir rápido ----
+function quickAdd() {
+  const q = { which: $("q-which").value, order: $("q-order").value, cat: $("q-cat").value, max: $("q-max").value, skipBad: $("q-skip").checked, replace: $("q-replace").checked };
+  state.plan.quick = q;
+  let list = state.lib.filter((i) => i.kind === "programa" && i.duration > 0);
+  if (q.cat) list = list.filter((i) => i.cat === q.cat);
+  if (q.skipBad) list = list.filter((i) => i.fbOk !== false);
+  if (q.which === "new" && !q.replace) list = list.filter((i) => !state.plan.order.includes(i.id));
+  list = sortProgs(list, q.order);
+  const max = parseInt(q.max, 10); if (max > 0) list = list.slice(0, max);
+  if (!list.length) { toast("No hay programas con ese criterio.", "error"); return; }
+  state.plan.order = q.replace ? list.map((i) => i.id) : state.plan.order.concat(list.map((i) => i.id));
+  savePlan().then(() => { renderAll(); toast(`Añadidos ${list.length} programas.`, "ok"); }).catch(fail);
+}
+
+// ---- Horarios: reparte los programas por categoría y franja horaria (sin IA, sin costo) ----
+function normSlots() {
+  const raw = (state.plan.slots || []).map((s) => ({ f: toMin(s.from), t: toMin(s.to), cat: s.cat }));
+  if (!raw.length) return null;
+  const S = Math.min(...raw.map((s) => s.f));
+  const out = raw.map((s) => { const rel = (s.f - S + 1440) % 1440, len = ((s.t - s.f + 1440) % 1440) || 1440; return { cat: s.cat, from: s.f, to: s.t, start: rel, end: Math.min(1440, rel + len) }; }).sort((a, b) => a.start - b.start);
+  return { S, slots: out };
+}
+function generateSchedule() {
+  const p = state.plan, ns = normSlots();
+  if (!ns) { toast("Añade al menos una franja.", "error"); return; }
+  const opt = { order: $("h-order").value, skipBad: $("h-skip").checked }; p.hOpt = opt;
+  const base = state.lib.filter((i) => i.kind === "programa" && i.duration > 0 && !(opt.skipBad && i.fbOk === false));
+  const lenOf = (ids) => cycleLength(buildCycle(state.lib, { ...p, order: ids }));
+  const order = [], used = new Set(), rows = []; let len = 0, last = null;
+  for (const s of ns.slots) {
+    const end = s.end * 60, pool = sortProgs(base.filter((i) => s.cat === "*" || i.cat === s.cat), opt.order), row = { ...s, n: 0, startAt: len };
+    if (!pool.length) { row.empty = true; rows.push(row); continue; }
+    for (let guard = 0; guard < 300 && end - len > 60; guard++) {
+      let cand = pool.filter((i) => !used.has(i.id));
+      if (!cand.length) { pool.forEach((i) => used.delete(i.id)); cand = pool.filter((i) => i.id !== last); if (!cand.length) cand = pool.slice(); }
+      let pick = null, best = null;
+      for (const i of cand) { const t = lenOf([...order, i.id]); if (t <= end) { pick = { i, t }; break; } if (!best || t < best.t) best = { i, t }; }
+      if (!pick && best && end - len >= best.i.duration * 0.5) pick = best;   // si más de la mitad cabe en la franja, se acepta
+      if (!pick) break;
+      order.push(pick.i.id); used.add(pick.i.id); last = pick.i.id; row.n++; len = pick.t;
+    }
+    row.endAt = len; rows.push(row);
+  }
+  if (!order.length) { toast("No hay programas para esas franjas.", "error"); return; }
+  p.order = order; p.dayStart = ns.S; lastSched = { rows, len, S: ns.S };
+  savePlan().then(() => { renderAll(); renderSummary(); toast(`Parrilla creada: ${order.length} programas.`, "ok"); }).catch(fail);
+}
+function renderSummary() {
+  const el = $("h-summary"); if (!lastSched) { el.innerHTML = ""; return; }
+  const { rows, len, S } = lastSched, nm = (c) => (c === "*" ? "Variado" : c);
+  el.innerHTML = rows.map((r) => {
+    if (r.empty) return `<p class="warn"><b>${clockTxt(r.from)}–${clockTxt(r.to)}</b> · ${esc(nm(r.cat))}: sin programas</p>`;
+    const drift = Math.abs(r.startAt - r.start * 60) > 600;
+    return `<p class="${drift ? "warn" : ""}"><b>${clockTxt(r.from)}–${clockTxt(r.to)}</b> · ${esc(nm(r.cat))}: ${r.n} programa${r.n === 1 ? "" : "s"} · real ${clockTxt(S + r.startAt / 60)}–${clockTxt(S + r.endAt / 60)}</p>`;
+  }).join("") + `<p><b>Ciclo:</b> ${fmtDuration(len)} (día completo = 24:00:00)</p>`;
+}
+async function publishAligned() {
+  const S = state.plan.dayStart;
+  if (!Number.isFinite(S)) { toast("Primero genera la parrilla.", "error"); return; }
+  const [y, m, d] = new Date(serverNow()).toLocaleDateString("en-CA", { timeZone: TZ }).split("-").map(Number);
+  let at = Date.UTC(y, m - 1, d, Math.floor(S / 60) + 4, S % 60);   // hora de República Dominicana = UTC−4
+  if (at > serverNow()) at -= 86400000;
+  await publish(false, true, { alignAt: at, label: clockTxt(S) });
+}
+
+// ---- Verificador: ventana emergente para ver cada video y marcar si se ve o no ----
+let vw = { list: [], i: 0 };
+function embedOf(it) {
+  const fb = facebookUrl(it.url), yt = youtubeId(it.url);
+  if (fb) return `<iframe src="https://www.facebook.com/plugins/video.php?href=${encodeURIComponent(fb)}&show_text=false&width=640" allow="autoplay; encrypted-media; fullscreen; picture-in-picture" allowfullscreen></iframe>`;
+  if (yt) return `<iframe src="https://www.youtube.com/embed/${yt}" allow="autoplay; encrypted-media; fullscreen" allowfullscreen></iframe>`;
+  return `<video src="${esc(it.url)}" controls playsinline></video>`;
+}
+function openView(id) {
+  vw = { list: libShown.slice(), i: Math.max(0, libShown.findIndex((x) => x.id === id)) };
+  $("fbv").classList.remove("hidden"); showView();
+}
+function showView() {
+  const it = vw.list[vw.i]; if (!it) { closeView(); return; }
+  $("fbv-title").textContent = `${vw.i + 1}/${vw.list.length} · ${it.title}`;
+  $("fbv-box").innerHTML = embedOf(it);
+  $("fbv-state").textContent = it.fbOk === true ? "✓ Marcado: se ve" : it.fbOk === false ? "✗ Marcado: no se ve" : "";
+}
+function closeView() { $("fbv").classList.add("hidden"); $("fbv-box").innerHTML = ""; }
+async function markView(ok) {
+  const it = vw.list[vw.i]; if (!it) return;
+  try { await updateDoc(doc(db, "library", it.id), { fbOk: ok }); it.fbOk = ok; } catch (err) { fail(err); return; }
+  renderLibrary(); renderPick();
+  if (vw.i < vw.list.length - 1) { vw.i++; showView(); } else { closeView(); toast("Revisaste todos.", "ok"); }
 }

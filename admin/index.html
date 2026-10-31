@@ -119,6 +119,33 @@ html,body{max-width:100%;overflow-x:hidden}
   .studio .btn{max-width:100%}
   .studio .cycle,.studio #order-list,.studio #ads-list,.studio #cut-summary{max-width:100%;overflow-wrap:anywhere}
 }
+
+/* ===== Parrilla práctica, añadir rápido, horarios, verificador ===== */
+.pick-list{max-height:280px;overflow-y:auto;margin:8px 0;border:1px solid rgba(255,255,255,.12);border-radius:8px}
+.pick-row{display:flex;align-items:center;gap:8px;padding:8px 10px;border-bottom:1px solid rgba(255,255,255,.08)}
+.pick-row:last-child{border-bottom:0}
+.pick-t{flex:1;min-width:0;overflow-wrap:anywhere}
+.pick-d{flex:none;opacity:.75;font-variant-numeric:tabular-nums;font-size:13px}
+.pick-row .btn{min-width:44px;min-height:40px}
+#pick-q{width:100%;box-sizing:border-box;min-height:40px;font-size:16px}
+.quick-grid{display:grid;grid-template-columns:1fr 1fr;gap:6px 10px;margin:8px 0}
+.chk{display:flex;gap:8px;align-items:center;margin:8px 0}
+.chips{display:flex;flex-wrap:wrap;gap:6px;margin:6px 0}
+.chip{display:inline-flex;align-items:center;gap:6px;padding:4px 10px;border-radius:999px;background:rgba(255,255,255,.08)}
+.chip button{border:0;background:none;color:inherit;font-size:18px;line-height:1;cursor:pointer;padding:0 2px}
+.slot{display:grid;grid-template-columns:1fr 1fr auto;gap:6px;margin:8px 0;padding:8px;border:1px solid rgba(255,255,255,.1);border-radius:8px}
+.slot select{grid-column:1 / -1}
+.slot input,.slot select{min-width:0;box-sizing:border-box;min-height:40px;font-size:16px}
+#h-summary p{margin:6px 0;line-height:1.35}
+#h-summary .warn{color:#f2bd3a}
+#lib-list .cat-sel{max-width:100%;min-height:34px}
+.tag.bad{background:#8a2a2a;color:#fff}
+.fbv-box{max-width:720px !important;max-height:100%;overflow:auto}
+.fbv-frame{position:relative;width:100%;aspect-ratio:16/9;background:#000;border-radius:8px;overflow:hidden}
+.fbv-frame iframe,.fbv-frame video{position:absolute;inset:0;width:100%;height:100%;border:0}
+.fbv-nav{display:flex;gap:8px;margin:10px 0}
+.fbv-nav .btn{flex:1;min-height:44px}
+#fbv-state{margin:8px 0 0;min-height:1.2em}
 </style>
 </head>
 <body>
@@ -183,6 +210,7 @@ html,body{max-width:100%;overflow-x:hidden}
             <input id="lib-title" placeholder="Título" required maxlength="120">
             <input id="lib-url" type="text" placeholder="Enlace" required>
             <select id="lib-kind"><option value="programa">Programa</option><option value="comercial">Anuncio</option></select>
+            <select id="lib-cat" aria-label="Categoría"></select>
             <label class="mini-l">Duración del video de Facebook</label>
             <div class="row2 row3"><input id="lib-dur-h" type="number" min="0" placeholder="Horas"><input id="lib-dur-m" type="number" min="0" placeholder="Minutos"><input id="lib-dur-s" type="number" min="0" max="59" placeholder="Segundos"></div>
             <label class="mini-l">Duración al aire (anuncio)</label>
@@ -209,6 +237,7 @@ html,body{max-width:100%;overflow-x:hidden}
     <section class="col" aria-label="Control">
       <ul class="tabs" id="nav" role="tablist">
         <li><button data-tab="programacion" class="active">Parrilla</button></li>
+        <li><button data-tab="horarios">Horarios</button></li>
         <li><button data-tab="comercial">Comerciales</button></li>
         <li><button data-tab="envivo">En vivo</button></li>
         <li><button data-tab="personalizacion">Marca</button></li>
@@ -221,7 +250,23 @@ html,body{max-width:100%;overflow-x:hidden}
             <summary id="order-sum">Parrilla</summary>
             <div id="order-list"></div>
           </details>
-          <div class="row"><select id="order-add"></select><button class="btn secondary small" id="order-add-btn" type="button">Añadir</button></div>
+          <details class="cycle-box" id="pick-box" open>
+            <summary>Añadir a la parrilla</summary>
+            <input id="pick-q" type="search" placeholder="Buscar" autocomplete="off">
+            <div id="pick-list" class="pick-list"></div>
+          </details>
+          <details class="cycle-box" id="quick-box">
+            <summary>Añadir rápido</summary>
+            <div class="quick-grid">
+              <label class="field"><span>Cuáles</span><select id="q-which"><option value="new">Sin añadir</option><option value="all">Todos</option></select></label>
+              <label class="field"><span>Categoría</span><select id="q-cat"></select></label>
+              <label class="field"><span>Orden</span><select id="q-order"></select></label>
+              <label class="field"><span>Máximo</span><input id="q-max" type="number" min="1" placeholder="Todos"></label>
+            </div>
+            <label class="chk"><input id="q-skip" type="checkbox"> Saltar los «No se ve»</label>
+            <label class="chk"><input id="q-replace" type="checkbox"> Reemplazar la parrilla</label>
+            <button class="btn" id="quick-btn" type="button">Añadir rápido</button>
+          </details>
           <div class="row" id="order-tools">
             <button class="btn secondary small" id="order-keep-air" type="button">Dejar solo el que está al aire</button>
             <button class="btn danger small" id="order-clear" type="button">Vaciar parrilla</button>
@@ -232,6 +277,20 @@ html,body{max-width:100%;overflow-x:hidden}
             <ol id="cycle-list" class="cycle"></ol>
           </details>
           <div class="row"><button class="btn" id="publish-btn2" type="button">Guardar y publicar</button><button class="btn danger" id="publish-restart" type="button">Publicar y reiniciar</button></div>
+        </section>
+
+        <section id="tab-horarios" class="tab hidden">
+          <h3 class="sub">Categorías</h3>
+          <div id="cat-chips" class="chips"></div>
+          <div class="row"><input id="cat-new" placeholder="Nueva categoría" maxlength="30"><button class="btn secondary small" id="cat-add" type="button">Añadir</button></div>
+          <h3 class="sub">Franjas</h3>
+          <div id="slot-list"></div>
+          <button class="btn secondary small" id="slot-add" type="button">Añadir franja</button>
+          <h3 class="sub">Orden</h3>
+          <select id="h-order"></select>
+          <label class="chk"><input id="h-skip" type="checkbox" checked> Saltar los «No se ve»</label>
+          <div class="row"><button class="btn" id="gen-btn" type="button">Generar parrilla</button><button class="btn danger" id="align-btn" type="button">Publicar a este horario</button></div>
+          <div id="h-summary"></div>
         </section>
 
         <section id="tab-comercial" class="tab hidden">
@@ -298,6 +357,17 @@ html,body{max-width:100%;overflow-x:hidden}
   </div>
 </div>
 
-<script type="module" src="../js/admin.js?v=67"></script>
+<div id="fbv" class="dlg hidden" role="dialog" aria-modal="true" aria-labelledby="fbv-title">
+  <div class="dlg-box fbv-box">
+    <h3 id="fbv-title"></h3>
+    <div id="fbv-box" class="fbv-frame"></div>
+    <p id="fbv-state"></p>
+    <div class="fbv-nav"><button class="btn secondary" id="fbv-prev" type="button">◀ Anterior</button><button class="btn secondary" id="fbv-next" type="button">Siguiente ▶</button></div>
+    <div class="fbv-nav"><button class="btn" id="fbv-ok" type="button">Sí se ve</button><button class="btn danger" id="fbv-no" type="button">No se ve</button></div>
+    <div class="dlg-actions"><button class="btn secondary" id="fbv-close" type="button">Cerrar</button></div>
+  </div>
+</div>
+
+<script type="module" src="../js/admin.js?v=68"></script>
 </body>
 </html>
