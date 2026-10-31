@@ -747,7 +747,7 @@ function renderPinnedCycle(pc) {
   const ads = day.items.filter((i) => i.type === "comercial").length, cuts = new Set(day.items.filter((i) => i.type === "comercial").map((i) => i.breakNo)).size;
   $("cycle-total").textContent = `Hoy (día ${today + 1} de ${pc.K} de rotación) · ${day.rows.length} programas, ${state.plan.pins.length} fijado${state.plan.pins.length === 1 ? "" : "s"} · ${cuts} cortes · ${ads} anuncios · el día cierra a las 12:00 AM`;
   let t = mid;
-  $("cycle-list").innerHTML = day.items.slice(0, 600).map((i) => { const li = `<li class="${i.type === "comercial" ? "ad" : ""}">${hms(t)} · ${esc(itemLabel(i))} · ${fmtDuration(i.duration)}${i.type === "comercial" ? ` (${i.breakNo ? `corte ${i.breakNo}` : "relleno para llegar a la hora fija"})` : (i.parts > 1 ? ` (del minuto ${fmtDuration(i.startAt)} al ${fmtDuration(i.startAt + i.duration)})` : "")}</li>`; t += i.duration * 1000; return li; }).join("");
+  $("cycle-list").innerHTML = day.items.slice(0, 600).map((i) => { const li = `<li class="${i.type === "comercial" ? "ad" : ""}">${hms(t)} · ${esc(itemLabel(i))} · ${fmtDuration(i.duration)}${i.type === "comercial" ? ` (${i.breakNo ? `corte ${i.breakNo}` : "relleno para completar la franja"})` : (i.parts > 1 ? ` (del minuto ${fmtDuration(i.startAt)} al ${fmtDuration(i.startAt + i.duration)})` : "")}</li>`; t += i.duration * 1000; return li; }).join("");
   $("st-cycle").textContent = state.channel?.items?.length ? `${state.channel.items.length} elementos` : "Sin publicar";
   updateAirTimes();
 }
@@ -759,14 +759,22 @@ function normUrl(u) {
   if (u && !/^https?:\/\//i.test(u)) u = new URL(`../media/${encodeURIComponent(u.replace(/^\/?(media\/)?/, ""))}`, location.href).href;
   return u;
 }
+let pinFoldOpen = false;
+function setPinFold(open) {
+  pinFoldOpen = !!open;
+  const f = $("pin-fold"), b = $("pin-toggle"); if (!f || !b) return;
+  f.classList.toggle("open", pinFoldOpen); f.inert = !pinFoldOpen; b.setAttribute("aria-expanded", pinFoldOpen ? "true" : "false");
+}
 function renderPinList() {
   const el = $("pin-list"); if (!el) return;
   const pins = (state.plan.pins || []).slice().sort((a, b) => pinWindow(a).f - pinWindow(b).f), pc = getPinned();
+  $("pin-toggle-t").textContent = pins.length ? `Programas fijados (${pins.length})` : "Programas fijados (ninguno)";
+  setPinFold(pinFoldOpen);
   if (!pins.length) { el.innerHTML = '<p class="hint">Todavía no hay programas fijados. Pulsa «Fijar programa» o el botón «Fijar» de cualquier fila de abajo.</p>'; return; }
   const today = pc && !pc.error ? pinDayIndex(serverNow(), pc.K) : null;
   el.innerHTML = pins.map((p) => {
     const w = pinWindow(p), n = pinLines(p).length, hoy = today != null && n ? ` · hoy: línea ${(today % n) + 1}` : "";
-    return `<div class="pin-card${n ? "" : " bad"}"><div class="pin-main"><b>${esc(p.title)}</b><span>${clockTxt(w.f)} → ${clockTxt(w.t % 1440)}</span><span class="hint">${n} línea${n === 1 ? "" : "s"}${hoy} · ${p.tolMin > 0 ? `margen de ${p.tolMin} min antes o después` : "a la hora exacta"}</span>${n ? "" : '<span class="warn">Sin líneas válidas: no se emite.</span>'}</div><div class="pin-btns"><button class="btn small" data-pa="edit" data-pin="${esc(p.id)}" type="button">Líneas y hora</button><button class="btn danger small" data-pa="unpin" data-pin="${esc(p.id)}" type="button">Quitar</button></div></div>`;
+    return `<div class="pin-card${n ? "" : " bad"}"><div class="pin-main"><b>${esc(p.title)}</b><span class="pin-tags"><span>Se lanza a las ${clockTxt(w.f)}</span><span>Puede comenzar hasta las ${clockTxt(pinStartBy(p))}</span><span>Puede extenderse hasta las ${clockTxt(w.t % 1440)}</span></span><span class="hint">${n} línea${n === 1 ? "" : "s"}${hoy} · ${p.tolMin > 0 ? `puede salir hasta ${p.tolMin} min antes` : "no sale antes de su hora"}${p.maxExtraMin > 0 ? ` · máx. ${p.maxExtraMin} min de anuncios extra` : ""}</span>${n ? "" : '<span class="warn">Sin líneas válidas: no se emite.</span>'}</div><div class="pin-btns"><button class="btn small" data-pa="edit" data-pin="${esc(p.id)}" type="button">Líneas y hora</button><button class="btn danger small" data-pa="unpin" data-pin="${esc(p.id)}" type="button">Quitar</button></div></div>`;
   }).join("");
 }
 
@@ -789,7 +797,7 @@ function renderDayPinned(el, pc) {
       const pin = p.pins.find((x) => x.id === r.pin), late = r.delta > 60, early = r.delta < -60;
       html += `<div class="day-row pinrow" data-s="${r.start}" data-e="${r.end}"><span class="day-grip" title="Fijado: no se mueve">Fijo</span>
         <span class="day-t">${esc(clock(r.start))}<small>→ ${esc(clock(r.end))}</small></span>
-        <span class="day-main"><b>${esc(pin?.title || r.title)}</b><span class="day-meta"><span class="tag pin">Fijado ${esc(clock(r.from))} → ${esc(clock(r.to % 86400))}</span>${r.lines > 1 ? `<span class="tag rep">Línea ${r.lineNo} de ${r.lines}</span>` : ""}${early ? `<span class="tag off">Sale ${mins(r.delta)} min antes</span>` : ""}${late ? `<span class="tag bad">Sale ${mins(r.delta)} min tarde (el anterior se pasó)</span>` : ""}${r.pad > 30 ? `<span class="tag off">${mins(r.pad)} min de anuncios repartidos antes, para llegar a su hora</span>` : ""}${r.endDelta > 60 ? `<span class="tag off">Termina ${mins(r.endDelta)} min después de su franja</span>` : ""}<span>${esc(r.title === pin?.title ? "" : r.title)}</span></span></span>
+        <span class="day-main"><b>${esc(pin?.title || r.title)}</b><span class="day-meta"><span class="tag pin">Se lanza ${esc(clock(r.from))} · se extiende hasta ${esc(clock(r.to % 86400))}</span>${r.lines > 1 ? `<span class="tag rep">Línea ${r.lineNo} de ${r.lines}</span>` : ""}${early ? `<span class="tag off">Sale ${mins(r.delta)} min antes</span>` : ""}${late ? (r.start > r.by + 60 ? `<span class="tag bad">Sale ${mins(r.delta)} min tarde (el anterior se pasó)</span>` : `<span class="tag off">Sale ${mins(r.delta)} min después de su hora</span>`) : ""}${r.pad > 30 ? `<span class="tag off">${mins(r.pad)} min de anuncios repartidos antes, para llegar a su hora</span>` : ""}${r.ext > 30 ? `<span class="tag off">Se extiende ${mins(r.ext)} min con anuncios dentro del programa</span>` : ""}${r.endDelta > 60 ? `<span class="tag off">Termina ${mins(r.endDelta)} min después de su franja; el siguiente empieza al terminar</span>` : ""}<span>${esc(r.title === pin?.title ? "" : r.title)}</span></span></span>
         <span class="day-btns"><button class="btn secondary small" data-pa="edit" data-pin="${esc(r.pin)}" type="button">Líneas</button><button class="btn danger small" data-pa="unpin" data-pin="${esc(r.pin)}" type="button" title="Quitar el fijado">✕</button></span></div>`;
       continue;
     }
@@ -810,9 +818,15 @@ function renderDayPinned(el, pc) {
 // ---- Ventana para fijar / editar un fijado ----
 let pinDraft = null, pinIsNew = false, pinFromOrder = null, pinSeen = null;
 function pinOverlap(d) { const w = pinWindow(d); return (state.plan.pins || []).filter((x) => x.id !== d.id).find((x) => { const o = pinWindow(x); return w.f < o.t && w.t > o.f; }); }
+// Hasta qué hora puede comenzar el fijado: la que eligió el usuario, o (fijados viejos) su hora + el margen. Siempre entre «desde» y «hasta».
+function pinStartBy(d) {
+  const w = pinWindow(d), by = d.startBy ? toMin(d.startBy) : w.f + (Number(d.tolMin) || 0);
+  return Math.min(Math.max(by, w.f), w.t);
+}
 function renderPinTimeInfo() {
   const d = pinDraft, w = pinWindow(d), ov = pinOverlap(d), len = w.t - w.f, bad = toMin(d.to) <= toMin(d.from) && toMin(d.to) !== 0;
-  $("pin-time-info").innerHTML = `Franja de ${Math.floor(len / 60) ? `${Math.floor(len / 60)} h ` : ""}${len % 60 ? `${len % 60} min` : ""}`.trim()
+  const dur = `${Math.floor(len / 60) ? `${Math.floor(len / 60)} h` : ""} ${len % 60 ? `${len % 60} min` : ""}`.trim();
+  $("pin-time-info").innerHTML = `Se lanza a las ${clockTxt(w.f)}, puede comenzar hasta las ${clockTxt(pinStartBy(d))} y puede extenderse hasta las ${clockTxt(w.t % 1440)} (franja de ${dur})`
     + (ov ? ` · <span class="warn">Se cruza con «${esc(ov.title)}»</span>` : "") + (bad ? ' · <span class="warn">«Hasta» debe ser después de «Desde»; así llega hasta las 12:00 AM</span>' : "");
 }
 function renderPinLines() {
@@ -825,11 +839,16 @@ function renderPinLines() {
     <span class="pin-line-b"><button class="btn small" data-lp="view" type="button">Ver</button><button class="btn secondary small" data-lp="up" type="button" aria-label="Subir">↑</button><button class="btn secondary small" data-lp="down" type="button" aria-label="Bajar">↓</button><button class="btn danger small" data-lp="del" type="button" aria-label="Quitar línea">✕</button></span></div></div>`).join("")
     : '<p class="hint">Sin líneas. Agrega al menos una abajo.</p>';
 }
+function renderPinTimeSel() {
+  const d = pinDraft;
+  $("pin-time").innerHTML = tsel("pin", "from", d.from, "Se lanza a las") + tsel("pin", "startBy", hmTxt(pinStartBy(d)), "Puede comenzar hasta") + tsel("pin", "to", d.to, "Puede extenderse hasta");
+}
 function renderPinEditor() {
   const d = pinDraft;
   $("pin-h").textContent = pinIsNew ? "Fijar programa" : "Programa fijado";
   $("pin-title").value = d.title; $("pin-tol").value = String(d.tolMin ?? 5);
-  $("pin-time").innerHTML = tsel("pin", "from", d.from) + tsel("pin", "to", d.to);
+  const mx = $("pin-maxext"), cur = String(d.maxExtraMin || 0); if (![...mx.options].some((o) => o.value === cur)) mx.add(new Option(`Máximo ${cur} min de anuncios extra`, cur)); mx.value = cur;
+  renderPinTimeSel();
   $("pin-remove").hidden = pinIsNew; $("pin-view").classList.add("hidden"); $("pin-view").innerHTML = ""; $("pin-seen").classList.add("hidden");
   ["pin-url", "pin-ltitle", "pin-dh", "pin-dm", "pin-ds"].forEach((id) => { $(id).value = ""; });
   renderPinTimeInfo(); renderPinLines();
@@ -862,13 +881,14 @@ async function pinSave(publishToo) {
   d.title = ($("pin-title").value || "").trim() || d.lines[0]?.title || "Programa fijado";
   if (!pinLines(d).length) { toast("Agrega al menos una línea con enlace y duración.", "error"); return; }
   const ov = pinOverlap(d); if (ov) { toast(`La franja se cruza con «${ov.title}». Cambia la hora.`, "error"); return; }
+  d.startBy = hmTxt(pinStartBy(d)); d.maxExtraMin = Math.max(0, Number(d.maxExtraMin) || 0);
   const pins = state.plan.pins = state.plan.pins || [], i = pins.findIndex((x) => x.id === d.id);
   if (i >= 0) pins[i] = d; else pins.push(d);
   let moved = "";
   if (pinFromOrder && state.plan.order[pinFromOrder.oi] === pinFromOrder.id) { state.plan.order.splice(pinFromOrder.oi, 1); moved = " Salió de la parrilla de abajo: ahora solo sale en su hora fija."; }
   pinFromOrder = null; closePin();
   try { await savePlan(); renderAll(); } catch (err) { fail(err); return; }
-  toast(`«${d.title}» fijado de ${clockTxt(pinWindow(d).f)} a ${clockTxt(pinWindow(d).t % 1440)}.${moved}${publishToo ? "" : " Pulsa «Guardar y publicar» para que salga al aire."}`, "ok");
+  toast(`«${d.title}» fijado: se lanza a las ${clockTxt(pinWindow(d).f)} y puede extenderse hasta las ${clockTxt(pinWindow(d).t % 1440)}.${moved}${publishToo ? "" : " Pulsa «Guardar y publicar» para que salga al aire."}`, "ok");
   if (publishToo) await publish(false);
 }
 async function unpin(id) {
@@ -878,10 +898,11 @@ async function unpin(id) {
   try { await savePlan(); renderAll(); toast("Fijado quitado. Pulsa «Guardar y publicar» para aplicarlo al aire.", "ok"); } catch (err) { fail(err); }
 }
 function initPins() {
+  $("pin-toggle").addEventListener("click", () => setPinFold(!pinFoldOpen));
   $("pin-new").addEventListener("click", async () => {
     const nid = await pickProgram("Elegir el programa a fijar"); const it = nid && state.lib.find((x) => x.id === nid); if (!it) return;
     const f = Math.ceil(nowMin() / 5) * 5, to = f + Math.max(5, Math.ceil(it.duration / 300) * 5);
-    openPinEditor({ id: newId(), title: it.title, from: hmTxt(f), to: to >= 1440 ? "00:00" : hmTxt(to), tolMin: 10, lines: [{ id: newId(), url: it.url, duration: it.duration, title: it.title, ...(it.fbOk != null ? { fbOk: it.fbOk } : {}) }] });
+    openPinEditor({ id: newId(), title: it.title, from: hmTxt(f), to: to >= 1440 ? "00:00" : hmTxt(to), tolMin: 10, startBy: hmTxt(f + 10), maxExtraMin: 0, lines: [{ id: newId(), url: it.url, duration: it.duration, title: it.title, ...(it.fbOk != null ? { fbOk: it.fbOk } : {}) }] });
   });
   $("tab-dia").addEventListener("click", async (e) => {
     const b = e.target.closest("[data-pa]"); if (!b) return;
@@ -892,16 +913,22 @@ function initPins() {
     else if (a === "pinrow") {
       const oi = Number(b.dataset.n), id = state.plan.order[oi], it = state.lib.find((x) => x.id === id); if (!it) return;
       const s = Number(b.dataset.s), en = Number(b.dataset.e), f = Math.round(s / 300) * 5, to = Math.ceil(en / 300) * 5;
-      openPinEditor({ id: newId(), title: it.title, from: hmTxt(f), to: to >= 1440 ? "00:00" : hmTxt(to), tolMin: 10, lines: [{ id: newId(), url: it.url, duration: it.duration, title: it.title, ...(it.fbOk != null ? { fbOk: it.fbOk } : {}) }] }, { oi, id });
+      openPinEditor({ id: newId(), title: it.title, from: hmTxt(f), to: to >= 1440 ? "00:00" : hmTxt(to), tolMin: 10, startBy: hmTxt(f + 10), maxExtraMin: 0, lines: [{ id: newId(), url: it.url, duration: it.duration, title: it.title, ...(it.fbOk != null ? { fbOk: it.fbOk } : {}) }] }, { oi, id });
     }
   });
   const dlg = $("pin");
   $("pin-title").addEventListener("input", () => { if (pinDraft) pinDraft.title = $("pin-title").value; });
-  $("pin-tol").addEventListener("change", () => { if (pinDraft) pinDraft.tolMin = Number($("pin-tol").value) || 0; });
+  $("pin-tol").addEventListener("change", () => { if (pinDraft) { pinDraft.tolMin = Number($("pin-tol").value) || 0; renderPinTimeInfo(); } });
+  $("pin-maxext").addEventListener("change", () => { if (pinDraft) pinDraft.maxExtraMin = Number($("pin-maxext").value) || 0; });
   $("pin-time").addEventListener("change", (e) => {
     const box = e.target.closest(".tsel"); if (!box || !pinDraft) return;
     const g = (k) => box.querySelector(`[data-tp="${k}"]`).value, h24 = (Number(g("h")) % 12) + (g("a") === "PM" ? 12 : 0);
-    pinDraft[box.dataset.k] = `${String(h24).padStart(2, "0")}:${String(Number(g("m"))).padStart(2, "0")}`; renderPinTimeInfo();
+    const k = box.dataset.k, late = pinStartBy(pinDraft) - pinWindow(pinDraft).f;   // cuánto puede tardar en comenzar (se conserva si cambia la hora de lanzamiento)
+    pinDraft[k] = `${String(h24).padStart(2, "0")}:${String(Number(g("m"))).padStart(2, "0")}`;
+    if (k === "from") pinDraft.startBy = hmTxt(toMin(pinDraft.from) + late);
+    else if (k === "startBy" && toMin(pinDraft.startBy) < toMin(pinDraft.from)) pinDraft.startBy = pinDraft.from;   // no puede comenzar antes de su hora de lanzamiento
+    pinDraft.startBy = hmTxt(pinStartBy(pinDraft));   // y nunca después de su límite
+    renderPinTimeSel(); renderPinTimeInfo();
   });
   $("pin-lines").addEventListener("change", (e) => {
     const t = e.target, row = t.closest(".pin-line"); if (!row || !t.dataset.lf || !pinDraft) return;
@@ -1103,9 +1130,9 @@ const toMin = (t) => { const [hh, mm] = String(t || "0:0").split(":").map(Number
 const clockTxt = (min) => { min = Math.round(((min % 1440) + 1440) % 1440); const hh = Math.floor(min / 60), mm = min % 60; return `${hh % 12 || 12}:${String(mm).padStart(2, "0")} ${hh < 12 ? "AM" : "PM"}`; };
 const plusHour = (t) => `${String((Math.floor(toMin(t) / 60) + 1) % 24).padStart(2, "0")}:${String(toMin(t) % 60).padStart(2, "0")}`;
 let schedVals = false, lastSched = null;
-const tsel = (n, k, v) => {
+const tsel = (n, k, v, label) => {
   const m = toMin(v), h24 = Math.floor(m / 60), h12 = h24 % 12 || 12, mi = m % 60, mins = [...new Set([...Array(12).keys()].map((x) => x * 5).concat(mi))].sort((a, b) => a - b);
-  return `<span class="tsel" data-n="${n}" data-k="${k}"><small class="tl">${k === "from" ? "Desde" : "Hasta"}</small>`
+  return `<span class="tsel" data-n="${n}" data-k="${k}"><small class="tl">${label || (k === "from" ? "Desde" : "Hasta")}</small>`
     + `<select data-tp="h" aria-label="Hora">${[...Array(12).keys()].map((x) => `<option value="${x + 1}"${x + 1 === h12 ? " selected" : ""}>${x + 1}</option>`).join("")}</select><b>:</b>`
     + `<select data-tp="m" aria-label="Minutos">${mins.map((x) => `<option value="${x}"${x === mi ? " selected" : ""}>${String(x).padStart(2, "0")}</option>`).join("")}</select>`
     + `<select data-tp="a" aria-label="AM o PM"><option value="AM"${h24 < 12 ? " selected" : ""}>AM</option><option value="PM"${h24 >= 12 ? " selected" : ""}>PM</option></select></span>`;

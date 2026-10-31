@@ -168,6 +168,14 @@ html,body{max-width:100%;overflow-x:hidden}
 /* ===== Parrilla práctica, añadir rápido, horarios, verificador ===== */
 /* ===== Programas fijados ===== */
 .pin-card{display:flex;align-items:center;gap:10px;justify-content:space-between;flex-wrap:wrap;margin:8px 0;padding:10px 12px;border:1px solid rgba(31,181,196,.45);border-left:4px solid #1fb5c4;border-radius:10px;background:rgba(31,181,196,.07)}
+.pin-fold-h{display:flex;width:100%;align-items:center;justify-content:space-between;gap:8px;margin:8px 0;padding:10px 12px;min-height:44px;box-sizing:border-box;border:1px solid rgba(31,181,196,.45);border-radius:10px;background:rgba(31,181,196,.07);color:inherit;font:inherit;font-weight:700;text-align:left;cursor:pointer}
+.pin-chev{flex:none;width:9px;height:9px;border-right:2px solid currentColor;border-bottom:2px solid currentColor;transform:rotate(45deg) translate(-2px,-2px);transition:transform .25s}
+.pin-fold-h[aria-expanded="true"] .pin-chev{transform:rotate(-135deg) translate(-2px,-2px)}
+.pin-fold{display:grid;grid-template-rows:0fr;opacity:0;transition:grid-template-rows .3s ease,opacity .25s ease}
+.pin-fold.open{grid-template-rows:1fr;opacity:1}
+.pin-fold-in{min-height:0;overflow:hidden}
+.pin-tags{display:flex;flex-wrap:wrap;gap:4px 10px}
+@media (prefers-reduced-motion:reduce){.pin-fold,.pin-chev{transition:none}}
 .pin-card.bad{border-color:#e5484d;background:rgba(229,72,77,.08)}
 .pin-main{display:flex;flex-direction:column;gap:2px;min-width:0;flex:1 1 220px}.pin-main b{overflow-wrap:anywhere}
 .pin-btns{display:flex;gap:6px}
@@ -181,6 +189,7 @@ html,body{max-width:100%;overflow-x:hidden}
 .pin-box .field input,.pin-box .field select{width:100%}
 .pin-sec{margin:14px 0 6px;font-weight:700;font-size:14px}
 .pin-time{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:8px}
+.pin-time .tsel{flex-wrap:wrap}.pin-time .tsel .tl{width:100%;font-weight:600;opacity:.9}
 .pin-line{margin:8px 0;padding:10px;border:1px solid rgba(255,255,255,.14);border-radius:10px;display:flex;flex-direction:column;gap:6px}
 .pin-line input{width:100%}
 .pin-line-h{display:flex;gap:8px;align-items:baseline;flex-wrap:wrap}
@@ -357,10 +366,11 @@ html,body{max-width:100%;overflow-x:hidden}
         </section>
 
         <section id="tab-dia" class="tab hidden">
-          <p class="hint">Cada fila es una emisión del día. Arrastra ⠿ o usa ↑ ↓ para moverla, ⇄ para cambiar el programa, ＋ para insertar uno debajo y ✕ para quitarlo. Con <b>Fijar</b> el programa queda clavado a esa hora: sale <b>siempre</b> en su franja y no se mueve, aunque cambies lo demás. Lo que queda entre fijados se llena solo con programas de la categoría de esa hora, y ninguno se corta. Al terminar, pulsa «Guardar y publicar».</p>
+          <p class="hint">Cada fila es una emisión del día. Arrastra ⠿ o usa ↑ ↓ para moverla, ⇄ para cambiar el programa, ＋ para insertar uno debajo y ✕ para quitarlo. Con <b>Fijar</b> el programa queda clavado a esa hora: sale <b>siempre</b> en su franja y no se mueve, aunque cambies lo demás. Si termina antes de su límite, se extiende con anuncios hasta completar la franja y luego sigue el siguiente; si dura más, el siguiente empieza justo al terminar. Lo que queda libre entre fijados se llena con programas de la categoría de esa hora, y ninguno se corta. Al terminar, pulsa «Guardar y publicar».</p>
           <h3 class="sub">Programas fijados</h3>
           <div class="row"><button class="btn small" id="pin-new" type="button">Fijar programa</button></div>
-          <div id="pin-list"></div>
+          <button class="pin-fold-h" id="pin-toggle" type="button" aria-expanded="false" aria-controls="pin-fold"><span id="pin-toggle-t">Ver programas fijados</span><span class="pin-chev" aria-hidden="true"></span></button>
+          <div id="pin-fold" class="pin-fold" inert><div class="pin-fold-in"><div id="pin-list"></div></div></div>
           <h3 class="sub">El día</h3>
           <div class="row"><button class="btn small" id="day-add" type="button">＋ Añadir al final</button><button class="btn secondary small" id="day-undo" type="button" disabled>↶ Deshacer</button><button class="btn small" id="day-pub" type="button">Guardar y publicar</button></div>
           <p id="day-info" class="hint"></p>
@@ -462,10 +472,12 @@ html,body{max-width:100%;overflow-x:hidden}
 <div id="pin" class="dlg hidden" role="dialog" aria-modal="true" aria-labelledby="pin-h"><div class="dlg-box pin-box">
   <h3 id="pin-h">Fijar programa</h3>
   <label class="field"><span>Nombre del programa</span><input id="pin-title" maxlength="120" placeholder="Ej.: Caso Cerrado"></label>
-  <div class="pin-sec">Franja fija (sale siempre en este horario)</div>
+  <div class="pin-sec">Horario del programa</div>
+  <p class="hint">La hora de lanzamiento es la referencia para saber cuándo sale. Si el programa termina antes de su límite, se extiende con anuncios hasta completar la franja; si dura más, el siguiente empieza justo al terminar.</p>
   <div id="pin-time" class="pin-time"></div>
   <p id="pin-time-info" class="hint"></p>
-  <label class="field"><span>Margen: ¿puede salir un poco antes o después de su hora?</span><select id="pin-tol"><option value="0">No: a la hora exacta (se rellena con anuncios)</option><option value="5">Hasta 5 min antes o después</option><option value="10">Hasta 10 min antes o después</option><option value="15">Hasta 15 min antes o después</option><option value="30">Hasta 30 min antes o después</option></select></label>
+  <label class="field"><span>¿Puede salir antes de su hora de lanzamiento?</span><select id="pin-tol"><option value="0">No: a la hora exacta (se rellena con anuncios)</option><option value="5">Hasta 5 min antes</option><option value="10">Hasta 10 min antes</option><option value="15">Hasta 15 min antes</option><option value="30">Hasta 30 min antes</option></select></label>
+  <label class="field"><span>Límite de anuncios para extender el programa</span><select id="pin-maxext"><option value="0">Hasta completar su franja («puede extenderse hasta»)</option><option value="10">Máximo 10 min de anuncios extra</option><option value="15">Máximo 15 min de anuncios extra</option><option value="20">Máximo 20 min de anuncios extra</option><option value="30">Máximo 30 min de anuncios extra</option><option value="45">Máximo 45 min de anuncios extra</option><option value="60">Máximo 60 min de anuncios extra</option></select></label>
   <div class="pin-sec">Líneas: variaciones por día (día 1 → línea 1, día 2 → línea 2…)</div>
   <div id="pin-lines"></div>
   <div class="pin-add">
@@ -481,6 +493,6 @@ html,body{max-width:100%;overflow-x:hidden}
 </div></div>
 
 <div id="dpick" class="dlg hidden" role="dialog" aria-modal="true" aria-labelledby="dpick-title"><div class="dlg-box dpick-box"><h3 id="dpick-title">Elegir programa</h3><input id="dpick-q" type="search" placeholder="Buscar" autocomplete="off"><select id="dpick-cat" aria-label="Categoría"></select><div id="dpick-list" class="pick-list"></div><div class="dlg-actions"><button class="btn secondary" id="dpick-cancel" type="button">Cancelar</button></div></div></div>
-<script type="module" src="../js/admin.js?v=75"></script>
+<script type="module" src="../js/admin.js?v=77"></script>
 </body>
 </html>

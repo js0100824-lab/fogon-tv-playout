@@ -104,4 +104,37 @@ ok(r3.days[0].rows.find((x) => x.pin === "M").delta > 0, "el siguiente fijado sa
   ok(res.filter((x) => x.type === "programa").every((x, k, a) => k === 0 || Math.abs(a[k - 1].startAt + a[k - 1].duration - x.startAt) < 0.001), "distributePad: cada parte continúa donde terminó la anterior");
   ok(distributePad(gap, [], 120).length === 1 && distributePad([], padAds, 120).length === 10, "distributePad: sin anuncios o sin hueco no inventa nada");
 }
+// ---- Fijados v77: extensión con anuncios, consecutivos, programas largos, tope y «puede comenzar hasta» ----
+{
+  const mkF = (id, dur) => ({ id, title: id, kind: "programa", cat: "Variedades", duration: dur, url: "x.mp4", active: true });
+  const fl = [mkF("f1", min(24)), mkF("f2", min(31)), mkF("f3", min(40))], lib4 = [...fl, ...ads];
+  const run = (pins, extra = {}) => { const pl = planWithDefaults({ mode: "continuous", intervalValue: 15, intervalUnit: "m", breakCount: 2, order: fl.map((i) => i.id), slots: [], pins, ...extra }); const rr = buildPinnedCycle(lib4, pl); return { rr, day: rr.days[0], row: (id) => rr.days[0].rows.find((x) => x.pin === id) }; };
+  const maxAds = (items) => { let cur = 0, mx = 0; for (const it of items) { if (it.type === "comercial") { cur += it.duration; mx = Math.max(mx, cur); } else cur = 0; } return mx; };
+  // 4) consecutivos 6-7 (45 min) y 7-8 (60 min): A se extiende con anuncios hasta las 7:00 y B arranca justo ahí, sin otro programa en medio
+  { const t = run([{ id: "a", title: "A", from: "06:00", to: "07:00", tolMin: 0, lines: [line("a", min(45))] }, { id: "b", title: "B", from: "07:00", to: "08:00", tolMin: 0, lines: [line("b", min(60))] }]);
+    const a = t.row("a"), b = t.row("b"), rows = t.day.rows, ia = rows.indexOf(a);
+    ok(Math.abs(a.start - 6 * 3600) < 1 && Math.abs(a.end - 7 * 3600) < 1, `consecutivos: A ocupa de 6:00 a 7:00 (${a.start}-${a.end})`);
+    ok(rows[ia + 1] === b && Math.abs(b.start - 7 * 3600) < 1, "consecutivos: B empieza a las 7:00 justo después de A, sin otro programa en medio");
+    ok(a.ext > min(10), `consecutivos: A se extendió ${Math.round(a.ext / 60)} min con anuncios dentro del programa`);
+    ok(a.ext > 0 && maxAds(t.day.items) <= min(8), `consecutivos: la extensión va en sesiones (bloque más largo ${Math.round(maxAds(t.day.items))} s)`);
+    ok(Math.abs(cycleLength(t.day.items) - DAY_SEC) < 0.01, "consecutivos: el día sigue durando 24 h"); }
+  // 2) programa más largo que su franja (90 min en 8-9 con cortes cada 15): el siguiente empieza justo al terminar
+  { const t = run([{ id: "a", title: "A", from: "08:00", to: "09:00", tolMin: 10, lines: [line("a", min(90))] }, { id: "b", title: "B", from: "09:00", to: "10:00", tolMin: 10, lines: [line("b", min(50))] }]);
+    const a = t.row("a"), b = t.row("b"), rows = t.day.rows, ia = rows.indexOf(a);
+    ok(a.endDelta > min(20) && a.ext === 0, `largo: A se pasa ${Math.round(a.endDelta / 60)} min de su franja y no se le agrega nada`);
+    ok(rows[ia + 1] === b && Math.abs(b.start - a.end) < 1, "largo: B empieza inmediatamente cuando termina A (aunque ya pasó su hora)");
+    ok(Math.abs(cycleLength(t.day.items) - DAY_SEC) < 0.01, "largo: el día sigue durando 24 h"); }
+  // 2) programa corto (20 min en 8-9): se extiende con anuncios hasta las 9:00; con tope de 10 min, lo demás lo llena un programa
+  { const t = run([{ id: "a", title: "A", from: "08:00", to: "09:00", tolMin: 0, lines: [line("a", min(20))] }]), a = t.row("a");
+    ok(Math.abs(a.end - 9 * 3600) < 1 && a.ext > min(30), `corto: 20 min en una franja de 1 h termina a las 9:00 (extensión ${Math.round(a.ext / 60)} min)`);
+    const t2 = run([{ id: "a", title: "A", from: "08:00", to: "09:00", tolMin: 0, maxExtraMin: 10, lines: [line("a", min(20))] }]), a2 = t2.row("a");
+    ok(Math.abs(a2.ext - min(10)) < 1, `tope: la extensión se limita a 10 min (${Math.round(a2.ext / 60)})`);
+    const nxt = t2.day.rows[t2.day.rows.indexOf(a2) + 1];
+    ok(nxt && nxt.kind === "filler" && Math.abs(nxt.start - a2.end) < 90, "tope: lo que queda de la franja lo llena el siguiente programa"); }
+  // 1) «puede comenzar hasta»: el fijado puede salir tarde hasta ese límite (no más), y 0 min tarde si no se da margen
+  { const base = { id: "a", title: "A", from: "08:00", to: "09:00", tolMin: 0, lines: [line("a", min(40))] };
+    const d0 = run([{ ...base, startBy: "08:00" }]).row("a").delta, d20 = run([{ ...base, startBy: "08:20" }]).row("a").delta;
+    ok(Math.abs(d0) < 1, `puede comenzar hasta 8:00: sale a su hora (${Math.round(d0)} s)`);
+    ok(d20 >= -1 && d20 <= min(20) + 1, `puede comenzar hasta 8:20: sale entre 8:00 y 8:20 (${Math.round(d20)} s)`); }
+}
 console.log(fails ? `\n${fails} fallos` : "\nTodo bien"); process.exit(fails ? 1 : 0);

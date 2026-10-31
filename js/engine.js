@@ -506,11 +506,15 @@ export function placeNewProgram(library, plan, item, airIdx = -1) {
 
 /* ---------------- Programas FIJADOS ----------------
    Un fijado es un programa que sale SIEMPRE a su hora (de X a Y), todos los días.
-   · pin = { id, title, from:"HH:MM", to:"HH:MM", tolMin, lines:[{ id, url, duration, title, fbOk }] }
+   · pin = { id, title, from:"HH:MM", startBy:"HH:MM", to:"HH:MM", tolMin, maxExtraMin, lines:[{ id, url, duration, title, fbOk }] }
+       from = hora de lanzamiento (referencia) · startBy = hasta qué hora puede comenzar (si falta: from + tolMin)
+       to = hasta qué hora puede extenderse · tolMin = minutos que puede salir antes · maxExtraMin = tope de anuncios de extensión (0 = hasta `to`)
+   · Si el programa termina antes de `to`, se EXTIENDE con sesiones cortas de anuncios dentro del mismo programa hasta completar su franja, y recién entonces sigue el siguiente.
+     Si dura más que su franja, el siguiente empieza justo cuando este termina. Entre fijados consecutivos nunca se mete otro programa.
    · Cada línea es una variación: el día 1 sale la línea 1, el día 2 la línea 2… y vuelve a empezar.
    · El resto del día lo llena la parrilla principal (plan.order) como una cola que sigue corriendo de un día al siguiente.
    · Si el programa anterior no cabe antes de la hora fija, se prueba otro que sí quepa; si ninguno cabe, el último se corta para que el fijado llegue puntual.
-     El fijado puede salir hasta `tolMin` minutos antes de su hora (nunca después, salvo que el fijado anterior se haya pasado).
+     El fijado puede salir hasta `tolMin` minutos antes de su hora y hasta `startBy` como tarde (o más tarde si el fijado anterior se pasó).
    · El ciclo publicado dura K días exactos (K = largo de la rotación de líneas) y arranca a medianoche de República Dominicana,
      así la hora del reloj y la hora de la emisión siempre coinciden. */
 export const DAY_SEC = 86400, DAY_MS = 86400000, PIN_MAX_DAYS = 14;
@@ -544,12 +548,13 @@ export const pinDayIndex = (nowMs, K) => ((Math.floor((nowMs - PIN_ANCHOR_MS) / 
 export const pinEpoch = (nowMs, K) => PIN_ANCHOR_MS + Math.floor((nowMs - PIN_ANCHOR_MS) / (K * DAY_MS)) * K * DAY_MS;
 
 function spansOf(items) {
-  const out = []; let t = 0;
+  const out = []; let t = 0, open = null;   // tail: segundos de cortes normales que siguen justo al programa
   for (const it of items) {
     if (it.type === "programa") {
-      if (!it.part || it.part === 1) out.push({ id: it.id, start: t, end: t + it.duration });
-      else { const p = out[out.length - 1]; if (p && p.id === it.id) p.end = t + it.duration; }
-    }
+      if (!it.part || it.part === 1) { open = { id: it.id, start: t, end: t + it.duration, tail: 0 }; out.push(open); }
+      else { const p = out[out.length - 1]; if (p && p.id === it.id) { p.end = t + it.duration; p.tail = 0; open = p; } }
+    } else if (open && it.breakNo > 0) open.tail += it.duration;
+    else open = null;
     t += it.duration;
   }
   return out;
@@ -564,11 +569,13 @@ const PAD_SNAP_SEC = 45;              // si el punto ideal cae a menos de esto d
 
 // `gap`: tramos del hueco (programas y anuncios ya existentes). `ads`: anuncios de relleno ya elegidos.
 // Devuelve los tramos del hueco con las sesiones intercaladas (programas partidos donde hizo falta).
-export function distributePad(gap, ads, sessionSec = PAD_SESSION_SEC) {
+export function distributePad(gap, ads, sessionSec = PAD_SESSION_SEC, opts = {}) {
+  const atEnd = opts.atEnd !== false, minGap = opts.minGap > 0 ? opts.minGap : 0;   // atEnd: ¿hay una sesión pegada al final? · minGap: mínimo de programa entre sesiones
   const G = cycleLength(gap), total = cycleLength(ads);
   if (!ads.length) return gap.slice();
-  const N = Math.min(ads.length, Math.max(1, Math.ceil(total / Math.max(10, sessionSec))));
-  if (G <= 0 || N <= 1) return [...gap, ...ads];
+  let N = Math.min(ads.length, Math.max(1, Math.ceil(total / Math.max(10, sessionSec))));
+  if (minGap && G > 0) N = Math.max(1, Math.min(N, Math.floor(G / minGap) - (atEnd ? 0 : 1)));
+  if (G <= 0 || (N <= 1 && atEnd)) return atEnd ? [...gap, ...ads] : [...ads, ...gap];
   // 1) los anuncios se reparten en N grupos de duración parecida
   const groups = []; let gi = 0, acc = 0;
   for (let k = 1; k <= N; k++) {
@@ -579,7 +586,7 @@ export function distributePad(gap, ads, sessionSec = PAD_SESSION_SEC) {
   // 2) cada grupo va en un punto equidistante del hueco; si cae cerca de un borde se pega al borde, y dentro de un anuncio nunca se parte
   const starts = []; let t = 0; for (const it of gap) { starts.push(t); t += it.duration; }
   const cuts = groups.map((g, k) => {
-    const want = (G * (k + 1)) / N;
+    const want = (G * (k + 1)) / (atEnd ? N : N + 1);
     let idx = starts.findIndex((s, i) => want >= s - 1e-6 && want < s + gap[i].duration - 1e-6); if (idx < 0) idx = gap.length - 1;
     const s = starts[idx], e = s + gap[idx].duration;
     if (gap[idx].type === "comercial" || want - s <= PAD_SNAP_SEC || e - want <= PAD_SNAP_SEC) { const at = want - s < e - want ? s : e; return { at, ads: g, inner: false }; }
@@ -632,6 +639,7 @@ export function buildPinnedCycle(library, rawPlan) {
   const K = pinDays(pins), byId = new Map(library.map((i) => [i.id, i]));
   const lib2 = library.slice();
   for (const p of pins) for (const l of pinLines(p)) lib2.push({ id: pinLineId(p, l), kind: "programa", title: l.title || p.title || "Programa fijado", url: l.url, duration: l.duration, active: true });
+  lib2.push({ id: "__fin__", kind: "programa", title: "", url: "x", duration: 3600, active: true });   // programa de mentira: marca dónde empezaría lo que sigue al fijado
   const byId2 = new Map(lib2.map((i) => [i.id, i]));
   const fillers = (plan.order || []).map((id, oi) => ({ oi, id })).filter((f) => { const i = byId.get(f.id); return i && i.kind === "programa" && i.duration > 0; });
   if (!fillers.length) return { items: [], K, days: [], error: "Hace falta al menos un programa en la parrilla principal para llenar las horas libres." };
@@ -647,23 +655,23 @@ export function buildPinnedCycle(library, rawPlan) {
   let lastId = null, adCur = 0;
   const days = [];
   for (let d = 0; d < K; d++) {
-    const order = [], durs = {}, tags = [], pads = new Map();   // pads: id del fijado (o "END") → segundos de anuncios de relleno antes de él
+    const order = [], durs = {}, tags = [], pads = new Map(), exts = new Map();   // pads: id del fijado (o "END") → segundos de anuncios de relleno antes de él
     let padAcc = 0;
     const build = (o) => buildCycle(lib2, { ...plan, order: o, fit: { order: o, durs } });
     const endOf = (o) => cycleLength(build(o));
     const startOf = (o, id) => { let t = 0; for (const it of build(o)) { if (it.id === id && it.type === "programa" && (!it.part || it.part === 1)) return t; t += it.duration; } return t; };
-    const dayPins = pins.map((p) => { const ls = pinLines(p), line = ls[d % ls.length], w = pinWindow(p); return { pin: p, line, id: pinLineId(p, line), f: w.f * 60, t: w.t * 60, tol: Math.max(0, Number(p.tolMin) || 0) * 60, lineNo: (d % ls.length) + 1, lines: ls.length }; });
+    const dayPins = pins.map((p) => { const ls = pinLines(p), line = ls[d % ls.length], w = pinWindow(p), f = w.f * 60, t = w.t * 60, early = Math.max(0, Number(p.tolMin) || 0) * 60, by = p.startBy ? hhmm(p.startBy) * 60 : f + early; return { pin: p, line, id: pinLineId(p, line), f, t, early, late: Math.max(0, Math.min(by, t) - f), maxExtra: Math.max(0, Number(p.maxExtraMin) || 0) * 60, lineNo: (d % ls.length) + 1, lines: ls.length }; });
     // Llena el hueco hasta `target` con programas COMPLETOS de la categoría de cada momento. El fijado puede salir `tol` antes o después.
-    const fillTo = (target, tol, nextId) => {
+    const fillTo = (target, early, late, nextId) => {
       const measure = () => (nextId ? startOf([...order, nextId], nextId) : endOf(order)) + padAcc;
       const after = (f) => (nextId ? startOf([...order, f.id, nextId], nextId) : endOf([...order, f.id])) + padAcc;
-      const late = nextId ? tol : 0, early = nextId ? tol : 0;
+      if (!nextId) { early = 0; late = 0; }
       let cur = measure();
       for (let guard = 0; guard < 300; guard++) {
         if (cur >= target - early) break;
         const q = qFor(catAt(cur)), okC = (f) => f.id !== lastId || q.every((x) => x.id === f.id);
         const seen = new Map(); let first = -1, firstT = 0, fin = -1, finT = 0;
-        const near = target - cur < Math.max(...q.slice(0, 30).map((f) => byId.get(f.id).duration)) * 1.2 + tol * 2;   // cerca del final del hueco: se busca el que mejor cierre
+        const near = target - cur < Math.max(...q.slice(0, 30).map((f) => byId.get(f.id).duration)) * 1.2 + (early + late);   // cerca del final del hueco: se busca el que mejor cierre
         for (let k = 0, lim = Math.min(q.length, 30); k < lim; k++) {
           const f = q[k]; if (!okC(f)) continue;
           let t = seen.get(f.id); if (t === undefined) { t = after(f); seen.set(f.id, t); }
@@ -678,8 +686,15 @@ export function buildPinnedCycle(library, rawPlan) {
       const r = target - cur, pad = nextId ? Math.max(0, r - early) : Math.max(0, r);
       if (pad > 0.5) { pads.set(nextId || "END", pad); padAcc += pad; }
     };
-    for (const dp of dayPins) { fillTo(dp.f, dp.tol, dp.id); order.push(dp.id); tags.push({ pin: dp }); lastId = dp.id; }
-    fillTo(DAY_SEC, 0, null);
+    for (const dp of dayPins) {
+      fillTo(dp.f, dp.early, dp.late, dp.id); order.push(dp.id); tags.push({ pin: dp }); lastId = dp.id;
+      // Si el fijado termina antes de su límite («puede extenderse hasta»), se extiende con anuncios dentro del mismo programa; los demás esperan.
+      if (adList.length) {
+        const room = dp.t - (startOf([...order, "__fin__"], "__fin__") + padAcc), ext = dp.maxExtra > 0 ? Math.min(room, dp.maxExtra) : room;
+        if (ext > 0.5) { exts.set(dp.id, ext); padAcc += ext; }
+      }
+    }
+    fillTo(DAY_SEC, 0, 0, null);
     if (pads.size && !adList.length) return { items: [], K, days: [], error: "Hace falta al menos un anuncio activo: se usan para completar el tiempo entre programas y fijados sin cortar ningún programa." };
     const items = build(order), warn = [];
     // Anuncios de relleno (el último se acorta para llegar justo a la hora; los programas nunca se tocan)
@@ -692,7 +707,7 @@ export function buildPinnedCycle(library, rawPlan) {
       }
       return out;
     };
-    // El relleno no va de golpe antes del fijado: se reparte en sesiones cortas a lo largo de los programas del hueco.
+    // El relleno no va de golpe: se reparte en sesiones cortas antes del fijado y, si sobra franja, dentro del mismo fijado (extensión).
     const sessionSec = Math.max(30, Number(plan.padSessionSec) || PAD_SESSION_SEC);
     let gapFrom = 0;   // primer tramo del hueco actual (justo después del fijado anterior)
     for (const dp of dayPins) {
@@ -700,15 +715,21 @@ export function buildPinnedCycle(library, rawPlan) {
       if (k < 0) continue;
       let kk = k; const pad = pads.get(dp.id);
       if (pad) {
-        const res = distributePad(items.slice(gapFrom, k), padItems(pad), sessionSec);
+        const res = distributePad(items.slice(gapFrom, k), padItems(pad), sessionSec, { minGap: 180 });
         items.splice(gapFrom, k - gapFrom, ...res); kk = gapFrom + res.length;
         if (k === gapFrom) warn.push(`No cabe ningún programa antes de «${dp.pin.title}»: ${Math.round(pad / 60)} min se completan solo con anuncios.`);
       }
-      let e = kk; while (e < items.length && !(items[e].type === "programa" && items[e].id !== dp.id)) e++;   // hasta el final del fijado y su corte
+      let last = kk; for (let i = kk; i < items.length && !(items[i].type === "programa" && items[i].id !== dp.id); i++) if (items[i].type === "programa") last = i;   // última parte del fijado
+      const ext = exts.get(dp.id);
+      if (ext) {
+        const res = distributePad(items.slice(kk, last + 1), padItems(ext), sessionSec, { atEnd: false, minGap: 180 });
+        items.splice(kk, last + 1 - kk, ...res); last = kk + res.length - 1;
+      }
+      let e = last + 1; while (e < items.length && !(items[e].type === "programa" && items[e].id !== dp.id)) e++;   // hasta el final del fijado y su corte
       gapFrom = e;
     }
     if (pads.get("END")) {
-      const res = distributePad(items.slice(gapFrom), padItems(pads.get("END")), sessionSec);
+      const res = distributePad(items.slice(gapFrom), padItems(pads.get("END")), sessionSec, { minGap: 180 });
       items.splice(gapFrom, items.length - gapFrom, ...res);
     }
     let total = cycleLength(items);
@@ -722,7 +743,7 @@ export function buildPinnedCycle(library, rawPlan) {
     const spans = spansOf(items), rows = [];
     spans.forEach((sp, k) => {
       const tg = tags[k]; if (!tg) return;
-      if (tg.pin) { const dp = tg.pin; rows.push({ kind: "pin", pin: dp.pin.id, line: dp.line.id, lineNo: dp.lineNo, lines: dp.lines, id: sp.id, title: byId2.get(sp.id)?.title || dp.pin.title, start: sp.start, end: sp.end, from: dp.f, to: dp.t, delta: sp.start - dp.f, endDelta: sp.end - dp.t, pad: pads.get(dp.id) || 0 }); }
+      if (tg.pin) { const dp = tg.pin; rows.push({ kind: "pin", pin: dp.pin.id, line: dp.line.id, lineNo: dp.lineNo, lines: dp.lines, id: sp.id, title: byId2.get(sp.id)?.title || dp.pin.title, start: sp.start, end: sp.end + sp.tail, from: dp.f, to: dp.t, by: dp.f + dp.late, delta: sp.start - dp.f, endDelta: sp.end + sp.tail - dp.t, pad: pads.get(dp.id) || 0, ext: exts.get(dp.id) || 0 }); }
       else rows.push({ kind: "filler", oi: tg.oi, id: sp.id, title: byId2.get(sp.id)?.title || "", start: sp.start, end: sp.end });
     });
     days.push({ items, rows, warn, endPad: pads.get("END") || 0 });
