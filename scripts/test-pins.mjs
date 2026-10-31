@@ -1,5 +1,5 @@
 // Pruebas de los programas fijados: node scripts/test-pins.mjs
-import { buildPinnedCycle, planWithDefaults, locate, cycleLength, pinEpoch, pinDayIndex, DAY_SEC, DAY_MS, PIN_ANCHOR_MS, compactChannel, expandChannel } from "../js/engine.js";
+import { distributePad, buildPinnedCycle, planWithDefaults, locate, cycleLength, pinEpoch, pinDayIndex, DAY_SEC, DAY_MS, PIN_ANCHOR_MS, compactChannel, expandChannel } from "../js/engine.js";
 let fails = 0; const ok = (c, m) => { if (!c) { fails++; console.log("  ✗", m); } else console.log("  ✓", m); };
 const min = (n) => n * 60;
 const SLOTS = [
@@ -75,4 +75,33 @@ const long = [{ id: "L", title: "Largo", from: "10:00", to: "11:00", tolMin: 0, 
 const r3 = buildPinnedCycle(library, { ...plan, pins: long });
 ok(Math.abs(cycleLength(r3.days[0].items) - DAY_SEC) < 0.01, "fijado que se pasa de su franja: el día igual cierra a las 24 h");
 ok(r3.days[0].rows.find((x) => x.pin === "M").delta > 0, "el siguiente fijado sale tarde (lo avisa el panel)");
+// ---- Relleno repartido: el tiempo que sobra se reparte en sesiones cortas, no en un bloque enorme ----
+{
+  const mkP = (id, dur) => ({ id, title: id, kind: "programa", cat: "Variedades", duration: dur, url: "x.mp4", active: true });
+  const progs = [mkP("p1", min(24)), mkP("p2", min(24)), mkP("p3", min(24))], lib3 = [...progs, ...ads];
+  const longestAds = (items) => { let cur = 0, mx = 0; for (const it of items) { if (it.type === "comercial") { cur += it.duration; mx = Math.max(mx, cur); } else cur = 0; } return mx; };
+  for (const tol of [0, 5]) {
+    const pl = planWithDefaults({ mode: "continuous", intervalValue: 10, intervalUnit: "m", breakCount: 2, order: progs.map((i) => i.id), slots: [],
+      pins: [{ id: "n", title: "Noticiero", from: "10:00", to: "11:00", tolMin: tol, lines: [line("a", min(55))] }] });
+    const rr = buildPinnedCycle(lib3, pl), day = rr.days[0], row = day.rows.find((x) => x.kind === "pin");
+    ok(row.pad > min(10), `margen ${tol} min: hay ${Math.round(row.pad / 60)} min de relleno que repartir`);
+    ok(longestAds(day.items) <= min(4), `margen ${tol} min: el bloque de anuncios más largo es de ${Math.round(longestAds(day.items))} s (máx. 240 s)`);
+    ok(Math.abs(row.delta) <= tol * 60 + 1, `margen ${tol} min: el fijado sigue saliendo dentro de su margen (${Math.round(row.delta)} s)`);
+    ok(Math.abs(cycleLength(day.items) - DAY_SEC) < 0.01, `margen ${tol} min: el día sigue durando 24 h`);
+    // ningún programa cortado, aunque se haya partido para meter sesiones
+    const sums = new Map(); let curId = null;
+    for (const it of day.items) { if (it.type !== "programa") continue; if (!it.part || it.part === 1) curId = `${it.id}#${sums.size}`; sums.set(curId, (sums.get(curId) || 0) + it.duration); }
+    const full = new Map([...progs, { id: "pin_n_a", duration: min(55) }].map((i) => [i.id, i.duration]));
+    ok([...sums].every(([k, v]) => Math.abs(v - (full.get(k.split("#")[0]) ?? v)) < 0.01), `margen ${tol} min: ningún programa cortado ni con tiempo de más`);
+    const partsOk = day.items.filter((it) => it.part).every((it) => it.part >= 1 && it.part <= it.parts);
+    ok(partsOk, `margen ${tol} min: las partes de los programas partidos están bien numeradas`);
+  }
+  // distributePad suelto: conserva todo el contenido y el total
+  const gap = [{ id: "g", type: "programa", duration: 1440, startAt: 0 }], padAds = Array.from({ length: 10 }, () => ({ id: "ad1", type: "comercial", duration: 150 }));
+  const res = distributePad(gap, padAds, 120);
+  ok(Math.abs(cycleLength(res) - (1440 + 1500)) < 0.01, "distributePad: suma exacta (programa + anuncios)");
+  ok(res.filter((x) => x.type === "programa").reduce((a, x) => a + x.duration, 0) === 1440, "distributePad: el programa conserva todos sus segundos");
+  ok(res.filter((x) => x.type === "programa").every((x, k, a) => k === 0 || Math.abs(a[k - 1].startAt + a[k - 1].duration - x.startAt) < 0.001), "distributePad: cada parte continúa donde terminó la anterior");
+  ok(distributePad(gap, [], 120).length === 1 && distributePad([], padAds, 120).length === 10, "distributePad: sin anuncios o sin hueco no inventa nada");
+}
 console.log(fails ? `\n${fails} fallos` : "\nTodo bien"); process.exit(fails ? 1 : 0);

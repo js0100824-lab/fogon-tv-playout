@@ -172,7 +172,7 @@ html,body{max-width:100%;overflow-x:hidden}
 .pin-main{display:flex;flex-direction:column;gap:2px;min-width:0;flex:1 1 220px}.pin-main b{overflow-wrap:anywhere}
 .pin-btns{display:flex;gap:6px}
 .day-row.pinrow{background:rgba(31,181,196,.10);border-left:4px solid #1fb5c4}
-.day-row.pinrow .day-grip{cursor:not-allowed;opacity:1}
+.day-row.pinrow .day-grip{cursor:not-allowed;opacity:1;font-size:11px;font-weight:700;letter-spacing:.04em}
 .tag.pin{background:#0e6b73;color:#fff}
 .day-tabs{display:flex;gap:6px;flex-wrap:wrap;margin:8px 0}
 .warn{color:#f2bd3a}
@@ -357,9 +357,9 @@ html,body{max-width:100%;overflow-x:hidden}
         </section>
 
         <section id="tab-dia" class="tab hidden">
-          <p class="hint">Cada fila es una emisión del día. Arrastra ⠿ o usa ↑ ↓ para moverla, ⇄ para cambiar el programa, ＋ para insertar uno debajo y ✕ para quitarlo. Con <b>📌 Fijar</b> el programa queda clavado a esa hora: sale <b>siempre</b> en su franja y no se mueve, aunque cambies lo demás. Lo que queda entre fijados se llena solo con programas de la categoría de esa hora, y ninguno se corta. Al terminar, pulsa «Guardar y publicar».</p>
+          <p class="hint">Cada fila es una emisión del día. Arrastra ⠿ o usa ↑ ↓ para moverla, ⇄ para cambiar el programa, ＋ para insertar uno debajo y ✕ para quitarlo. Con <b>Fijar</b> el programa queda clavado a esa hora: sale <b>siempre</b> en su franja y no se mueve, aunque cambies lo demás. Lo que queda entre fijados se llena solo con programas de la categoría de esa hora, y ninguno se corta. Al terminar, pulsa «Guardar y publicar».</p>
           <h3 class="sub">Programas fijados</h3>
-          <div class="row"><button class="btn small" id="pin-new" type="button">📌 Fijar programa</button></div>
+          <div class="row"><button class="btn small" id="pin-new" type="button">Fijar programa</button></div>
           <div id="pin-list"></div>
           <h3 class="sub">El día</h3>
           <div class="row"><button class="btn small" id="day-add" type="button">＋ Añadir al final</button><button class="btn secondary small" id="day-undo" type="button" disabled>↶ Deshacer</button><button class="btn small" id="day-pub" type="button">Guardar y publicar</button></div>

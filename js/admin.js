@@ -762,11 +762,11 @@ function normUrl(u) {
 function renderPinList() {
   const el = $("pin-list"); if (!el) return;
   const pins = (state.plan.pins || []).slice().sort((a, b) => pinWindow(a).f - pinWindow(b).f), pc = getPinned();
-  if (!pins.length) { el.innerHTML = '<p class="hint">Todavía no hay programas fijados. Pulsa «Fijar programa» o el 📌 de cualquier fila de abajo.</p>'; return; }
+  if (!pins.length) { el.innerHTML = '<p class="hint">Todavía no hay programas fijados. Pulsa «Fijar programa» o el botón «Fijar» de cualquier fila de abajo.</p>'; return; }
   const today = pc && !pc.error ? pinDayIndex(serverNow(), pc.K) : null;
   el.innerHTML = pins.map((p) => {
     const w = pinWindow(p), n = pinLines(p).length, hoy = today != null && n ? ` · hoy: línea ${(today % n) + 1}` : "";
-    return `<div class="pin-card${n ? "" : " bad"}"><div class="pin-main"><b>📌 ${esc(p.title)}</b><span>${clockTxt(w.f)} → ${clockTxt(w.t % 1440)}</span><span class="hint">${n} línea${n === 1 ? "" : "s"}${hoy} · ${p.tolMin > 0 ? `margen de ${p.tolMin} min antes o después` : "a la hora exacta"}</span>${n ? "" : '<span class="warn">Sin líneas válidas: no se emite.</span>'}</div><div class="pin-btns"><button class="btn small" data-pa="edit" data-pin="${esc(p.id)}" type="button">Líneas y hora</button><button class="btn danger small" data-pa="unpin" data-pin="${esc(p.id)}" type="button">Quitar</button></div></div>`;
+    return `<div class="pin-card${n ? "" : " bad"}"><div class="pin-main"><b>${esc(p.title)}</b><span>${clockTxt(w.f)} → ${clockTxt(w.t % 1440)}</span><span class="hint">${n} línea${n === 1 ? "" : "s"}${hoy} · ${p.tolMin > 0 ? `margen de ${p.tolMin} min antes o después` : "a la hora exacta"}</span>${n ? "" : '<span class="warn">Sin líneas válidas: no se emite.</span>'}</div><div class="pin-btns"><button class="btn small" data-pa="edit" data-pin="${esc(p.id)}" type="button">Líneas y hora</button><button class="btn danger small" data-pa="unpin" data-pin="${esc(p.id)}" type="button">Quitar</button></div></div>`;
   }).join("");
 }
 
@@ -787,9 +787,9 @@ function renderDayPinned(el, pc) {
     if (si !== lastSlot) { lastSlot = si; const sl = p.slots?.[si]; html += `<div class="day-h"><span>${sl ? `${esc(slotLabel(sl))} · ${esc(sl.cat === "*" ? "Variado" : sl.cat)}` : "Sin franja"}</span><span>${sl ? esc(slotHours(sl)) : ""}</span></div>`; }
     if (r.kind === "pin") {
       const pin = p.pins.find((x) => x.id === r.pin), late = r.delta > 60, early = r.delta < -60;
-      html += `<div class="day-row pinrow" data-s="${r.start}" data-e="${r.end}"><span class="day-grip" title="Fijado: no se mueve">📌</span>
+      html += `<div class="day-row pinrow" data-s="${r.start}" data-e="${r.end}"><span class="day-grip" title="Fijado: no se mueve">Fijo</span>
         <span class="day-t">${esc(clock(r.start))}<small>→ ${esc(clock(r.end))}</small></span>
-        <span class="day-main"><b>${esc(pin?.title || r.title)}</b><span class="day-meta"><span class="tag pin">Fijado ${esc(clock(r.from))} → ${esc(clock(r.to % 86400))}</span>${r.lines > 1 ? `<span class="tag rep">Línea ${r.lineNo} de ${r.lines}</span>` : ""}${early ? `<span class="tag off">Sale ${mins(r.delta)} min antes</span>` : ""}${late ? `<span class="tag bad">Sale ${mins(r.delta)} min tarde (el anterior se pasó)</span>` : ""}${r.pad > 30 ? `<span class="tag off">${mins(r.pad)} min de anuncios antes, para llegar a su hora</span>` : ""}${r.endDelta > 60 ? `<span class="tag off">Termina ${mins(r.endDelta)} min después de su franja</span>` : ""}<span>${esc(r.title === pin?.title ? "" : r.title)}</span></span></span>
+        <span class="day-main"><b>${esc(pin?.title || r.title)}</b><span class="day-meta"><span class="tag pin">Fijado ${esc(clock(r.from))} → ${esc(clock(r.to % 86400))}</span>${r.lines > 1 ? `<span class="tag rep">Línea ${r.lineNo} de ${r.lines}</span>` : ""}${early ? `<span class="tag off">Sale ${mins(r.delta)} min antes</span>` : ""}${late ? `<span class="tag bad">Sale ${mins(r.delta)} min tarde (el anterior se pasó)</span>` : ""}${r.pad > 30 ? `<span class="tag off">${mins(r.pad)} min de anuncios repartidos antes, para llegar a su hora</span>` : ""}${r.endDelta > 60 ? `<span class="tag off">Termina ${mins(r.endDelta)} min después de su franja</span>` : ""}<span>${esc(r.title === pin?.title ? "" : r.title)}</span></span></span>
         <span class="day-btns"><button class="btn secondary small" data-pa="edit" data-pin="${esc(r.pin)}" type="button">Líneas</button><button class="btn danger small" data-pa="unpin" data-pin="${esc(r.pin)}" type="button" title="Quitar el fijado">✕</button></span></div>`;
       continue;
     }
@@ -798,10 +798,10 @@ function renderDayPinned(el, pc) {
     html += `<div class="day-row" draggable="true" data-n="${r.oi}" data-s="${r.start}" data-e="${r.end}"><span class="day-grip" title="Arrastrar">⠿</span>
       <span class="day-t">${esc(clock(r.start))}<small>→ ${esc(clock(r.end))}</small></span>
       <span class="day-main"><b>${esc(i.title)}</b><span class="day-meta">${i.cat ? `<span class="tag">${esc(i.cat)}</span>` : ""}${off ? '<span class="tag off">Fuera de su franja</span>' : ""}<span>${fmtDuration(i.duration)}</span></span></span>
-      <span class="day-btns"><button class="btn secondary small" data-act="up" data-n="${r.oi}" type="button" aria-label="Subir">↑</button><button class="btn secondary small" data-act="down" data-n="${r.oi}" type="button" aria-label="Bajar">↓</button><button class="btn secondary small" data-act="swap" data-n="${r.oi}" type="button" title="Cambiar por otro programa" aria-label="Cambiar">⇄</button><button class="btn secondary small" data-act="ins" data-n="${r.oi}" type="button" title="Insertar uno debajo" aria-label="Insertar debajo">＋</button><button class="btn small" data-pa="pinrow" data-n="${r.oi}" data-s="${r.start}" data-e="${r.end}" type="button" title="Fijar este programa en esta hora">📌 Fijar</button><button class="btn danger small" data-act="del" data-n="${r.oi}" type="button" aria-label="Quitar">✕</button></span></div>`;
+      <span class="day-btns"><button class="btn secondary small" data-act="up" data-n="${r.oi}" type="button" aria-label="Subir">↑</button><button class="btn secondary small" data-act="down" data-n="${r.oi}" type="button" aria-label="Bajar">↓</button><button class="btn secondary small" data-act="swap" data-n="${r.oi}" type="button" title="Cambiar por otro programa" aria-label="Cambiar">⇄</button><button class="btn secondary small" data-act="ins" data-n="${r.oi}" type="button" title="Insertar uno debajo" aria-label="Insertar debajo">＋</button><button class="btn small" data-pa="pinrow" data-n="${r.oi}" data-s="${r.start}" data-e="${r.end}" type="button" title="Fijar este programa en esta hora">Fijar</button><button class="btn danger small" data-act="del" data-n="${r.oi}" type="button" aria-label="Quitar">✕</button></span></div>`;
   }
   el.innerHTML = html;
-  const w = day.warn.length ? ` · ⚠ ${day.warn.join(" ")}` : "";
+  const w = day.warn.length ? ` · Aviso: ${day.warn.join(" ")}` : "";
   $("day-info").textContent = `Día ${view + 1} de ${pc.K}${view === today ? " (hoy)" : ""} · ${day.rows.length} programas · nunca se corta un programa · el día cierra a las 12:00 AM${w}`;
   $("day-undo").disabled = !dayUndo.length;
   markDayAir();
@@ -813,7 +813,7 @@ function pinOverlap(d) { const w = pinWindow(d); return (state.plan.pins || []).
 function renderPinTimeInfo() {
   const d = pinDraft, w = pinWindow(d), ov = pinOverlap(d), len = w.t - w.f, bad = toMin(d.to) <= toMin(d.from) && toMin(d.to) !== 0;
   $("pin-time-info").innerHTML = `Franja de ${Math.floor(len / 60) ? `${Math.floor(len / 60)} h ` : ""}${len % 60 ? `${len % 60} min` : ""}`.trim()
-    + (ov ? ` · <span class="warn">⚠ se cruza con «${esc(ov.title)}»</span>` : "") + (bad ? ' · <span class="warn">«Hasta» debe ser después de «Desde»; así llega hasta las 12:00 AM</span>' : "");
+    + (ov ? ` · <span class="warn">Se cruza con «${esc(ov.title)}»</span>` : "") + (bad ? ' · <span class="warn">«Hasta» debe ser después de «Desde»; así llega hasta las 12:00 AM</span>' : "");
 }
 function renderPinLines() {
   const ls = pinDraft.lines, el = $("pin-lines");
@@ -1355,7 +1355,7 @@ function renderDay() {
     const rep = seen.has(id); seen.add(id);
     let si = -1;
     if (t && S != null) si = slotAt(((S + t.start / 60) % 1440 + 1440) % 1440);
-    if (t && t.start >= 86400 && !warned) { warned = true; html += `<div class="day-h warn"><span>⚠ Desde aquí el ciclo pasa de las 24 horas</span></div>`; lastSlot = -2; }
+    if (t && t.start >= 86400 && !warned) { warned = true; html += `<div class="day-h warn"><span>Desde aquí el ciclo pasa de las 24 horas</span></div>`; lastSlot = -2; }
     if (S != null && si !== lastSlot) {
       lastSlot = si; const sl = p.slots[si];
       html += `<div class="day-h"><span>${sl ? `${esc(slotLabel(sl))} · ${esc(sl.cat === "*" ? "Variado" : sl.cat)}` : "Sin franja"}</span><span>${sl ? esc(slotHours(sl)) : ""}</span></div>`;

@@ -453,7 +453,7 @@ const inFrame = (() => { try { return window.self !== window.top; } catch { retu
 const noAutoplay = (() => { try { const fp = document.featurePolicy || document.permissionsPolicy; return inFrame && !!fp?.allowsFeature && !fp.allowsFeature("autoplay"); } catch { return false; } })();
 let fbTapWanted = false, fbTapAt = 0;
 const tapHint = document.createElement("div");   // cartel que no captura toques: el toque pasa al video de Facebook
-tapHint.textContent = "👆 Toca el video para activar el sonido";
+tapHint.textContent = "Toca el video para activar el sonido";
 tapHint.style.cssText = "position:absolute;left:50%;bottom:24%;transform:translateX(-50%);padding:18px 36px;border-radius:999px;background:rgba(0,0,0,.75);color:#fff;font-size:40px;z-index:9;pointer-events:none;display:none;white-space:nowrap";
 function armFbTap() {
   if (obs || studio || embed) return;

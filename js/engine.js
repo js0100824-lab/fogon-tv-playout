@@ -555,6 +555,73 @@ function spansOf(items) {
   return out;
 }
 
+/* ---------------- Reparto del relleno de anuncios ----------------
+   Cuando entre dos fijados sobra tiempo que ningún programa completo puede ocupar, ese tiempo NO se mete de golpe
+   antes del fijado: se reparte en varias sesiones cortas de anuncios a lo largo de los programas del hueco.
+   Así los programas se alargan un poco, nunca se cortan y nunca sale un bloque enorme de anuncios. */
+export const PAD_SESSION_SEC = 120;   // duración objetivo de cada sesión de relleno
+const PAD_SNAP_SEC = 45;              // si el punto ideal cae a menos de esto de un borde, la sesión se pega al borde
+
+// `gap`: tramos del hueco (programas y anuncios ya existentes). `ads`: anuncios de relleno ya elegidos.
+// Devuelve los tramos del hueco con las sesiones intercaladas (programas partidos donde hizo falta).
+export function distributePad(gap, ads, sessionSec = PAD_SESSION_SEC) {
+  const G = cycleLength(gap), total = cycleLength(ads);
+  if (!ads.length) return gap.slice();
+  const N = Math.min(ads.length, Math.max(1, Math.ceil(total / Math.max(10, sessionSec))));
+  if (G <= 0 || N <= 1) return [...gap, ...ads];
+  // 1) los anuncios se reparten en N grupos de duración parecida
+  const groups = []; let gi = 0, acc = 0;
+  for (let k = 1; k <= N; k++) {
+    const g = [], goal = (total * k) / N, left = N - k;
+    while (gi < ads.length && ads.length - gi > left && (g.length === 0 || k === N || acc + ads[gi].duration / 2 <= goal)) { g.push(ads[gi]); acc += ads[gi].duration; gi++; }
+    groups.push(g);
+  }
+  // 2) cada grupo va en un punto equidistante del hueco; si cae cerca de un borde se pega al borde, y dentro de un anuncio nunca se parte
+  const starts = []; let t = 0; for (const it of gap) { starts.push(t); t += it.duration; }
+  const cuts = groups.map((g, k) => {
+    const want = (G * (k + 1)) / N;
+    let idx = starts.findIndex((s, i) => want >= s - 1e-6 && want < s + gap[i].duration - 1e-6); if (idx < 0) idx = gap.length - 1;
+    const s = starts[idx], e = s + gap[idx].duration;
+    if (gap[idx].type === "comercial" || want - s <= PAD_SNAP_SEC || e - want <= PAD_SNAP_SEC) { const at = want - s < e - want ? s : e; return { at, ads: g, inner: false }; }
+    return { at: want, ads: g, inner: true, idx };
+  }).sort((a, b) => a.at - b.at);
+  // 3) puntos que quedaron pegados (mismo borde, o dos dentro del mismo programa muy juntos) se funden en una sola sesión
+  const merged = [];
+  for (const c of cuts) {
+    const prev = merged[merged.length - 1];
+    if (prev && (Math.abs(c.at - prev.at) < 0.5 || (c.inner && prev.inner && c.idx === prev.idx && c.at - prev.at < PAD_SNAP_SEC))) prev.ads = [...prev.ads, ...c.ads];
+    else merged.push({ ...c });
+  }
+  // 4) se arma el hueco con las sesiones dentro
+  const out = []; let ci = 0;
+  while (ci < merged.length && !merged[ci].inner && merged[ci].at < 0.5) out.push(...merged[ci++].ads);
+  gap.forEach((it, i) => {
+    const s = starts[i], e = s + it.duration; let from = 0;
+    while (ci < merged.length && merged[ci].inner && merged[ci].idx === i) {
+      const off = merged[ci].at - s;
+      out.push({ ...it, startAt: (it.startAt || 0) + from, duration: off - from }, ...merged[ci].ads); from = off; ci++;
+    }
+    out.push(from > 0 ? { ...it, startAt: (it.startAt || 0) + from, duration: it.duration - from } : it);
+    while (ci < merged.length && !merged[ci].inner && Math.abs(merged[ci].at - e) < 0.5) out.push(...merged[ci++].ads);
+  });
+  while (ci < merged.length) out.push(...merged[ci++].ads);   // por si el redondeo dejó alguno suelto
+  return out;
+}
+
+// Numera las partes de cada programa partido (1/3, 2/3, 3/3). Un programa continúa si empieza donde terminó la parte anterior.
+export function renumberParts(items) {
+  let run = [];
+  const flush = () => { if (run.length > 1) run.forEach((it, k) => { it.part = k + 1; it.parts = run.length; }); run = []; };
+  for (const it of items) {
+    if (it.type !== "programa") continue;
+    const last = run[run.length - 1];
+    if (last && last.id === it.id && Math.abs((last.startAt || 0) + last.duration - (it.startAt || 0)) < 0.001) run.push(it);
+    else { flush(); run.push(it); }
+  }
+  flush();
+  return items;
+}
+
 // Devuelve null si no hay fijados; si no, { items, K, days:[{ items, rows, warn }], error? }.
 // rows de cada día: { kind:"filler", oi, id, title, start, end } | { kind:"pin", pin, line, lineNo, lines, id, title, start, end, from, to, delta, endDelta, pad }  (segundos desde las 00:00)
 // REGLAS: (1) los huecos entre fijados se llenan solo con programas de la categoría que toca a esa hora (franjas de Horarios);
@@ -625,12 +692,25 @@ export function buildPinnedCycle(library, rawPlan) {
       }
       return out;
     };
+    // El relleno no va de golpe antes del fijado: se reparte en sesiones cortas a lo largo de los programas del hueco.
+    const sessionSec = Math.max(30, Number(plan.padSessionSec) || PAD_SESSION_SEC);
+    let gapFrom = 0;   // primer tramo del hueco actual (justo después del fijado anterior)
     for (const dp of dayPins) {
-      const pad = pads.get(dp.id); if (!pad) continue;
       const k = items.findIndex((it) => it.id === dp.id && it.type === "programa" && (!it.part || it.part === 1));
-      if (k >= 0) items.splice(k, 0, ...padItems(pad));
+      if (k < 0) continue;
+      let kk = k; const pad = pads.get(dp.id);
+      if (pad) {
+        const res = distributePad(items.slice(gapFrom, k), padItems(pad), sessionSec);
+        items.splice(gapFrom, k - gapFrom, ...res); kk = gapFrom + res.length;
+        if (k === gapFrom) warn.push(`No cabe ningún programa antes de «${dp.pin.title}»: ${Math.round(pad / 60)} min se completan solo con anuncios.`);
+      }
+      let e = kk; while (e < items.length && !(items[e].type === "programa" && items[e].id !== dp.id)) e++;   // hasta el final del fijado y su corte
+      gapFrom = e;
     }
-    if (pads.get("END")) items.push(...padItems(pads.get("END")));
+    if (pads.get("END")) {
+      const res = distributePad(items.slice(gapFrom), padItems(pads.get("END")), sessionSec);
+      items.splice(gapFrom, items.length - gapFrom, ...res);
+    }
     let total = cycleLength(items);
     if (total > DAY_SEC + 0.0005) {   // un fijado se pasó de medianoche: se corta ahí para que el día siguiente empiece puntual
       let over = total - DAY_SEC; warn.push("Un fijado se pasa de la medianoche y se corta ahí para que el día siguiente empiece puntual.");
@@ -638,6 +718,7 @@ export function buildPinnedCycle(library, rawPlan) {
     } else if (total < DAY_SEC - 0.0005) {   // segundos sueltos de redondeo: los absorbe el último anuncio o programa
       const r = DAY_SEC - total, last = items[items.length - 1]; if (last && r < 60) last.duration += r;
     }
+    renumberParts(items);   // los programas que se partieron para meter sesiones quedan numerados (parte 1 de N…)
     const spans = spansOf(items), rows = [];
     spans.forEach((sp, k) => {
       const tg = tags[k]; if (!tg) return;
