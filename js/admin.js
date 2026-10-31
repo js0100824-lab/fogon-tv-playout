@@ -113,6 +113,7 @@ async function initPanel() {
   $("lib-kind").addEventListener("change", () => { $("lib-cat").style.display = $("lib-kind").value === "programa" ? "" : "none"; });
   initSched();
   initTimeline();
+  initDay();
   document.querySelectorAll("#lib-filter [data-kind]").forEach((b) => b.addEventListener("click", () => { libKind = b.dataset.kind; renderLibrary(); }));
   $("monitor").src = new URL("../player/?embed=1&studio=1", location.href).href;
   // La vista previa es la señal maestra: lo que ella emite se publica para que el reproductor público la siga.
@@ -209,7 +210,7 @@ function renderMedia() {
 function renderAll() {
   renderMedia();
   state.plan.order = state.plan.order.filter((id) => state.lib.some((i) => i.id === id));
-  renderLibrary(); renderAds(); renderOrder(); renderCycle(); renderBrand(); renderNow(); renderSched(); renderPick();
+  renderLibrary(); renderAds(); renderOrder(); renderCycle(); renderBrand(); renderNow(); renderSched(); renderPick(); renderDay();
 }
 
 /* Subida a Cloudinary (plan gratis, preset sin firma) */
@@ -917,7 +918,7 @@ function initSched() {
       const g = (k) => box.querySelector(`[data-tp="${k}"]`).value, h24 = (Number(g("h")) % 12) + (g("a") === "PM" ? 12 : 0);
       sl[+box.dataset.n][box.dataset.k] = `${String(h24).padStart(2, "0")}:${String(Number(g("m"))).padStart(2, "0")}`;
     } else if (t.dataset.sc != null) sl[+t.dataset.sc].cat = t.value; else return;
-    savePlan().catch(fail);
+    savePlan().then(renderSched).catch(fail);
   });
   $("slot-reset").addEventListener("click", () => { state.plan.slots = DEFAULT_SLOTS.map((x) => ({ ...x })); savePlan().then(() => { renderSched(); toast("Franjas restauradas.", "ok"); }).catch(fail); });
   $("slot-list").addEventListener("click", (e) => { const b = e.target.closest("[data-sd]"); if (!b) return; state.plan.slots.splice(Number(b.dataset.sd), 1); savePlan().then(renderSched).catch(fail); });
@@ -938,7 +939,8 @@ function renderSched() {
   set("lib-cat", `<option value="">Sin categoría</option>${opts("")}`);
   set("q-cat", `<option value="">Todas</option>${opts("")}`);
   $("cat-chips").innerHTML = (p.cats || []).map((c, n) => `<span class="chip">${esc(c)}<button type="button" data-catdel="${n}" aria-label="Quitar">×</button></span>`).join("");
-  $("slot-list").innerHTML = (p.slots || []).map((s, n) => `<div class="slot">${tsel(n, "from", s.from)}<button class="btn del small" data-sd="${n}" type="button" aria-label="Quitar">×</button>${tsel(n, "to", s.to)}<select class="cat" data-sc="${n}" aria-label="Categoría"><option value="*"${s.cat === "*" ? " selected" : ""}>Variado</option>${opts(s.cat)}</select></div>`).join("");
+  $("slot-list").innerHTML = (p.slots || []).map((s, n) => `<div class="slot-wrap"><div class="slot-sum"><b>${slotLabel(s)}</b><span>${slotHours(s)}</span></div><div class="slot">${tsel(n, "from", s.from)}<button class="btn del small" data-sd="${n}" type="button" aria-label="Quitar">×</button>${tsel(n, "to", s.to)}<select class="cat" data-sc="${n}" aria-label="Categoría"><option value="*"${s.cat === "*" ? " selected" : ""}>Variado</option>${opts(s.cat)}</select></div></div>`).join("");
+  renderSlotStrip();
   if (!schedVals) {
     schedVals = true; const q = p.quick, o = p.hOpt;
     $("q-which").value = q.which; $("q-order").value = q.order; $("q-cat").value = q.cat; $("q-max").value = q.max; $("q-skip").checked = !!q.skipBad; $("q-replace").checked = !!q.replace;
@@ -1065,4 +1067,147 @@ async function markView(ok) {
   try { await updateDoc(doc(db, "library", it.id), { fbOk: ok }); it.fbOk = ok; } catch (err) { fail(err); return; }
   renderLibrary(); renderPick();
   if (vw.i < vw.list.length - 1) { vw.i++; showView(); } else { closeView(); toast("Revisaste todos.", "ok"); }
+}
+
+
+/* ===== Franjas: etiqueta clara y barra de las 24 horas ===== */
+const slotLen = (s) => ((toMin(s.to) - toMin(s.from) + 1440) % 1440) || 1440;
+const slotLabel = (s) => `${clockTxt(toMin(s.from))} → ${clockTxt(toMin(s.to))}`;
+const slotHours = (s) => { const m = slotLen(s), h = Math.floor(m / 60), r = m % 60; return `${h ? `${h} h` : ""}${h && r ? " " : ""}${r ? `${r} min` : ""}`; };
+const CAT_COLORS = ["#2f7d5d", "#3b6fb6", "#9a5bb5", "#c27a2c", "#b8505a", "#4a9aa5", "#7d8a2f", "#8a6a4a"];
+const catColor = (c) => (c === "*" ? "#6b7280" : CAT_COLORS[Math.max(0, catsAll().indexOf(c)) % CAT_COLORS.length]);
+function renderSlotStrip() {
+  const el = $("slot-strip"), warn = $("slot-warn"); if (!el) return;
+  const sl = state.plan.slots || [], cover = new Array(1440).fill(0), parts = [];
+  sl.forEach((s) => {
+    const f = toMin(s.from), len = slotLen(s);
+    for (let k = 0; k < len; k++) cover[(f + k) % 1440]++;
+    const first = Math.min(len, 1440 - f); parts.push({ s, a: f, b: f + first });
+    if (len > first) parts.push({ s, a: 0, b: len - first });
+  });
+  let html = parts.map(({ s, a, b }) => `<i class="${cover.slice(a, b).some((x) => x > 1) ? "ov" : ""}" style="left:${(a / 1440) * 100}%;width:${((b - a) / 1440) * 100}%;background:${catColor(s.cat)}" title="${esc(slotLabel(s))} · ${esc(s.cat === "*" ? "Variado" : s.cat)}">${esc(s.cat === "*" ? "Variado" : s.cat)}</i>`).join("");
+  html += [0, 6, 12, 18, 24].map((h) => `<b style="left:${(h / 24) * 100}%">${clockTxt(h * 60 % 1440)}</b>`).join("");
+  el.innerHTML = html;
+  const gaps = cover.filter((x) => x === 0).length, ovl = cover.filter((x) => x > 1).length, fmt = (m) => `${Math.floor(m / 60) ? Math.floor(m / 60) + " h " : ""}${m % 60 ? (m % 60) + " min" : ""}`.trim();
+  warn.textContent = [gaps ? `Faltan ${fmt(gaps)} sin franja.` : "", ovl ? `Hay ${fmt(ovl)} donde se cruzan dos franjas (borde rojo).` : ""].filter(Boolean).join(" ");
+}
+
+/* ===== Elegir un programa de la biblioteca (ventana con búsqueda y categoría) ===== */
+function pickProgram(title, preferCat) {
+  return new Promise((resolve) => {
+    const dlg = $("dpick"), q = $("dpick-q"), cs = $("dpick-cat"), list = $("dpick-list");
+    $("dpick-title").textContent = title; q.value = "";
+    cs.innerHTML = `<option value="">Todas las categorías</option>${catsAll().map((c) => `<option value="${esc(c)}">${esc(c)}</option>`).join("")}<option value="__none">Sin categoría</option>`;
+    cs.value = preferCat && catsAll().includes(preferCat) ? preferCat : "";
+    const done = (v) => { dlg.classList.add("hidden"); q.oninput = cs.onchange = list.onclick = dlg.onclick = $("dpick-cancel").onclick = null; resolve(v); };
+    const draw = () => {
+      const t = q.value.trim().toLowerCase(), c = cs.value;
+      const progs = sortPrograms(state.lib.filter((i) => i.kind === "programa" && i.duration > 0 && (!t || (i.title || "").toLowerCase().includes(t)) && (!c || (c === "__none" ? !i.cat : i.cat === c))), "az");
+      list.innerHTML = progs.length ? progs.map((i) => `<div class="pick-row"><span class="pick-t">${esc(i.title)}</span><span class="pick-d">${esc(i.cat || "—")} · ${fmtDuration(i.duration)}</span><button class="btn small" data-id="${esc(i.id)}" type="button">Elegir</button></div>`).join("") : '<p class="hint">Sin resultados</p>';
+    };
+    q.oninput = draw; cs.onchange = draw; draw();
+    list.onclick = (e) => { const b = e.target.closest("[data-id]"); if (b) done(b.dataset.id); };
+    $("dpick-cancel").onclick = () => done(null);
+    dlg.onclick = (e) => { if (e.target === dlg) done(null); };
+    dlg.classList.remove("hidden"); setTimeout(() => q.focus(), 50);
+  });
+}
+
+/* ===== Editor de las 24 horas: todas las emisiones del ciclo (con repeticiones), para mover, cambiar, insertar y quitar ===== */
+const dayUndo = [];
+// Emisión n del ciclo → { start, end } en segundos desde el inicio del ciclo.
+function dayTimes() {
+  const p = state.plan, order = p.order, cyc = buildCycle(state.lib, p);
+  const orderPos = []; order.forEach((id, n) => { const i = state.lib.find((x) => x.id === id); if (i && i.duration > 0) orderPos.push(n); });
+  const startIdx = new Map(); let q = -1;
+  cyc.forEach((it, k) => { if (it.type === "programa" && (!it.part || it.part === 1)) { q++; if (orderPos[q] != null) startIdx.set(orderPos[q], k); } });
+  const cum = []; let a = 0; for (const it of cyc) { cum.push(a); a += it.duration; }
+  const times = new Map();
+  startIdx.forEach((k, n) => {
+    let e = k; const it = cyc[k];
+    if (it.parts > 1) for (let j = k + 1; j < cyc.length; j++) { const x = cyc[j]; if (x.type === "programa" && x.id === it.id && x.part > 1) { e = j; if (x.part >= it.parts) break; } else if (x.type === "programa") break; }
+    times.set(n, { start: cum[k], end: cum[e] + cyc[e].duration });
+  });
+  return { times, total: a };
+}
+function renderDay() {
+  const el = $("day-list"); if (!el) return;
+  const p = state.plan, order = p.order, S = Number.isFinite(p.dayStart) ? p.dayStart : null, { times, total } = dayTimes();
+  const clock = (sec) => (S == null ? fmtDuration(sec) : clockTxt(S + sec / 60));
+  const slotAt = (min) => (p.slots || []).findIndex((s) => ((min - toMin(s.from) + 1440) % 1440) < slotLen(s));
+  const seen = new Set(); let lastSlot = -2, warned = false, html = "";
+  order.forEach((id, n) => {
+    const i = state.lib.find((x) => x.id === id), t = times.get(n); if (!i) return;
+    const rep = seen.has(id); seen.add(id);
+    let si = -1;
+    if (t && S != null) si = slotAt(((S + t.start / 60) % 1440 + 1440) % 1440);
+    if (t && t.start >= 86400 && !warned) { warned = true; html += `<div class="day-h warn"><span>⚠ Desde aquí el ciclo pasa de las 24 horas</span></div>`; lastSlot = -2; }
+    if (S != null && si !== lastSlot) {
+      lastSlot = si; const sl = p.slots[si];
+      html += `<div class="day-h"><span>${sl ? `${esc(slotLabel(sl))} · ${esc(sl.cat === "*" ? "Variado" : sl.cat)}` : "Sin franja"}</span><span>${sl ? esc(slotHours(sl)) : ""}</span></div>`;
+    }
+    const sl = si >= 0 ? p.slots[si] : null, off = sl && sl.cat !== "*" && i.cat !== sl.cat;
+    html += `<div class="day-row" draggable="true" data-n="${n}"><span class="day-grip" title="Arrastrar">⠿</span>
+      <span class="day-t">${t ? `${esc(clock(t.start))}<small>→ ${esc(clock(t.end))}</small>` : "—"}</span>
+      <span class="day-main"><b>${esc(i.title)}</b><span class="day-meta">${i.cat ? `<span class="tag">${esc(i.cat)}</span>` : ""}${rep ? '<span class="tag rep">Repetición</span>' : ""}${off ? '<span class="tag off">Fuera de su franja</span>' : ""}<span>${fmtDuration(i.duration)}</span></span></span>
+      <span class="day-btns"><button class="btn secondary small" data-act="up" data-n="${n}" type="button" aria-label="Subir">↑</button><button class="btn secondary small" data-act="down" data-n="${n}" type="button" aria-label="Bajar">↓</button><button class="btn secondary small" data-act="swap" data-n="${n}" type="button" title="Cambiar por otro programa" aria-label="Cambiar">⇄</button><button class="btn secondary small" data-act="ins" data-n="${n}" type="button" title="Insertar uno debajo" aria-label="Insertar debajo">＋</button><button class="btn danger small" data-act="del" data-n="${n}" type="button" aria-label="Quitar">✕</button></span></div>`;
+  });
+  el.innerHTML = html || '<p class="hint">No hay emisiones. Usa «Añadir al final» o genera la parrilla en Horarios.</p>';
+  const diff = total - 86400, dTxt = Math.abs(diff) < 60 ? "justo 24 h" : diff > 0 ? `${fmtDuration(diff)} más que un día` : `${fmtDuration(-diff)} menos que un día`;
+  $("day-info").textContent = order.length ? `${order.length} emisiones · ciclo ${fmtDuration(total)} (${dTxt})${S != null ? ` · empieza a las ${clockTxt(S)}` : ""}` : "";
+  $("day-undo").disabled = !dayUndo.length;
+  markDayAir();
+}
+function markDayAir() {
+  const el = $("day-list"); if (!el || $("tab-dia").classList.contains("hidden")) return;
+  let idx = -1; try { idx = airOrderIndex(); } catch { /* sin emisión */ }
+  el.querySelectorAll(".day-row").forEach((r) => r.classList.toggle("air", Number(r.dataset.n) === idx));
+}
+// Aplica un cambio a la lista de emisiones, lo guarda y deja el paso anterior para «Deshacer».
+async function dayEdit(fn, msg) {
+  const before = [...state.plan.order];
+  if (fn(state.plan.order) === false) return;
+  dayUndo.push(before); if (dayUndo.length > 40) dayUndo.shift();
+  try { await savePlan(); renderAll(); if (msg) toast(msg, "ok"); } catch (err) { fail(err); }
+}
+function initDay() {
+  const list = $("day-list");
+  list.addEventListener("click", async (e) => {
+    const b = e.target.closest("[data-act]"); if (!b) return;
+    const n = Number(b.dataset.n), act = b.dataset.act, id = state.plan.order[n], it = state.lib.find((x) => x.id === id);
+    if (act === "up" || act === "down") { const m = n + (act === "up" ? -1 : 1); await dayEdit((o) => { if (m < 0 || m >= o.length) return false; [o[n], o[m]] = [o[m], o[n]]; }); }
+    else if (act === "del") {
+      await dayEdit((o) => { o.splice(n, 1); }, state.plan.order.includes(id) ? `Quité esa emisión de «${it?.title}». Sigue en la parrilla principal.` : `Quité «${it?.title}»: ya no queda ninguna emisión suya, salió de la parrilla principal.`);
+    } else if (act === "swap") { const nid = await pickProgram("Cambiar por otro programa", it?.cat); if (nid) await dayEdit((o) => { o[n] = nid; }); }
+    else if (act === "ins") { const nid = await pickProgram("Insertar debajo", it?.cat); if (nid) await dayEdit((o) => { o.splice(n + 1, 0, nid); }); }
+  });
+  // Arrastrar y soltar (en pantallas táctiles usa ↑ ↓)
+  let from = -1;
+  list.addEventListener("dragstart", (e) => { const r = e.target.closest(".day-row"); if (!r) return; from = Number(r.dataset.n); r.classList.add("drag"); try { e.dataTransfer.effectAllowed = "move"; e.dataTransfer.setData("text/plain", String(from)); } catch { /* */ } });
+  list.addEventListener("dragend", () => { from = -1; list.querySelectorAll(".drag,.over").forEach((x) => x.classList.remove("drag", "over")); });
+  list.addEventListener("dragover", (e) => { const r = e.target.closest(".day-row"); if (!r || from < 0) return; e.preventDefault(); list.querySelectorAll(".over").forEach((x) => x.classList.remove("over")); r.classList.add("over"); });
+  list.addEventListener("drop", async (e) => {
+    const r = e.target.closest(".day-row"); if (!r || from < 0) return; e.preventDefault();
+    const to = Number(r.dataset.n), f = from; from = -1;
+    if (to !== f) await dayEdit((o) => { const [x] = o.splice(f, 1); o.splice(to, 0, x); });
+  });
+  $("day-add").addEventListener("click", async () => { const nid = await pickProgram("Añadir al final del ciclo"); if (nid) await dayEdit((o) => { o.push(nid); }, "Añadido al final."); });
+  $("day-undo").addEventListener("click", async () => {
+    const prev = dayUndo.pop(); if (!prev) return;
+    state.plan.order = prev;
+    try { await savePlan(); renderAll(); toast("Deshecho.", "ok"); } catch (err) { fail(err); }
+  });
+  $("day-pub").addEventListener("click", () => publish(false));
+  setInterval(markDayAir, 5000);
+  // Modo ampliado: el panel de control ocupa toda la pantalla y tapa la vista previa
+  const sec = document.querySelector('section[aria-label="Control"]');
+  const setBig = (on) => {
+    sec.classList.toggle("ctl-big", on); document.body.classList.toggle("ctl-big-on", on);
+    $("ctl-expand").textContent = on ? "✕ Reducir" : "⤢ Ampliar"; $("ctl-expand").setAttribute("aria-pressed", on ? "true" : "false");
+    try { localStorage.setItem("fogon.ctlBig", on ? "1" : "0"); } catch { /* */ }
+    if (on) sec.scrollTop = 0;
+  };
+  $("ctl-expand").addEventListener("click", () => setBig(!sec.classList.contains("ctl-big")));
+  document.addEventListener("keydown", (e) => { if (e.key === "Escape" && sec.classList.contains("ctl-big") && $("dpick").classList.contains("hidden")) setBig(false); });
+  try { if (localStorage.getItem("fogon.ctlBig") === "1") setBig(true); } catch { /* */ }
 }

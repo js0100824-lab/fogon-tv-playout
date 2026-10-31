@@ -68,6 +68,51 @@ details.cycle-box:not([open])>summary{opacity:.8}
 #timeline .tl-in i.ad.cur{background:#f2bd3a}
 #timeline .tl-in i span{position:absolute;left:6px;right:4px;top:8px;font-size:12px;font-weight:600;color:#eafff5;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;pointer-events:none}
 #timeline .tl-in u{position:absolute;top:0;bottom:0;width:3px;margin-left:-1px;background:#fff;box-shadow:0 0 8px rgba(255,255,255,.9);z-index:2;pointer-events:none}
+
+/* ===== Modo ampliado: el panel de control tapa la vista previa y ocupa toda la pantalla ===== */
+.ctl-bar{display:flex;justify-content:flex-end;gap:8px;margin:0 0 8px}
+.ctl-bar .btn{min-height:40px}
+body.ctl-big-on{overflow:hidden}
+section.ctl-big{position:fixed !important;inset:0;z-index:200;overflow:auto;background:#0e1216;color:#e8eaed;padding:10px 14px 28px;box-sizing:border-box;width:auto !important;max-width:none !important;margin:0 !important;border-radius:0 !important}
+section.ctl-big .ctl-bar{position:sticky;top:0;z-index:6;background:#0e1216;padding:6px 0;margin:0 auto;max-width:1400px}
+section.ctl-big>.tabs,section.ctl-big>.col-b{max-width:1400px;margin-left:auto;margin-right:auto;overflow:visible !important}
+section.ctl-big #order-list{display:grid;grid-template-columns:repeat(auto-fill,minmax(340px,1fr));gap:0 16px}
+section.ctl-big #slot-list{display:grid;grid-template-columns:repeat(auto-fill,minmax(360px,1fr));gap:10px 14px}
+section.ctl-big #cycle-list{columns:2 420px}
+section.ctl-big #day-list{max-width:1200px}
+/* ===== Editor de las 24 horas ===== */
+#day-list{margin:8px 0}
+.day-h{position:sticky;top:0;z-index:2;margin:14px 0 4px;padding:6px 10px;border-radius:8px;background:#1b2229;font-weight:700;font-size:13px;letter-spacing:.02em;display:flex;justify-content:space-between;gap:8px}
+section.ctl-big .day-h{top:52px}
+.day-h.warn{background:#4a3a10;color:#f2bd3a}
+.day-row{display:flex;align-items:center;gap:8px;padding:8px 6px;border-bottom:1px solid rgba(255,255,255,.08);min-width:0}
+.day-row.over{outline:2px dashed #1fb5c4;outline-offset:-2px}
+.day-row.air{background:rgba(63,174,130,.18)}
+.day-row.drag{opacity:.4}
+.day-grip{flex:none;cursor:grab;opacity:.5;font-size:20px;line-height:1;padding:4px 2px;user-select:none;touch-action:none}
+.day-t{flex:none;width:7.4em;font-variant-numeric:tabular-nums;font-size:15px;line-height:1.25}
+.day-t small{display:block;opacity:.65;font-size:12px}
+.day-main{flex:1 1 0;min-width:0;display:flex;flex-direction:column;gap:3px}
+.day-main b{overflow-wrap:anywhere;line-height:1.25}
+.day-meta{display:flex;flex-wrap:wrap;gap:4px 6px;align-items:center;font-size:12px;opacity:.9}
+.day-meta .tag{white-space:nowrap}
+.tag.rep{background:#33507a;color:#fff}
+.tag.off{background:#7a5a12;color:#fff}
+.day-btns{flex:none;display:flex;gap:4px;flex-wrap:wrap;justify-content:flex-end;max-width:12em}
+.day-btns .btn{min-width:38px;min-height:38px;padding:0 8px}
+@media (max-width:700px){.day-row{flex-wrap:wrap}.day-t{width:auto}.day-btns{max-width:none;flex:0 0 100%}.day-btns .btn{flex:1}}
+#day-info{margin:6px 0}
+/* ===== Franjas: barra de 24 horas ===== */
+#slot-strip{position:relative;height:46px;margin:8px 0 22px;background:#0b0f0d;border-radius:8px}
+#slot-strip i{position:absolute;top:0;bottom:0;display:flex;align-items:center;padding:0 5px;overflow:hidden;font-style:normal;font-size:11px;font-weight:700;color:#fff;box-shadow:inset -1px 0 0 rgba(0,0,0,.5);white-space:nowrap;text-overflow:ellipsis}
+#slot-strip i.ov{outline:2px solid #e5484d;outline-offset:-2px;z-index:2}
+#slot-strip b{position:absolute;top:100%;margin-top:3px;transform:translateX(-50%);font-size:10px;font-weight:400;opacity:.7;white-space:nowrap}
+#slot-warn{margin:-14px 0 8px;font-size:13px}
+.slot-sum{margin:10px 0 -4px;font-weight:700;font-size:14px;display:flex;justify-content:space-between;gap:8px}
+.slot-sum span{opacity:.7;font-weight:400}
+.dpick-box{max-width:560px !important}
+.dpick-box input,.dpick-box select{width:100%;box-sizing:border-box;min-height:40px;font-size:16px;margin-bottom:8px}
+.dpick-box .pick-list{max-height:50vh}
 @media (max-width:700px){#timeline{height:96px}.tl-btns .btn{min-width:46px;min-height:40px}}
 #b-ticker{width:100%;box-sizing:border-box;min-height:110px;padding:8px;font:inherit;line-height:1.4;color:inherit;background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.18);border-radius:6px;resize:vertical}
 table.live tr.ad td{color:#f2bd3a}
@@ -239,8 +284,10 @@ html,body{max-width:100%;overflow-x:hidden}
     </section>
 
     <section class="col" aria-label="Control">
+      <div class="ctl-bar"><button class="btn secondary" id="ctl-expand" type="button" aria-pressed="false">⤢ Ampliar</button></div>
       <ul class="tabs" id="nav" role="tablist">
         <li><button data-tab="programacion" class="active">Parrilla</button></li>
+        <li><button data-tab="dia">24 horas</button></li>
         <li><button data-tab="horarios">Horarios</button></li>
         <li><button data-tab="comercial">Comerciales</button></li>
         <li><button data-tab="envivo">En vivo</button></li>
@@ -284,11 +331,20 @@ html,body{max-width:100%;overflow-x:hidden}
           <div class="row"><button class="btn" id="publish-btn2" type="button">Guardar y publicar</button><button class="btn danger" id="publish-restart" type="button">Publicar y reiniciar</button></div>
         </section>
 
+        <section id="tab-dia" class="tab hidden">
+          <p class="hint">Cada fila es una emisión del ciclo de 24 horas, con sus repeticiones. Arrastra ⠿ o usa ↑ ↓ para moverla, ⇄ para cambiar el programa, ＋ para insertar uno debajo y ✕ para quitar esa emisión. Al terminar, pulsa «Guardar y publicar».</p>
+          <div class="row"><button class="btn small" id="day-add" type="button">＋ Añadir al final</button><button class="btn secondary small" id="day-undo" type="button" disabled>↶ Deshacer</button><button class="btn small" id="day-pub" type="button">Guardar y publicar</button></div>
+          <p id="day-info" class="hint"></p>
+          <div id="day-list"></div>
+        </section>
+
         <section id="tab-horarios" class="tab hidden">
           <h3 class="sub">Categorías</h3>
           <div id="cat-chips" class="chips"></div>
           <div class="row"><input id="cat-new" placeholder="Nueva categoría" maxlength="30"><button class="btn secondary small" id="cat-add" type="button">Añadir</button></div>
           <h3 class="sub">Franjas</h3>
+          <div id="slot-strip" aria-label="Las 24 horas del día por franja"></div>
+          <p id="slot-warn" class="warn"></p>
           <div id="slot-list"></div>
           <div class="row"><button class="btn secondary small" id="slot-add" type="button">Añadir franja</button><button class="btn secondary small" id="slot-reset" type="button">Restaurar franjas</button></div>
           <h3 class="sub">Orden</h3>
@@ -374,6 +430,7 @@ html,body{max-width:100%;overflow-x:hidden}
   </div>
 </div>
 
-<script type="module" src="../js/admin.js?v=72"></script>
+<div id="dpick" class="dlg hidden" role="dialog" aria-modal="true" aria-labelledby="dpick-title"><div class="dlg-box dpick-box"><h3 id="dpick-title">Elegir programa</h3><input id="dpick-q" type="search" placeholder="Buscar" autocomplete="off"><select id="dpick-cat" aria-label="Categoría"></select><div id="dpick-list" class="pick-list"></div><div class="dlg-actions"><button class="btn secondary" id="dpick-cancel" type="button">Cancelar</button></div></div></div>
+<script type="module" src="../js/admin.js?v=73"></script>
 </body>
 </html>
