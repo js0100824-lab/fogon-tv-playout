@@ -115,7 +115,9 @@ export function continuousLayout(programs, rawPlan) {
 export function buildCycle(library, rawPlan) {
   const plan = planWithDefaults(rawPlan);
   const byId = new Map(library.map((i) => [i.id, i]));
-  const programs = (plan.order || []).map((id) => byId.get(id)).filter((i) => i && i.duration > 0);
+  // plan.fit = { order, durs }: duración ajustada de algunos programas (para que cada franja termine a su hora). Solo vale si la parrilla sigue igual.
+  const fit = plan.fit && Array.isArray(plan.fit.order) && plan.fit.order.length === (plan.order || []).length && plan.fit.order.every((id, n) => id === plan.order[n]) ? plan.fit.durs || {} : null;
+  const programs = (plan.order || []).map((id, n) => { const i = byId.get(id); if (!i) return null; const o = fit ? Number(fit[n]) : 0; return o > 0 && o !== i.duration ? { ...i, duration: o } : i; }).filter((i) => i && i.duration > 0);
   const ads = activeAds(library, plan);
   const count = Math.max(0, Math.floor(Number(plan.breakCount) || 0));
   const repeat = Math.max(1, Math.floor(Number(plan.breakRepeat) || 1));
@@ -319,4 +321,171 @@ export function nowNext(items, epochMs, nowMs, nextItems) {
   }
   const strip = (x) => x && { title: x.title, start: x.start, end: x.end, duration: x.duration };
   return { now: strip(now), next: strip(next), ad: items[loc.index].type === "comercial" };
+}
+
+
+/* ---------------- Generador de horarios (franjas por categoría) ----------------
+   Reglas:
+   · Un programa SIEMPRE termina completo, aunque se pase de la hora de su franja (la siguiente franja gana menos tiempo).
+   · La única excepción es el último bloque del día, si es «Variado» (*): ahí la hora se repite y se corta de golpe para dar paso a lo que sigue.
+   · Cuando los programas de una categoría no alcanzan, se repiten al azar en otro orden: si la primera vuelta fue A-B-C, la siguiente no puede ser A-B-C.
+   · Un programa nuevo entra enseguida en la franja de su categoría (placeNewProgram). */
+export const isKids = (c) => /caricatur|mu[nñ]equit|infantil|dibujos/i.test(c || "");
+
+export function shuffleList(list, rng = Math.random) {
+  const a = list.slice();
+  for (let i = a.length - 1; i > 0; i--) { const k = Math.floor(rng() * (i + 1)); [a[i], a[k]] = [a[k], a[i]]; }
+  return a;
+}
+
+export function sortPrograms(list, how, createdMs = () => 0, rng = Math.random) {
+  if (how === "rnd") return shuffleList(list, rng);
+  const f = {
+    long: (x, y) => y.duration - x.duration, short: (x, y) => x.duration - y.duration,
+    new: (x, y) => createdMs(y) - createdMs(x), old: (x, y) => createdMs(x) - createdMs(y),
+    az: (x, y) => (x.title || "").localeCompare(y.title || "")
+  }[how];
+  return f ? list.slice().sort(f) : list.slice();
+}
+
+// Franjas {from,to,cat} → trozos del día contados desde el minuto S. La franja en curso se parte: primero lo que le queda, al final lo que ya pasó.
+export function normalizeSlots(slots, S0, toMin) {
+  const raw = (slots || []).map((s) => ({ f: toMin(s.from), t: toMin(s.to), cat: s.cat }));
+  if (!raw.length) return null;
+  const S = S0 == null ? raw[0].f : S0, out = [];
+  for (const s of raw) {
+    const len = ((s.t - s.f + 1440) % 1440) || 1440, off = (S - s.f + 1440) % 1440;
+    if (off < len) {
+      out.push({ cat: s.cat, start: 0, end: len - off });
+      if (off > 0) out.push({ cat: s.cat, start: 1440 - off, end: 1440 });
+    } else { const rel = (s.f - S + 1440) % 1440; out.push({ cat: s.cat, start: rel, end: Math.min(1440, rel + len) }); }
+  }
+  return { S, slots: out.sort((a, b) => a.start - b.start) };
+}
+
+// Programas de una franja. «Variado» (*) va rotando entre las categorías (menos caricaturas), empezando por una distinta cada vez.
+export function poolFor(s, base, how, rot, createdMs, rng) {
+  if (s.cat !== "*") return sortPrograms(base.filter((i) => i.cat === s.cat), how, createdMs, rng);
+  const groups = new Map();
+  for (const i of sortPrograms(base.filter((x) => !isKids(x.cat)), how, createdMs, rng)) { const k = i.cat || ""; if (!groups.has(k)) groups.set(k, []); groups.get(k).push(i); }
+  let lists = [...groups.values()]; if (lists.length) { const r = rot % lists.length; lists = lists.slice(r).concat(lists.slice(0, r)); }
+  const out = [];
+  for (let k = 0; ; k++) { let any = false; for (const l of lists) if (l[k]) { out.push(l[k]); any = true; } if (!any) break; }
+  return out;
+}
+
+// Orden de una vuelta de repetición: al azar y distinto al de TODAS las vueltas anteriores (ABC → BCA, nunca otra vez ABC) mientras queden órdenes sin usar;
+// si se puede, sin empezar con el último que salió.
+const factorial = (n) => { let f = 1; for (let k = 2; k <= n; k++) f *= k; return f; };
+function nextRound(pool, rd, last, rng) {
+  if (pool.length < 2) return pool.slice();
+  const prev = rd.played, key = prev.join("|");
+  if (prev.length === pool.length) rd.seen.add(key);
+  if (pool.length <= 8 && rd.seen.size >= factorial(pool.length)) { rd.seen = new Set(prev.length === pool.length ? [key] : []); }   // ya salieron todos los órdenes posibles: se empieza de nuevo
+  let soft = null;
+  for (let t = 0; t < 200; t++) {
+    const a = shuffleList(pool, rng), k = a.map((i) => i.id).join("|");
+    if (rd.seen.has(k) || (prev.length && a.slice(0, prev.length).map((i) => i.id).join("|") === key)) continue;
+    if (a[0].id !== last) return a;
+    soft = soft || a;
+  }
+  return soft || pool.slice(1).concat(pool[0]);
+}
+
+// Devuelve { order, durs, rows, len, slotMap }. `durs` solo puede tener una entrada: el último programa del último bloque «Variado» (el único que se corta).
+export function buildSchedule({ library, plan, ns, how, skipBad = true, createdMs = () => 0, rng = Math.random }) {
+  const base = library.filter((i) => i.kind === "programa" && i.duration > 0 && !(skipBad && i.fbOk === false));
+  const durs = {}, order = [], used = new Set(), rows = [], rounds = new Map();
+  const ev = (ids) => cycleLength(buildCycle(library, { ...plan, order: ids, fit: { order: ids, durs } }));   // largo real del ciclo (anuncios incluidos)
+  const fitTo = (idx, lo, hi, end) => { let a = lo, b = hi; while (a < b) { const m = Math.ceil((a + b) / 2); durs[idx] = m; if (ev(order) <= end) a = m; else b = m - 1; } durs[idx] = a; };
+  const lastSlot = ns.slots.length - 1;
+  let len = 0, last = null, rot = 0;
+  ns.slots.forEach((s, si) => {
+    const cutOk = si === lastSlot && s.cat === "*";                  // solo aquí se permite cortar de golpe
+    const end = s.end * 60, pool = poolFor(s, base, how, rot, createdMs, rng), row = { ...s, n: 0, startAt: len, i0: order.length, cut: false };
+    if (s.cat === "*") rot++;
+    if (!pool.length) { row.empty = true; row.endAt = len; row.i1 = order.length; rows.push(row); return; }
+    const rd = rounds.get(s.cat) || { played: [], seen: new Set(), ord: null }; rounds.set(s.cat, rd);
+    const byId = new Map(pool.map((i) => [i.id, i]));
+    let ord = rd.ord ? rd.ord.map((id) => byId.get(id)).filter(Boolean) : []; for (const i of pool) if (!ord.includes(i)) ord.push(i);
+    const take = (i, t) => { used.add(i.id); last = i.id; rd.played.push(i.id); row.n++; len = t; };
+    for (let guard = 0; guard < 300 && end - len > 60; guard++) {
+      let cand = ord.filter((i) => !used.has(i.id));
+      if (!cand.length) {   // ya salieron todos: otra vuelta, al azar y en otro orden
+        pool.forEach((i) => used.delete(i.id));
+        ord = nextRound(pool, rd, last, rng); rd.played = []; cand = ord.slice();
+      }
+      let pick = null;
+      for (const i of cand) { const t = ev([...order, i.id]); if (t <= end) { pick = { i, t }; break; } }
+      if (cutOk) {
+        // Último bloque del día: se evita dejar un hueco al final cortando de golpe un programa justo a la hora.
+        if (!pick || end - pick.t < 120) {
+          const over = cand.find((i) => (!pick || i.id !== pick.i.id) && ev([...order, i.id]) > end);
+          if (over && end - len >= 60) {
+            const idx = order.length; order.push(over.id); fitTo(idx, 30, over.duration, end);
+            if (ev(order) <= end) { take(over, ev(order)); row.cut = true; continue; }
+            order.pop(); delete durs[idx];
+          }
+        }
+      } else if (!pick) {
+        // Nada cabe entero: entra el que se pase menos, y termina completo. Solo si así queda más cerca de la hora que dejando la franja corta.
+        let best = null; for (const i of cand) { const t = ev([...order, i.id]); if (!best || t < best.t) best = { i, t }; }
+        if (best && best.t - end <= end - len) pick = best;
+      }
+      if (!pick) break;
+      order.push(pick.i.id); take(pick.i, pick.t);
+    }
+    rd.ord = ord.map((i) => i.id);
+    row.endAt = len; row.i1 = order.length; rows.push(row);
+  });
+  const fin = rows[rows.length - 1], tailFrom = fin && ns.slots[lastSlot].cat === "*" && fin.n > 0 ? fin.i0 : -1;
+  const slotMap = { order: [...order], target: ns.slots[lastSlot].end * 60, tailFrom, rows: rows.map(({ cat, start, end, i0, i1 }) => ({ cat, start, end, i0, i1 })) };
+  return { order, durs, rows, len, slotMap };
+}
+
+// Tras meter un programa en la parrilla, el ciclo crece. Si el último bloque es «Variado» (se puede cortar), ahí se recupera el tiempo:
+// se acorta el último programa y, si hace falta, se quitan los últimos, para que el día siga cerrando a su hora.
+export function absorbTail(library, plan) {
+  const sm = plan.slotMap; if (!sm || !(sm.tailFrom >= 0) || !(sm.target > 0)) return false;
+  const order = plan.order, durs = { ...(plan.fit?.durs || {}) };
+  const ev = () => cycleLength(buildCycle(library, { ...plan, order, fit: { order, durs } }));
+  const byId = new Map(library.map((i) => [i.id, i]));
+  let changed = false;
+  while (ev() > sm.target && order.length - 1 >= sm.tailFrom) {
+    const idx = order.length - 1, full = byId.get(order[idx])?.duration || 0, cur = durs[idx] > 0 ? durs[idx] : full;
+    durs[idx] = 30;
+    if (ev() <= sm.target) { let a = 30, b = cur; while (a < b) { const m = Math.ceil((a + b) / 2); durs[idx] = m; if (ev() <= sm.target) a = m; else b = m - 1; } durs[idx] = a; changed = true; break; }
+    delete durs[idx]; order.pop(); changed = true;
+    sm.rows[sm.rows.length - 1].i1 = Math.min(sm.rows[sm.rows.length - 1].i1, order.length);
+  }
+  plan.fit = { order: [...order], durs }; sm.order = [...order];
+  return changed;
+}
+
+// Mete un programa nuevo en la franja de su categoría. airIdx = posición (en plan.order) del programa al aire (-1 si no se sabe).
+// Si el programa al aire está en esa franja, el nuevo sale justo después; si la franja viene más adelante, sale primero en ella; si ya pasó hoy, queda para la próxima repetición.
+// Devuelve { at, cat } o null (no hay franja para esa categoría o la parrilla se editó a mano y ya no se sabe dónde va cada franja).
+export function placeNewProgram(library, plan, item, airIdx = -1) {
+  const sm = plan.slotMap, order = plan.order || [];
+  if (!sm || !Array.isArray(sm.rows) || !item?.cat || order.includes(item.id)) return null;
+  if (!(Array.isArray(sm.order) && sm.order.length === order.length && sm.order.every((id, n) => id === order[n]))) {
+    // La parrilla se tocó a mano y ya no se sabe dónde cae cada franja: entra después del último programa de su categoría.
+    const byId = new Map(library.map((i) => [i.id, i])); let j = -1;
+    order.forEach((id, n) => { if (byId.get(id)?.cat === item.cat) j = n; });
+    if (j < 0) return null;
+    order.splice(j + 1, 0, item.id); plan.fit = null; plan.slotMap = { ...sm, order: null };
+    return { at: j + 1, cat: item.cat };
+  }
+  let cand = sm.rows.map((r, n) => ({ r, n })).filter(({ r }) => r.cat === item.cat);
+  if (!cand.length && !isKids(item.cat)) cand = sm.rows.map((r, n) => ({ r, n })).filter(({ r }) => r.cat === "*");
+  if (!cand.length) return null;
+  const pick = cand.find(({ r }) => r.i1 > airIdx) || cand[0], r = pick.r;
+  const at = airIdx >= r.i0 && airIdx < r.i1 ? airIdx + 1 : r.i0;
+  order.splice(at, 0, item.id);
+  sm.rows.forEach((x, n) => { if (n === pick.n) x.i1++; else if (n > pick.n) { x.i0++; x.i1++; } });
+  const durs = {}; for (const [k, v] of Object.entries(plan.fit?.durs || {})) durs[Number(k) >= at ? Number(k) + 1 : Number(k)] = v;
+  plan.fit = { order: [...order], durs }; sm.order = [...order];
+  if (sm.tailFrom >= 0) sm.tailFrom = sm.rows[sm.rows.length - 1].i0;
+  absorbTail(library, plan);
+  return { at, cat: r.cat === "*" ? "Variado" : r.cat };
 }

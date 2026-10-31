@@ -7,7 +7,7 @@ import {
   doc, getDoc, setDoc, addDoc, deleteDoc, updateDoc, deleteField, getDocs, collection, query, orderBy, limit, serverTimestamp
 } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore.js";
 import { ref as sRef, uploadBytesResumable, getDownloadURL, deleteObject } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-storage.js";
-import { parseDuration, fmtDuration, youtubeId, facebookUrl, parseLiveLink, buildCycle, cycleLength, locate, planWithDefaults, compactChannel, expandChannel, describeCuts, itemLabel, intervalSeconds, seamlessPublish, jumpPublish, settleChannel } from "./engine.js?v=33";
+import { parseDuration, fmtDuration, youtubeId, facebookUrl, parseLiveLink, buildCycle, cycleLength, locate, planWithDefaults, compactChannel, expandChannel, describeCuts, itemLabel, intervalSeconds, seamlessPublish, jumpPublish, settleChannel, buildSchedule, normalizeSlots, sortPrograms, placeNewProgram } from "./engine.js?v=35";
 import { serverNow, startClock } from "./clock.js";
 
 const $ = (id) => document.getElementById(id);
@@ -317,7 +317,7 @@ async function addItem(e) {
       resetEdit();
       // Si ese contenido está en la emisión, se publica solo: el aire usa el enlace y la duración nuevos (si está al aire y cambió la duración, se reinicia).
       if (inChannel) { toast("Guardado. Actualizando la emisión…", "ok"); await publish(true, false, { reloadId: durChanged && air === eid ? eid : null }); }
-      else toast("Cambios guardados.", "ok");
+      else { toast("Cambios guardados.", "ok"); await autoPlace(state.lib.find((x) => x.id === eid)); }
     } else { await saveItem({ title: $("lib-title").value.trim(), kind, url, duration, cat: kind === "programa" ? $("lib-cat").value : "", ...extra }); $("lib-form").reset(); toast("Contenido guardado.", "ok"); }
   } catch (err) { fail(err); }
 }
@@ -327,6 +327,7 @@ async function saveItem(d) {
   state.lib.push({ id: r.id, ...data });
   state.lib.sort((a, b) => a.title.localeCompare(b.title));
   renderAll();
+  await autoPlace(state.lib.find((x) => x.id === r.id));   // programa nuevo con categoría: entra enseguida en su franja
 }
 async function uploadFiles(files, kind) {
   for (const f of files) {
@@ -400,7 +401,8 @@ function renderLibrary() {
   el.querySelectorAll("[data-grid]").forEach((b) => b.addEventListener("click", () => addToGrid(b.dataset.grid)));
   el.querySelectorAll("[data-cat]").forEach((s) => s.addEventListener("change", async () => {
     const it = state.lib.find((x) => x.id === s.dataset.cat); if (!it) return;
-    try { await updateDoc(doc(db, "library", it.id), { cat: s.value }); it.cat = s.value; toast("Guardado.", "ok"); } catch (err) { fail(err); }
+    try { await updateDoc(doc(db, "library", it.id), { cat: s.value }); it.cat = s.value; toast("Guardado.", "ok"); } catch (err) { fail(err); return; }
+    await autoPlace(it);   // si aún no estaba en la parrilla, entra en la franja de su nueva categoría
   }));
   el.querySelectorAll("[data-copy]").forEach((b) => b.addEventListener("click", async () => { try { await navigator.clipboard.writeText(b.dataset.copy); b.textContent = "Copiado ✓"; setTimeout(() => { b.textContent = "Copiar enlace"; }, 1500); } catch { toast("No se pudo copiar. Mantén pulsado el enlace para copiarlo.", "error"); } }));
   el.querySelectorAll("[data-del]").forEach((b) => b.addEventListener("click", async () => {
@@ -667,7 +669,7 @@ async function toggleLive() {
 async function publish(auto, restart, opts) {
   restart = restart === true;   // true solo desde el botón «Publicar y reiniciar»
   opts = opts && typeof opts === "object" && !(opts instanceof Event) ? opts : {};
-  if (restart && !(await askConfirm({ title: opts.alignAt ? "¿Publicar a este horario?" : "¿Reiniciar la emisión?", text: opts.alignAt ? `El primer programa queda a las ${opts.label}, igual que el reloj.` : "Empieza desde el primer programa.", ok: opts.alignAt ? "Publicar" : "Reiniciar", danger: true }))) return;
+  if (restart && !opts.noAsk && !(await askConfirm({ title: opts.alignAt ? "¿Publicar a este horario?" : "¿Reiniciar la emisión?", text: opts.alignAt ? `El primer programa queda a las ${opts.label}, igual que el reloj.` : "Empieza desde el primer programa.", ok: opts.alignAt ? "Publicar" : "Reiniciar", danger: true }))) return;
   let why = opts.alignAt ? "align" : restart ? "restart" : "";
   const items = buildCycle(state.lib, state.plan);
   if (!items.length && !auto && !(await askConfirm({ title: "Parrilla vacía", text: "El público verá «Sin programación».", ok: "Publicar" }))) return;
@@ -859,30 +861,39 @@ async function loadStats() {
 /* ===== Parrilla práctica · Añadir rápido · Horarios por categoría · Verificador de videos ===== */
 const DEFAULT_CATS = ["Caricaturas", "Informativos", "Entretenimiento", "Novelas", "Películas"];
 const DEFAULT_SLOTS = [
+  { from: "06:00", to: "10:00", cat: "Caricaturas" }, { from: "10:00", to: "14:00", cat: "Informativos" },
+  { from: "14:00", to: "18:00", cat: "Entretenimiento" }, { from: "18:00", to: "22:00", cat: "Novelas" },
+  { from: "22:00", to: "00:00", cat: "Informativos" }, { from: "00:00", to: "02:00", cat: "Películas" },
+  { from: "02:00", to: "06:00", cat: "*" }
+];
+const OLD_SLOTS = JSON.stringify([
   { from: "06:00", to: "10:00", cat: "Caricaturas" }, { from: "10:00", to: "13:00", cat: "Informativos" },
   { from: "13:00", to: "17:00", cat: "Entretenimiento" }, { from: "17:00", to: "18:00", cat: "*" },
   { from: "18:00", to: "21:00", cat: "Novelas" }, { from: "21:00", to: "22:00", cat: "*" },
   { from: "22:00", to: "00:00", cat: "Películas" }, { from: "00:00", to: "06:00", cat: "*" }
-];
+]);
 const ORDERS = { long: "Mayor a menor duración", short: "Menor a mayor duración", new: "Más recientes primero", old: "Más antiguos primero", az: "A–Z", rnd: "Al azar" };
 function ensureSched() {
   const p = state.plan;
   if (!Array.isArray(p.cats)) p.cats = [...DEFAULT_CATS];
-  if (!Array.isArray(p.slots)) p.slots = DEFAULT_SLOTS.map((s) => ({ ...s }));
-  p.quick = { which: "new", order: "long", cat: "", max: "", skipBad: true, replace: false, ...(p.quick || {}) };
-  p.hOpt = { order: "old", skipBad: true, ...(p.hOpt || {}) };
+  if (Array.isArray(p.slots) && JSON.stringify(p.slots.map(({ from, to, cat }) => ({ from, to, cat }))) === OLD_SLOTS) p.slots = null;   // las franjas de la versión anterior se cambian por las nuevas
+  if (!Array.isArray(p.slots) || !p.slots.length) p.slots = DEFAULT_SLOTS.map((s) => ({ ...s }));
+  p.quick = { which: "new", order: "long", cat: "", max: "", skipBad: true, replace: false, time: true, ...(p.quick || {}) };
+  p.hOpt = { order: "old", skipBad: true, fromNow: true, ...(p.hOpt || {}) };
 }
 const catsAll = () => [...new Set([...(state.plan.cats || []), ...(state.plan.slots || []).map((s) => s.cat).filter((c) => c && c !== "*"), ...state.lib.map((i) => i.cat).filter(Boolean)])];
-function sortProgs(list, how) {
-  const a = list.slice();
-  if (how === "rnd") { for (let i = a.length - 1; i > 0; i--) { const k = Math.floor(Math.random() * (i + 1)); [a[i], a[k]] = [a[k], a[i]]; } return a; }
-  const f = { long: (x, y) => y.duration - x.duration, short: (x, y) => x.duration - y.duration, new: (x, y) => createdMs(y) - createdMs(x), old: (x, y) => createdMs(x) - createdMs(y), az: (x, y) => (x.title || "").localeCompare(y.title || "") }[how];
-  return f ? a.sort(f) : a;
-}
+const sortProgs = (list, how) => sortPrograms(list, how, createdMs);
 const toMin = (t) => { const [hh, mm] = String(t || "0:0").split(":").map(Number); return (((hh || 0) * 60 + (mm || 0)) % 1440 + 1440) % 1440; };
 const clockTxt = (min) => { min = Math.round(((min % 1440) + 1440) % 1440); const hh = Math.floor(min / 60), mm = min % 60; return `${hh % 12 || 12}:${String(mm).padStart(2, "0")} ${hh < 12 ? "AM" : "PM"}`; };
 const plusHour = (t) => `${String((Math.floor(toMin(t) / 60) + 1) % 24).padStart(2, "0")}:${String(toMin(t) % 60).padStart(2, "0")}`;
 let schedVals = false, lastSched = null;
+const tsel = (n, k, v) => {
+  const m = toMin(v), h24 = Math.floor(m / 60), h12 = h24 % 12 || 12, mi = m % 60, mins = [...new Set([...Array(12).keys()].map((x) => x * 5).concat(mi))].sort((a, b) => a - b);
+  return `<span class="tsel" data-n="${n}" data-k="${k}"><small class="tl">${k === "from" ? "Desde" : "Hasta"}</small>`
+    + `<select data-tp="h" aria-label="Hora">${[...Array(12).keys()].map((x) => `<option value="${x + 1}"${x + 1 === h12 ? " selected" : ""}>${x + 1}</option>`).join("")}</select><b>:</b>`
+    + `<select data-tp="m" aria-label="Minutos">${mins.map((x) => `<option value="${x}"${x === mi ? " selected" : ""}>${String(x).padStart(2, "0")}</option>`).join("")}</select>`
+    + `<select data-tp="a" aria-label="AM o PM"><option value="AM"${h24 < 12 ? " selected" : ""}>AM</option><option value="PM"${h24 >= 12 ? " selected" : ""}>PM</option></select></span>`;
+};
 
 function initSched() {
   ["q-order", "h-order"].forEach((id) => { $(id).innerHTML = Object.entries(ORDERS).map(([k, v]) => `<option value="${k}">${v}</option>`).join(""); });
@@ -897,13 +908,17 @@ function initSched() {
   $("cat-chips").addEventListener("click", (e) => { const b = e.target.closest("[data-catdel]"); if (!b) return; state.plan.cats.splice(Number(b.dataset.catdel), 1); savePlan().then(renderAll).catch(fail); });
   $("slot-add").addEventListener("click", () => { const l = state.plan.slots.at(-1); state.plan.slots.push({ from: l ? l.to : "06:00", to: plusHour(l ? l.to : "06:00"), cat: "*" }); savePlan().then(renderSched).catch(fail); });
   $("slot-list").addEventListener("change", (e) => {
-    const t = e.target, s = state.plan.slots;
-    if (t.dataset.sf != null) s[+t.dataset.sf].from = t.value; else if (t.dataset.st != null) s[+t.dataset.st].to = t.value; else if (t.dataset.sc != null) s[+t.dataset.sc].cat = t.value; else return;
+    const t = e.target, sl = state.plan.slots, box = t.closest(".tsel");
+    if (box) {
+      const g = (k) => box.querySelector(`[data-tp="${k}"]`).value, h24 = (Number(g("h")) % 12) + (g("a") === "PM" ? 12 : 0);
+      sl[+box.dataset.n][box.dataset.k] = `${String(h24).padStart(2, "0")}:${String(Number(g("m"))).padStart(2, "0")}`;
+    } else if (t.dataset.sc != null) sl[+t.dataset.sc].cat = t.value; else return;
     savePlan().catch(fail);
   });
+  $("slot-reset").addEventListener("click", () => { state.plan.slots = DEFAULT_SLOTS.map((x) => ({ ...x })); savePlan().then(() => { renderSched(); toast("Franjas restauradas.", "ok"); }).catch(fail); });
   $("slot-list").addEventListener("click", (e) => { const b = e.target.closest("[data-sd]"); if (!b) return; state.plan.slots.splice(Number(b.dataset.sd), 1); savePlan().then(renderSched).catch(fail); });
   $("gen-btn").addEventListener("click", generateSchedule);
-  $("align-btn").addEventListener("click", publishAligned);
+  $("align-btn").addEventListener("click", () => publishAligned(false));
   $("fbv-close").addEventListener("click", closeView);
   $("fbv-prev").addEventListener("click", () => { if (vw.i > 0) { vw.i--; showView(); } });
   $("fbv-next").addEventListener("click", () => { if (vw.i < vw.list.length - 1) { vw.i++; showView(); } });
@@ -919,11 +934,11 @@ function renderSched() {
   set("lib-cat", `<option value="">Sin categoría</option>${opts("")}`);
   set("q-cat", `<option value="">Todas</option>${opts("")}`);
   $("cat-chips").innerHTML = (p.cats || []).map((c, n) => `<span class="chip">${esc(c)}<button type="button" data-catdel="${n}" aria-label="Quitar">×</button></span>`).join("");
-  $("slot-list").innerHTML = (p.slots || []).map((s, n) => `<div class="slot"><input type="time" data-sf="${n}" value="${esc(s.from)}" aria-label="Desde"><input type="time" data-st="${n}" value="${esc(s.to)}" aria-label="Hasta"><button class="btn del small" data-sd="${n}" type="button" aria-label="Quitar">×</button><select data-sc="${n}" aria-label="Categoría"><option value="*"${s.cat === "*" ? " selected" : ""}>Variado</option>${opts(s.cat)}</select></div>`).join("");
+  $("slot-list").innerHTML = (p.slots || []).map((s, n) => `<div class="slot">${tsel(n, "from", s.from)}<button class="btn del small" data-sd="${n}" type="button" aria-label="Quitar">×</button>${tsel(n, "to", s.to)}<select class="cat" data-sc="${n}" aria-label="Categoría"><option value="*"${s.cat === "*" ? " selected" : ""}>Variado</option>${opts(s.cat)}</select></div>`).join("");
   if (!schedVals) {
     schedVals = true; const q = p.quick, o = p.hOpt;
     $("q-which").value = q.which; $("q-order").value = q.order; $("q-cat").value = q.cat; $("q-max").value = q.max; $("q-skip").checked = !!q.skipBad; $("q-replace").checked = !!q.replace;
-    $("h-order").value = o.order; $("h-skip").checked = !!o.skipBad;
+    $("h-order").value = o.order; $("h-skip").checked = !!o.skipBad; $("h-now").checked = o.fromNow !== false; $("q-time").checked = q.time !== false;
   }
   $("lib-cat").style.display = $("lib-kind").value === "programa" ? "" : "none";
 }
@@ -946,8 +961,9 @@ function addToGrid(id) {
 
 // ---- Añadir rápido ----
 function quickAdd() {
-  const q = { which: $("q-which").value, order: $("q-order").value, cat: $("q-cat").value, max: $("q-max").value, skipBad: $("q-skip").checked, replace: $("q-replace").checked };
+  const q = { which: $("q-which").value, order: $("q-order").value, cat: $("q-cat").value, max: $("q-max").value, skipBad: $("q-skip").checked, replace: $("q-replace").checked, time: $("q-time").checked };
   state.plan.quick = q;
+  if (q.time) { runSchedule({ order: q.order, skipBad: q.skipBad, fromNow: true }); return; }   // empieza por lo que toca a esta hora
   let list = state.lib.filter((i) => i.kind === "programa" && i.duration > 0);
   if (q.cat) list = list.filter((i) => i.cat === q.cat);
   if (q.skipBad) list = list.filter((i) => i.fbOk !== false);
@@ -960,54 +976,64 @@ function quickAdd() {
 }
 
 // ---- Horarios: reparte los programas por categoría y franja horaria (sin IA, sin costo) ----
-function normSlots() {
-  const raw = (state.plan.slots || []).map((s) => ({ f: toMin(s.from), t: toMin(s.to), cat: s.cat }));
-  if (!raw.length) return null;
-  const S = Math.min(...raw.map((s) => s.f));
-  const out = raw.map((s) => { const rel = (s.f - S + 1440) % 1440, len = ((s.t - s.f + 1440) % 1440) || 1440; return { cat: s.cat, from: s.f, to: s.t, start: rel, end: Math.min(1440, rel + len) }; }).sort((a, b) => a.start - b.start);
-  return { S, slots: out };
+const nowMin = () => { const [hh, mm] = new Intl.DateTimeFormat("en-GB", { timeZone: TZ, hour: "2-digit", minute: "2-digit", hour12: false }).format(new Date(serverNow())).split(":").map(Number); return (hh % 24) * 60 + mm; };
+// S = minuto del día donde empieza la parrilla (hora actual o la primera franja). La franja que está en curso se parte: primero lo que le queda, al final lo que ya pasó.
+const normSlots = (S0) => normalizeSlots(state.plan.slots, S0, toMin);
+function generateSchedule() { runSchedule({ order: $("h-order").value, skipBad: $("h-skip").checked, fromNow: $("h-now").checked }); }
+// Posición (en plan.order) del programa que está al aire, o -1 si no se sabe.
+function airOrderIndex() {
+  const c = state.channel, id = airProgramId(); if (!c?.items?.length || !id) return -1;
+  const loc = studioLoc(c, serverNow()); if (!loc) return -1;
+  let n = -1; for (let k = 0; k <= loc.index; k++) { const it = c.items[k]; if (it.type === "programa" && (!it.part || it.part === 1)) n++; }
+  const ord = state.plan.order; if (ord[n] === id) return n;
+  let best = -1; ord.forEach((x, j) => { if (x === id && (best < 0 || Math.abs(j - n) < Math.abs(best - n))) best = j; });
+  return best;
 }
-function generateSchedule() {
-  const p = state.plan, ns = normSlots();
+// Un programa nuevo (o al que se le pone categoría) entra enseguida en la franja de su categoría, sin reiniciar la emisión:
+// si esa franja está al aire sale justo después del programa actual; si viene más adelante, sale primero en ella; si ya pasó, en la próxima repetición.
+async function autoPlace(it) {
+  try {
+    if (!it || it.kind !== "programa" || !it.cat || !(it.duration > 0) || it.fbOk === false) return false;
+    const r = placeNewProgram(state.lib, state.plan, it, airOrderIndex());
+    if (!r) return false;
+    await savePlan(); renderAll();
+    if (state.channel?.items?.length) await publish(true);
+    toast(`«${it.title}» entró a la parrilla en ${r.cat}.`, "ok");
+    return true;
+  } catch (err) { fail(err); return false; }
+}
+// Reglas: cada programa termina completo aunque se pase de su franja; solo el último bloque «Variado» del día se corta de golpe (ahí la hora se repite);
+// si no alcanzan los programas, se repiten al azar en otro orden; un programa nuevo entra enseguida en la franja de su categoría.
+function runSchedule(opt) {
+  const p = state.plan, ns = normSlots(opt.fromNow ? nowMin() : null);
   if (!ns) { toast("Añade al menos una franja.", "error"); return; }
-  const opt = { order: $("h-order").value, skipBad: $("h-skip").checked }; p.hOpt = opt;
-  const base = state.lib.filter((i) => i.kind === "programa" && i.duration > 0 && !(opt.skipBad && i.fbOk === false));
-  const lenOf = (ids) => cycleLength(buildCycle(state.lib, { ...p, order: ids }));
-  const order = [], used = new Set(), rows = []; let len = 0, last = null;
-  for (const s of ns.slots) {
-    const end = s.end * 60, pool = sortProgs(base.filter((i) => s.cat === "*" || i.cat === s.cat), opt.order), row = { ...s, n: 0, startAt: len };
-    if (!pool.length) { row.empty = true; rows.push(row); continue; }
-    for (let guard = 0; guard < 300 && end - len > 60; guard++) {
-      let cand = pool.filter((i) => !used.has(i.id));
-      if (!cand.length) { pool.forEach((i) => used.delete(i.id)); cand = pool.filter((i) => i.id !== last); if (!cand.length) cand = pool.slice(); }
-      let pick = null, best = null;
-      for (const i of cand) { const t = lenOf([...order, i.id]); if (t <= end) { pick = { i, t }; break; } if (!best || t < best.t) best = { i, t }; }
-      if (!pick && best && end - len >= best.i.duration * 0.5) pick = best;   // si más de la mitad cabe en la franja, se acepta
-      if (!pick) break;
-      order.push(pick.i.id); used.add(pick.i.id); last = pick.i.id; row.n++; len = pick.t;
-    }
-    row.endAt = len; rows.push(row);
-  }
-  if (!order.length) { toast("No hay programas para esas franjas.", "error"); return; }
-  p.order = order; p.dayStart = ns.S; lastSched = { rows, len, S: ns.S };
-  savePlan().then(() => { renderAll(); renderSummary(); toast(`Parrilla creada: ${order.length} programas.`, "ok"); }).catch(fail);
+  p.hOpt = { order: opt.order, skipBad: opt.skipBad, fromNow: opt.fromNow };
+  const r = buildSchedule({ library: state.lib, plan: p, ns, how: opt.order, skipBad: opt.skipBad, createdMs });
+  if (!r.order.length) { toast("No hay programas para esas franjas.", "error"); return; }
+  const { order, durs, rows, len } = r;
+  p.order = order; p.fit = { order: [...order], durs: { ...durs } }; p.slotMap = r.slotMap; p.dayStart = ns.S; lastSched = { rows, len, S: ns.S };
+  savePlan().then(async () => {
+    renderAll(); renderSummary(); toast(`Parrilla desde las ${clockTxt(ns.S)}: ${order.length} programas.`, "ok");
+    if (await askConfirm({ title: "¿Publicar a este horario?", text: `El primer programa sale a las ${clockTxt(ns.S)}.`, ok: "Publicar", cancel: "Solo guardar" })) await publishAligned(true);
+  }).catch(fail);
 }
 function renderSummary() {
   const el = $("h-summary"); if (!lastSched) { el.innerHTML = ""; return; }
   const { rows, len, S } = lastSched, nm = (c) => (c === "*" ? "Variado" : c);
   el.innerHTML = rows.map((r) => {
-    if (r.empty) return `<p class="warn"><b>${clockTxt(r.from)}–${clockTxt(r.to)}</b> · ${esc(nm(r.cat))}: sin programas</p>`;
-    const drift = Math.abs(r.startAt - r.start * 60) > 600;
-    return `<p class="${drift ? "warn" : ""}"><b>${clockTxt(r.from)}–${clockTxt(r.to)}</b> · ${esc(nm(r.cat))}: ${r.n} programa${r.n === 1 ? "" : "s"} · real ${clockTxt(S + r.startAt / 60)}–${clockTxt(S + r.endAt / 60)}</p>`;
+    const lbl = `<b>${clockTxt(S + r.start)}–${clockTxt(S + r.end)}</b> · ${esc(nm(r.cat))}`;
+    if (r.empty) return `<p class="warn">${lbl}: sin programas</p>`;
+    const drift = Math.abs(r.startAt - r.start * 60) > 600;   // un programa que se pasó de su franja corre la siguiente
+    return `<p class="${drift ? "warn" : ""}">${lbl}: ${r.n} programa${r.n === 1 ? "" : "s"} · real ${clockTxt(S + r.startAt / 60)}–${clockTxt(S + r.endAt / 60)}${r.cut ? " · el último se corta para dar paso al inicio del día" : ""}</p>`;
   }).join("") + `<p><b>Ciclo:</b> ${fmtDuration(len)} (día completo = 24:00:00)</p>`;
 }
-async function publishAligned() {
+async function publishAligned(noAsk) {
   const S = state.plan.dayStart;
   if (!Number.isFinite(S)) { toast("Primero genera la parrilla.", "error"); return; }
   const [y, m, d] = new Date(serverNow()).toLocaleDateString("en-CA", { timeZone: TZ }).split("-").map(Number);
   let at = Date.UTC(y, m - 1, d, Math.floor(S / 60) + 4, S % 60);   // hora de República Dominicana = UTC−4
   if (at > serverNow()) at -= 86400000;
-  await publish(false, true, { alignAt: at, label: clockTxt(S) });
+  await publish(false, true, { alignAt: at, label: clockTxt(S), noAsk: noAsk === true });
 }
 
 // ---- Verificador: ventana emergente para ver cada video y marcar si se ve o no ----

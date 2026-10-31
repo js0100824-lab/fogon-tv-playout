@@ -133,9 +133,13 @@ html,body{max-width:100%;overflow-x:hidden}
 .chips{display:flex;flex-wrap:wrap;gap:6px;margin:6px 0}
 .chip{display:inline-flex;align-items:center;gap:6px;padding:4px 10px;border-radius:999px;background:rgba(255,255,255,.08)}
 .chip button{border:0;background:none;color:inherit;font-size:18px;line-height:1;cursor:pointer;padding:0 2px}
-.slot{display:grid;grid-template-columns:1fr 1fr auto;gap:6px;margin:8px 0;padding:8px;border:1px solid rgba(255,255,255,.1);border-radius:8px}
-.slot select{grid-column:1 / -1}
-.slot input,.slot select{min-width:0;box-sizing:border-box;min-height:40px;font-size:16px}
+.slot{display:grid;grid-template-columns:1fr auto;gap:6px;margin:8px 0;padding:8px;border:1px solid rgba(255,255,255,.1);border-radius:8px}
+.slot>.del{grid-column:2;grid-row:1 / span 2;align-self:stretch;min-width:44px}
+.slot>select.cat{grid-column:1 / -1}
+.slot select{min-width:0;box-sizing:border-box;min-height:40px;font-size:16px}
+.tsel{display:flex;align-items:center;gap:4px}
+.tsel .tl{flex:none;width:3.2em;opacity:.75}
+.tsel select{flex:1}
 #h-summary p{margin:6px 0;line-height:1.35}
 #h-summary .warn{color:#f2bd3a}
 #lib-list .cat-sel{max-width:100%;min-height:34px}
@@ -263,6 +267,7 @@ html,body{max-width:100%;overflow-x:hidden}
               <label class="field"><span>Orden</span><select id="q-order"></select></label>
               <label class="field"><span>Máximo</span><input id="q-max" type="number" min="1" placeholder="Todos"></label>
             </div>
+            <label class="chk"><input id="q-time" type="checkbox" checked> Respetar la hora actual</label>
             <label class="chk"><input id="q-skip" type="checkbox"> Saltar los «No se ve»</label>
             <label class="chk"><input id="q-replace" type="checkbox"> Reemplazar la parrilla</label>
             <button class="btn" id="quick-btn" type="button">Añadir rápido</button>
@@ -285,9 +290,10 @@ html,body{max-width:100%;overflow-x:hidden}
           <div class="row"><input id="cat-new" placeholder="Nueva categoría" maxlength="30"><button class="btn secondary small" id="cat-add" type="button">Añadir</button></div>
           <h3 class="sub">Franjas</h3>
           <div id="slot-list"></div>
-          <button class="btn secondary small" id="slot-add" type="button">Añadir franja</button>
+          <div class="row"><button class="btn secondary small" id="slot-add" type="button">Añadir franja</button><button class="btn secondary small" id="slot-reset" type="button">Restaurar franjas</button></div>
           <h3 class="sub">Orden</h3>
           <select id="h-order"></select>
+          <label class="chk"><input id="h-now" type="checkbox" checked> Desde la hora actual</label>
           <label class="chk"><input id="h-skip" type="checkbox" checked> Saltar los «No se ve»</label>
           <div class="row"><button class="btn" id="gen-btn" type="button">Generar parrilla</button><button class="btn danger" id="align-btn" type="button">Publicar a este horario</button></div>
           <div id="h-summary"></div>
@@ -368,6 +374,6 @@ html,body{max-width:100%;overflow-x:hidden}
   </div>
 </div>
 
-<script type="module" src="../js/admin.js?v=68"></script>
+<script type="module" src="../js/admin.js?v=71"></script>
 </body>
 </html>
