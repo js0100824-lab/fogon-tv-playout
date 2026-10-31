@@ -181,7 +181,8 @@ else {
     const items = data ? expandChannel(data) : [];
     if (!items.length) { channel = null; sig = ""; stop(); say("Sin programación publicada por ahora."); return; }
     const mediaSig = (() => { let h = 0; for (const m of Object.values(data.media || {})) for (const c of `${m.s}|${m.r}|${m.t}|`) h = (h * 31 + c.charCodeAt(0)) | 0; return h; })();   // cambia si editas el enlace/título de un contenido
-    const newSig = `${data.epoch}|${data.nextAt || 0}|${items.length}|${Math.round(cycleLength(items))}|${items[0].id}|${items.at(-1).id}|${mediaSig}`;
+    const seqSig = (() => { let h = 0; for (const r of data.seq || []) for (let k = 0; k < r.length; k++) h = (h * 31 + r.charCodeAt(k)) | 0; return h; })();   // cambia si se mueve algo en medio del ciclo (fijados, varios días)
+    const newSig = `${data.epoch}|${data.nextAt || 0}|${items.length}|${Math.round(cycleLength(items))}|${items[0].id}|${items.at(-1).id}|${mediaSig}|${seqSig}`;
     const wasLive = channel ? channel.live !== false : false;
     channel = { epoch: data.epoch, items, live: studio ? true : data.live !== false, media: data.media, ...(data.nextSeq ? { nextSeq: data.nextSeq, nextAt: data.nextAt } : {}) };
     if (!channel.live) { stop(); say("Transmisión en pausa. Volvemos pronto."); return; }

@@ -7,7 +7,7 @@ import {
   doc, getDoc, setDoc, addDoc, deleteDoc, updateDoc, deleteField, getDocs, collection, query, orderBy, limit, serverTimestamp
 } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore.js";
 import { ref as sRef, uploadBytesResumable, getDownloadURL, deleteObject } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-storage.js";
-import { parseDuration, fmtDuration, youtubeId, facebookUrl, parseLiveLink, buildCycle, cycleLength, locate, planWithDefaults, compactChannel, expandChannel, describeCuts, itemLabel, intervalSeconds, seamlessPublish, jumpPublish, settleChannel, buildSchedule, normalizeSlots, sortPrograms, placeNewProgram } from "./engine.js?v=36";
+import { parseDuration, fmtDuration, youtubeId, facebookUrl, parseLiveLink, buildCycle, cycleLength, locate, planWithDefaults, compactChannel, expandChannel, describeCuts, itemLabel, intervalSeconds, seamlessPublish, jumpPublish, settleChannel, buildSchedule, normalizeSlots, sortPrograms, placeNewProgram, buildPinnedCycle, pinLines, pinWindow, pinDayIndex, pinEpoch, DAY_MS, PIN_ANCHOR_MS } from "./engine.js?v=37";
 import { serverNow, startClock } from "./clock.js";
 
 const $ = (id) => document.getElementById(id);
@@ -515,7 +515,7 @@ function renderOrder() {
     try {
       await savePlan(); renderAll();
       // Si quitaste el que estaba al aire, se publica al instante: salta al siguiente.
-      if (airId && !state.plan.order.includes(airId)) await publish(true);
+      if (airId && !String(airId).startsWith("pin_") && !state.plan.order.includes(airId)) await publish(true);
     } catch (err) { fail(err); }
   }));
 }
@@ -543,6 +543,8 @@ function cycleClock(cyc) {
   return { starts: st.map((x, k) => (k >= loc.index ? r.epoch + x : r.epoch + L + x)), pending: false };
 }
 function renderCycle() {
+  const pc = getPinned();
+  if (pc) { renderPinnedCycle(pc); return; }
   const cyc = buildCycle(state.lib, state.plan);
   const ads = cyc.filter((i) => i.type === "comercial").length, cuts = new Set(cyc.filter((i) => i.type === "comercial").map((i) => i.breakNo)).size;
   const clk = cycleClock(cyc);
@@ -563,6 +565,15 @@ function dayTag() { return ""; }   // sin «mañana» ni fecha: solo la hora
 // Escribe debajo de cada programa de la parrilla a qué hora sale (o «AL AIRE AHORA» / «SIGUIENTE»).
 function updateAirTimes(cyc, clk) {
   const nodes = document.querySelectorAll("#order-list [data-air]"); if (!nodes.length) return;
+  const pc0 = getPinned();
+  if (pc0) {   // con fijados: la hora sale del día de hoy ya armado
+    const today = pc0.error ? null : pc0.days[pinDayIndex(serverNow(), pc0.K)], mid = pinMidnight(serverNow());
+    nodes.forEach((el) => {
+      const r = today?.rows.find((x) => x.kind === "filler" && x.oi === Number(el.dataset.air));
+      el.innerHTML = r ? `<span class="when">Sale ${esc(hm(mid + r.start * 1000))}</span><span class="when">Termina ${esc(hm(mid + r.end * 1000))}</span>` : '<span class="rel">Hoy no sale (los fijados ocupan su lugar)</span>';
+    });
+    return;
+  }
   const now = serverNow(), order = state.plan.order;
   // Posición de la parrilla → tramo del ciclo donde ese programa arranca (buildCycle descarta los que no duran nada).
   const orderPos = []; order.forEach((id, n) => { const i = state.lib.find((x) => x.id === id); if (i && i.duration > 0) orderPos.push(n); });
@@ -676,14 +687,16 @@ async function publish(auto, restart, opts) {
   opts = opts && typeof opts === "object" && !(opts instanceof Event) ? opts : {};
   if (restart && !opts.noAsk && !(await askConfirm({ title: opts.alignAt ? "¿Publicar a este horario?" : "¿Reiniciar la emisión?", text: opts.alignAt ? `El primer programa queda a las ${opts.label}, igual que el reloj.` : "Empieza desde el primer programa.", ok: opts.alignAt ? "Publicar" : "Reiniciar", danger: true }))) return;
   let why = opts.alignAt ? "align" : restart ? "restart" : "";
-  const items = buildCycle(state.lib, state.plan);
+  const pc = getPinned();
+  if (pc?.error) { toast(pc.error, "error"); return; }
+  const items = pc ? pc.items : buildCycle(state.lib, state.plan);
   if (!items.length && !auto && !(await askConfirm({ title: "Parrilla vacía", text: "El público verá «Sin programación».", ok: "Publicar" }))) return;
   try {
     await savePlan();
     const now = serverNow(), live = state.channel?.live !== false;
     // Emisión en marcha: NO se reinicia. Lo que está al aire sigue; lo nuevo por debajo entra en este ciclo y lo nuevo por encima, en la próxima repetición.
     let plan = null; const old = state.channel;
-    if (!restart && live && old?.items?.length && items.length) {
+    if (!restart && live && old?.items?.length && items.length && !pc) {
       settleChannel(old, now);
       const loc = studioLoc(old, now);
       if (loc) {
@@ -709,15 +722,212 @@ async function publish(auto, restart, opts) {
         }
       }
     }
-    if (!plan) plan = { items, epoch: Math.round(opts.alignAt || now), next: null, nextAt: 0 };   // primera publicación, directo, pausa o borrado: empieza desde el principio
+    if (!plan) plan = { items, epoch: pc ? pinEpoch(now, pc.K) : Math.round(opts.alignAt || now), next: null, nextAt: 0 };   // con fijados la emisión se alinea al reloj (medianoche de RD)   // primera publicación, directo, pausa o borrado: empieza desde el principio
     const cur = compactChannel(plan.items), nxt = plan.next ? compactChannel(plan.next) : null;
     const channel = { epoch: plan.epoch, live, media: nxt ? { ...cur.media, ...nxt.media } : cur.media, seq: cur.seq, nextSeq: nxt ? nxt.seq : null, nextAt: nxt ? plan.nextAt : null, updatedAt: serverTimestamp() };
+    if (JSON.stringify(cur).length > 900000) { toast("La programación de varios días es demasiado grande. Reduce las líneas de los fijados o los cortes comerciales.", "error"); return; }
     await setDoc(doc(db, "public", "channel"), channel);
     state.channel = { epoch: plan.epoch, items: plan.items, live, media: channel.media, seq: channel.seq, ...(nxt ? { nextSeq: nxt.seq, nextAt: plan.nextAt } : {}) };
     renderCycle(); renderNow();
-    toast(plan.next ? "Publicado. Lo nuevo de arriba entra en la próxima repetición." : why === "align" ? "Emisión alineada al horario." : why === "dur" ? "Duración actualizada: el programa se reinició." : why === "restart" ? "Emisión reiniciada." : why === "removed" ? "Quitaste el programa al aire: pasó al siguiente." : why === "reload" ? "Enlace actualizado: el programa se recargó con el video nuevo." : "Emisión publicada.", "ok");
+    toast(pc ? `Publicado. Los fijados salen a su hora (${pc.K} día${pc.K === 1 ? "" : "s"} de rotación) y la emisión quedó alineada con el reloj.` : plan.next ? "Publicado. Lo nuevo de arriba entra en la próxima repetición." : why === "align" ? "Emisión alineada al horario." : why === "dur" ? "Duración actualizada: el programa se reinició." : why === "restart" ? "Emisión reiniciada." : why === "removed" ? "Quitaste el programa al aire: pasó al siguiente." : why === "reload" ? "Enlace actualizado: el programa se recargó con el video nuevo." : "Emisión publicada.", "ok");
   } catch (err) { fail(err); }
 }
+/* ===== Programas FIJADOS: salen SIEMPRE en su franja (de X a Y), con líneas/variaciones por día ===== */
+let pinMemo = { key: "", val: null };
+function getPinned() {
+  const p = state.plan; if (!p.pins?.length) return null;
+  const key = JSON.stringify([p.order, p.pins, p.mode, p.intervalValue, p.intervalUnit, p.breakCount, p.breakRepeat, p.breakAtEnd, p.everyN, p.minTailSec, p.adOrder, state.lib.map((i) => [i.id, i.kind, i.duration, i.active, i.playFor, i.url, i.title])]);
+  if (key !== pinMemo.key) pinMemo = { key, val: buildPinnedCycle(state.lib, p) };
+  return pinMemo.val;
+}
+const pinMidnight = (ms) => PIN_ANCHOR_MS + Math.floor((ms - PIN_ANCHOR_MS) / DAY_MS) * DAY_MS;   // 00:00 de hoy en República Dominicana
+function renderPinnedCycle(pc) {
+  if (pc.error) { $("cycle-total").textContent = pc.error; $("cycle-list").innerHTML = ""; updateAirTimes(); return; }
+  const now = serverNow(), today = pinDayIndex(now, pc.K), day = pc.days[today], mid = pinMidnight(now);
+  const ads = day.items.filter((i) => i.type === "comercial").length, cuts = new Set(day.items.filter((i) => i.type === "comercial").map((i) => i.breakNo)).size;
+  $("cycle-total").textContent = `Hoy (día ${today + 1} de ${pc.K} de rotación) · ${day.rows.length} programas, ${state.plan.pins.length} fijado${state.plan.pins.length === 1 ? "" : "s"} · ${cuts} cortes · ${ads} anuncios · el día cierra a las 12:00 AM`;
+  let t = mid;
+  $("cycle-list").innerHTML = day.items.slice(0, 600).map((i) => { const li = `<li class="${i.type === "comercial" ? "ad" : ""}">${hms(t)} · ${esc(itemLabel(i))} · ${fmtDuration(i.duration)}${i.type === "comercial" ? ` (corte ${i.breakNo})` : (i.parts > 1 ? ` (del minuto ${fmtDuration(i.startAt)} al ${fmtDuration(i.startAt + i.duration)})` : "")}</li>`; t += i.duration * 1000; return li; }).join("");
+  $("st-cycle").textContent = state.channel?.items?.length ? `${state.channel.items.length} elementos` : "Sin publicar";
+  updateAirTimes();
+}
+const hmTxt = (m) => { m = ((Math.round(m) % 1440) + 1440) % 1440; return `${String(Math.floor(m / 60)).padStart(2, "0")}:${String(m % 60).padStart(2, "0")}`; };
+const newId = () => Math.random().toString(36).slice(2, 8);
+function normUrl(u) {
+  u = String(u || "").trim();
+  if (/^(?:[\w-]+\.)?(?:facebook\.com|fb\.watch)\//i.test(u)) u = `https://${u}`;
+  if (u && !/^https?:\/\//i.test(u)) u = new URL(`../media/${encodeURIComponent(u.replace(/^\/?(media\/)?/, ""))}`, location.href).href;
+  return u;
+}
+function renderPinList() {
+  const el = $("pin-list"); if (!el) return;
+  const pins = (state.plan.pins || []).slice().sort((a, b) => pinWindow(a).f - pinWindow(b).f), pc = getPinned();
+  if (!pins.length) { el.innerHTML = '<p class="hint">Todavía no hay programas fijados. Pulsa «Fijar programa» o el 📌 de cualquier fila de abajo.</p>'; return; }
+  const today = pc && !pc.error ? pinDayIndex(serverNow(), pc.K) : null;
+  el.innerHTML = pins.map((p) => {
+    const w = pinWindow(p), n = pinLines(p).length, hoy = today != null && n ? ` · hoy: línea ${(today % n) + 1}` : "";
+    return `<div class="pin-card${n ? "" : " bad"}"><div class="pin-main"><b>📌 ${esc(p.title)}</b><span>${clockTxt(w.f)} → ${clockTxt(w.t % 1440)}</span><span class="hint">${n} línea${n === 1 ? "" : "s"}${hoy} · ${p.tolMin > 0 ? `puede salir hasta ${p.tolMin} min antes` : "a la hora exacta"}</span>${n ? "" : '<span class="warn">Sin líneas válidas: no se emite.</span>'}</div><div class="pin-btns"><button class="btn small" data-pa="edit" data-pin="${esc(p.id)}" type="button">Líneas y hora</button><button class="btn danger small" data-pa="unpin" data-pin="${esc(p.id)}" type="button">Quitar</button></div></div>`;
+  }).join("");
+}
+
+// ---- Día con fijados: las filas de hoy (o del día que elijas), con los fijados bloqueados en su hora ----
+let dayView = null;   // día de la rotación que se está viendo (null = hoy)
+function renderDayPinned(el, pc) {
+  const p = state.plan;
+  el.dataset.pinned = "1";
+  if (pc.error) { el.innerHTML = `<p class="hint warn">${esc(pc.error)}</p>`; $("day-info").textContent = ""; $("day-undo").disabled = !dayUndo.length; return; }
+  const today = pinDayIndex(serverNow(), pc.K), view = dayView == null || dayView >= pc.K ? today : dayView, day = pc.days[view];
+  el.dataset.today = view === today ? "1" : "0";
+  const slotAt = (min) => (p.slots || []).findIndex((s) => ((min - toMin(s.from) + 1440) % 1440) < slotLen(s));
+  const clock = (sec) => clockTxt(sec / 60), mins = (sec) => Math.round(Math.abs(sec) / 60);
+  let html = pc.K > 1 ? `<div class="day-tabs">${pc.days.map((_, k) => `<button type="button" class="btn small${k === view ? "" : " secondary"}" data-pa="view" data-d="${k}">Día ${k + 1}${k === today ? " · hoy" : ""}</button>`).join("")}</div>` : "";
+  let lastSlot = -2;
+  for (const r of day.rows) {
+    const si = slotAt(Math.floor(r.start / 60) % 1440);
+    if (si !== lastSlot) { lastSlot = si; const sl = p.slots?.[si]; html += `<div class="day-h"><span>${sl ? `${esc(slotLabel(sl))} · ${esc(sl.cat === "*" ? "Variado" : sl.cat)}` : "Sin franja"}</span><span>${sl ? esc(slotHours(sl)) : ""}</span></div>`; }
+    if (r.kind === "pin") {
+      const pin = p.pins.find((x) => x.id === r.pin), late = r.delta > 60, early = r.delta < -60;
+      html += `<div class="day-row pinrow" data-s="${r.start}" data-e="${r.end}"><span class="day-grip" title="Fijado: no se mueve">📌</span>
+        <span class="day-t">${esc(clock(r.start))}<small>→ ${esc(clock(r.end))}</small></span>
+        <span class="day-main"><b>${esc(pin?.title || r.title)}</b><span class="day-meta"><span class="tag pin">Fijado ${esc(clock(r.from))} → ${esc(clock(r.to % 86400))}</span>${r.lines > 1 ? `<span class="tag rep">Línea ${r.lineNo} de ${r.lines}</span>` : ""}${early ? `<span class="tag off">Sale ${mins(r.delta)} min antes</span>` : ""}${late ? `<span class="tag bad">Sale ${mins(r.delta)} min tarde (el anterior se pasó)</span>` : ""}${r.endDelta > 60 ? `<span class="tag off">Termina ${mins(r.endDelta)} min después de su franja</span>` : ""}<span>${esc(r.title === pin?.title ? "" : r.title)}</span></span></span>
+        <span class="day-btns"><button class="btn secondary small" data-pa="edit" data-pin="${esc(r.pin)}" type="button">Líneas</button><button class="btn danger small" data-pa="unpin" data-pin="${esc(r.pin)}" type="button" title="Quitar el fijado">✕</button></span></div>`;
+      continue;
+    }
+    const i = state.lib.find((x) => x.id === r.id); if (!i) continue;
+    const sl = si >= 0 ? p.slots[si] : null, off = sl && sl.cat !== "*" && i.cat !== sl.cat;
+    html += `<div class="day-row" draggable="true" data-n="${r.oi}" data-s="${r.start}" data-e="${r.end}"><span class="day-grip" title="Arrastrar">⠿</span>
+      <span class="day-t">${esc(clock(r.start))}<small>→ ${esc(clock(r.end))}</small></span>
+      <span class="day-main"><b>${esc(i.title)}</b><span class="day-meta">${i.cat ? `<span class="tag">${esc(i.cat)}</span>` : ""}${off ? '<span class="tag off">Fuera de su franja</span>' : ""}<span>${fmtDuration(i.duration)}${r.end - r.start < i.duration - 5 ? " · se corta para dar paso al fijado" : ""}</span></span></span>
+      <span class="day-btns"><button class="btn secondary small" data-act="up" data-n="${r.oi}" type="button" aria-label="Subir">↑</button><button class="btn secondary small" data-act="down" data-n="${r.oi}" type="button" aria-label="Bajar">↓</button><button class="btn secondary small" data-act="swap" data-n="${r.oi}" type="button" title="Cambiar por otro programa" aria-label="Cambiar">⇄</button><button class="btn secondary small" data-act="ins" data-n="${r.oi}" type="button" title="Insertar uno debajo" aria-label="Insertar debajo">＋</button><button class="btn small" data-pa="pinrow" data-n="${r.oi}" data-s="${r.start}" data-e="${r.end}" type="button" title="Fijar este programa en esta hora">📌 Fijar</button><button class="btn danger small" data-act="del" data-n="${r.oi}" type="button" aria-label="Quitar">✕</button></span></div>`;
+  }
+  el.innerHTML = html;
+  const w = day.warn.length ? ` · ⚠ ${day.warn.join(" ")}` : "";
+  $("day-info").textContent = `Día ${view + 1} de ${pc.K}${view === today ? " (hoy)" : ""} · ${day.rows.length} programas · el día cierra justo a las 12:00 AM${w}`;
+  $("day-undo").disabled = !dayUndo.length;
+  markDayAir();
+}
+
+// ---- Ventana para fijar / editar un fijado ----
+let pinDraft = null, pinIsNew = false, pinFromOrder = null, pinSeen = null;
+function pinOverlap(d) { const w = pinWindow(d); return (state.plan.pins || []).filter((x) => x.id !== d.id).find((x) => { const o = pinWindow(x); return w.f < o.t && w.t > o.f; }); }
+function renderPinTimeInfo() {
+  const d = pinDraft, w = pinWindow(d), ov = pinOverlap(d), len = w.t - w.f, bad = toMin(d.to) <= toMin(d.from) && toMin(d.to) !== 0;
+  $("pin-time-info").innerHTML = `Franja de ${Math.floor(len / 60) ? `${Math.floor(len / 60)} h ` : ""}${len % 60 ? `${len % 60} min` : ""}`.trim()
+    + (ov ? ` · <span class="warn">⚠ se cruza con «${esc(ov.title)}»</span>` : "") + (bad ? ' · <span class="warn">«Hasta» debe ser después de «Desde»; así llega hasta las 12:00 AM</span>' : "");
+}
+function renderPinLines() {
+  const ls = pinDraft.lines, el = $("pin-lines");
+  el.innerHTML = ls.length ? ls.map((l, k) => `<div class="pin-line" data-k="${k}">
+    <div class="pin-line-h"><b>Línea ${k + 1}</b><span class="hint">${ls.length > 1 ? `sale el día ${k + 1} de cada ${ls.length}` : "sale todos los días"}</span>${l.fbOk === true ? '<span class="tag ok">✓ Se ve</span>' : l.fbOk === false ? '<span class="tag bad">✗ No se ve</span>' : ""}</div>
+    <input data-lf="title" value="${esc(l.title)}" placeholder="Nombre (opcional)" maxlength="120">
+    <input data-lf="url" value="${esc(l.url)}" placeholder="Enlace">
+    <div class="pin-line-r"><label>Duración <input data-lf="dur" value="${esc(fmtDuration(l.duration))}" inputmode="numeric" placeholder="1:30:00"></label>
+    <span class="pin-line-b"><button class="btn small" data-lp="view" type="button">Ver</button><button class="btn secondary small" data-lp="up" type="button" aria-label="Subir">↑</button><button class="btn secondary small" data-lp="down" type="button" aria-label="Bajar">↓</button><button class="btn danger small" data-lp="del" type="button" aria-label="Quitar línea">✕</button></span></div></div>`).join("")
+    : '<p class="hint">Sin líneas. Agrega al menos una abajo.</p>';
+}
+function renderPinEditor() {
+  const d = pinDraft;
+  $("pin-h").textContent = pinIsNew ? "Fijar programa" : "Programa fijado";
+  $("pin-title").value = d.title; $("pin-tol").value = String(d.tolMin ?? 5);
+  $("pin-time").innerHTML = tsel("pin", "from", d.from) + tsel("pin", "to", d.to);
+  $("pin-remove").hidden = pinIsNew; $("pin-view").classList.add("hidden"); $("pin-view").innerHTML = ""; $("pin-seen").classList.add("hidden");
+  ["pin-url", "pin-ltitle", "pin-dh", "pin-dm", "pin-ds"].forEach((id) => { $(id).value = ""; });
+  renderPinTimeInfo(); renderPinLines();
+}
+function openPinEditor(src, fromOrder) {
+  pinDraft = JSON.parse(JSON.stringify(src)); pinIsNew = !(state.plan.pins || []).some((x) => x.id === src.id); pinFromOrder = fromOrder || null; pinSeen = null;
+  renderPinEditor(); $("pin").classList.remove("hidden");
+}
+const closePin = () => { $("pin").classList.add("hidden"); $("pin-view").innerHTML = ""; pinDraft = null; };
+function pinPreview(url, k) {
+  const v = $("pin-view"); if (!url) { toast("Pon el enlace primero.", "error"); return; }
+  v.innerHTML = embedOf({ url: normUrl(url) }); v.classList.remove("hidden"); pinSeen = k; $("pin-seen").classList.toggle("hidden", k == null);
+  v.scrollIntoView({ behavior: "smooth", block: "nearest" });
+}
+async function pinAddLine() {
+  const raw = $("pin-url").value.trim(); if (!raw) { toast("Pon el enlace.", "error"); return; }
+  const url = normUrl(raw), fb = !!facebookUrl(url), yt = youtubeId(url);
+  let dur = Math.max(0, Math.floor(Number($("pin-dh").value) || 0)) * 3600 + Math.max(0, Math.floor(Number($("pin-dm").value) || 0)) * 60 + Math.max(0, Math.floor(Number($("pin-ds").value) || 0));
+  if (!(dur > 0)) {
+    if (fb) { toast("En Facebook hay que escribir la duración.", "error"); return; }
+    toast("Detectando la duración…", "ok"); dur = yt ? await ytDuration(yt) : await detectDuration(url);
+  }
+  if (!(dur > 0)) { toast("No pude detectar la duración. Escríbela.", "error"); return; }
+  pinDraft.lines.push({ id: newId(), url, duration: dur, title: $("pin-ltitle").value.trim() });
+  ["pin-url", "pin-ltitle", "pin-dh", "pin-dm", "pin-ds"].forEach((id) => { $(id).value = ""; });
+  renderPinLines(); toast(`Línea ${pinDraft.lines.length} agregada. Pulsa «Ver» para comprobar que se reproduce.`, "ok");
+}
+async function pinSave(publishToo) {
+  const d = pinDraft; if (!d) return;
+  d.title = ($("pin-title").value || "").trim() || d.lines[0]?.title || "Programa fijado";
+  if (!pinLines(d).length) { toast("Agrega al menos una línea con enlace y duración.", "error"); return; }
+  const ov = pinOverlap(d); if (ov) { toast(`La franja se cruza con «${ov.title}». Cambia la hora.`, "error"); return; }
+  const pins = state.plan.pins = state.plan.pins || [], i = pins.findIndex((x) => x.id === d.id);
+  if (i >= 0) pins[i] = d; else pins.push(d);
+  let moved = "";
+  if (pinFromOrder && state.plan.order[pinFromOrder.oi] === pinFromOrder.id) { state.plan.order.splice(pinFromOrder.oi, 1); moved = " Salió de la parrilla de abajo: ahora solo sale en su hora fija."; }
+  pinFromOrder = null; closePin();
+  try { await savePlan(); renderAll(); } catch (err) { fail(err); return; }
+  toast(`«${d.title}» fijado de ${clockTxt(pinWindow(d).f)} a ${clockTxt(pinWindow(d).t % 1440)}.${moved}${publishToo ? "" : " Pulsa «Guardar y publicar» para que salga al aire."}`, "ok");
+  if (publishToo) await publish(false);
+}
+async function unpin(id) {
+  const pin = state.plan.pins.find((x) => x.id === id); if (!pin) return;
+  if (!(await askConfirm({ title: "¿Quitar el fijado?", text: `«${pin.title}» deja de salir en su hora fija. Sus líneas se pierden.`, ok: "Quitar", danger: true }))) return;
+  state.plan.pins = state.plan.pins.filter((x) => x.id !== id);
+  try { await savePlan(); renderAll(); toast("Fijado quitado. Pulsa «Guardar y publicar» para aplicarlo al aire.", "ok"); } catch (err) { fail(err); }
+}
+function initPins() {
+  $("pin-new").addEventListener("click", async () => {
+    const nid = await pickProgram("Elegir el programa a fijar"); const it = nid && state.lib.find((x) => x.id === nid); if (!it) return;
+    const f = Math.ceil(nowMin() / 5) * 5, to = f + Math.max(5, Math.ceil(it.duration / 300) * 5);
+    openPinEditor({ id: newId(), title: it.title, from: hmTxt(f), to: to >= 1440 ? "00:00" : hmTxt(to), tolMin: 5, lines: [{ id: newId(), url: it.url, duration: it.duration, title: it.title, ...(it.fbOk != null ? { fbOk: it.fbOk } : {}) }] });
+  });
+  $("tab-dia").addEventListener("click", async (e) => {
+    const b = e.target.closest("[data-pa]"); if (!b) return;
+    const a = b.dataset.pa;
+    if (a === "view") { dayView = Number(b.dataset.d); renderDay(); }
+    else if (a === "edit") { const pin = state.plan.pins.find((x) => x.id === b.dataset.pin); if (pin) openPinEditor(pin); }
+    else if (a === "unpin") await unpin(b.dataset.pin);
+    else if (a === "pinrow") {
+      const oi = Number(b.dataset.n), id = state.plan.order[oi], it = state.lib.find((x) => x.id === id); if (!it) return;
+      const s = Number(b.dataset.s), en = Number(b.dataset.e), f = Math.round(s / 300) * 5, to = Math.ceil(en / 300) * 5;
+      openPinEditor({ id: newId(), title: it.title, from: hmTxt(f), to: to >= 1440 ? "00:00" : hmTxt(to), tolMin: 5, lines: [{ id: newId(), url: it.url, duration: it.duration, title: it.title, ...(it.fbOk != null ? { fbOk: it.fbOk } : {}) }] }, { oi, id });
+    }
+  });
+  const dlg = $("pin");
+  $("pin-title").addEventListener("input", () => { if (pinDraft) pinDraft.title = $("pin-title").value; });
+  $("pin-tol").addEventListener("change", () => { if (pinDraft) pinDraft.tolMin = Number($("pin-tol").value) || 0; });
+  $("pin-time").addEventListener("change", (e) => {
+    const box = e.target.closest(".tsel"); if (!box || !pinDraft) return;
+    const g = (k) => box.querySelector(`[data-tp="${k}"]`).value, h24 = (Number(g("h")) % 12) + (g("a") === "PM" ? 12 : 0);
+    pinDraft[box.dataset.k] = `${String(h24).padStart(2, "0")}:${String(Number(g("m"))).padStart(2, "0")}`; renderPinTimeInfo();
+  });
+  $("pin-lines").addEventListener("change", (e) => {
+    const t = e.target, row = t.closest(".pin-line"); if (!row || !t.dataset.lf || !pinDraft) return;
+    const l = pinDraft.lines[Number(row.dataset.k)]; if (!l) return;
+    if (t.dataset.lf === "title") l.title = t.value.trim();
+    else if (t.dataset.lf === "url") { l.url = normUrl(t.value); l.fbOk = undefined; delete l.fbOk; t.value = l.url; renderPinLines(); }
+    else { const d = parseDuration(t.value); if (d > 0) { l.duration = Math.round(d); t.value = fmtDuration(l.duration); } else { toast("Duración no válida. Usa 1:30:00 o 45:00.", "error"); t.value = fmtDuration(l.duration); } }
+  });
+  $("pin-lines").addEventListener("click", (e) => {
+    const b = e.target.closest("[data-lp]"); if (!b || !pinDraft) return;
+    const k = Number(b.closest(".pin-line").dataset.k), ls = pinDraft.lines, a = b.dataset.lp;
+    if (a === "view") pinPreview(ls[k].url, k);
+    else if (a === "del") { ls.splice(k, 1); $("pin-view").classList.add("hidden"); $("pin-view").innerHTML = ""; $("pin-seen").classList.add("hidden"); renderPinLines(); }
+    else { const m = k + (a === "up" ? -1 : 1); if (m >= 0 && m < ls.length) { [ls[k], ls[m]] = [ls[m], ls[k]]; renderPinLines(); } }
+  });
+  $("pin-add").addEventListener("click", pinAddLine);
+  $("pin-test").addEventListener("click", () => pinPreview($("pin-url").value, null));
+  const mark = (ok) => { if (pinSeen == null || !pinDraft?.lines[pinSeen]) return; pinDraft.lines[pinSeen].fbOk = ok; renderPinLines(); toast(ok ? "Marcada: se ve." : "Marcada: no se ve. Se salta mientras haya otras líneas.", "ok"); };
+  $("pin-ok").addEventListener("click", () => mark(true)); $("pin-no").addEventListener("click", () => mark(false));
+  $("pin-save").addEventListener("click", () => pinSave(false));
+  $("pin-savepub").addEventListener("click", () => pinSave(true));
+  $("pin-cancel").addEventListener("click", closePin);
+  $("pin-remove").addEventListener("click", async () => { const id = pinDraft?.id; closePin(); if (id) await unpin(id); });
+  document.addEventListener("keydown", (e) => { if (e.key === "Escape" && !dlg.classList.contains("hidden") && $("dlg").classList.contains("hidden")) closePin(); });
+}
+
 let tlKey = "";
 // ---- Línea de tiempo: grande, con desplazamiento y zoom; el cabezal (raya blanca) arrastra la barra si se sale de la vista ----
 const TL_LEVELS = [0.03, 0.06, 0.12, 0.25, 0.5, 1, 2];   // píxeles por segundo
@@ -881,6 +1091,7 @@ const ORDERS = { long: "Mayor a menor duración", short: "Menor a mayor duració
 function ensureSched() {
   const p = state.plan;
   if (!Array.isArray(p.cats)) p.cats = [...DEFAULT_CATS];
+  if (!Array.isArray(p.pins)) p.pins = [];
   if (Array.isArray(p.slots) && JSON.stringify(p.slots.map(({ from, to, cat }) => ({ from, to, cat }))) === OLD_SLOTS) p.slots = null;   // las franjas de la versión anterior se cambian por las nuevas
   if (!Array.isArray(p.slots) || !p.slots.length) p.slots = DEFAULT_SLOTS.map((s) => ({ ...s }));
   p.quick = { which: "new", order: "long", cat: "", max: "", skipBad: true, replace: false, time: true, ...(p.quick || {}) };
@@ -1132,6 +1343,9 @@ function dayTimes() {
 }
 function renderDay() {
   const el = $("day-list"); if (!el) return;
+  renderPinList();
+  const pc = getPinned();
+  if (pc) { renderDayPinned(el, pc); return; }
   const p = state.plan, order = p.order, S = Number.isFinite(p.dayStart) ? p.dayStart : null, { times, total } = dayTimes();
   const clock = (sec) => (S == null ? fmtDuration(sec) : clockTxt(S + sec / 60));
   const slotAt = (min) => (p.slots || []).findIndex((s) => ((min - toMin(s.from) + 1440) % 1440) < slotLen(s));
@@ -1160,6 +1374,11 @@ function renderDay() {
 }
 function markDayAir() {
   const el = $("day-list"); if (!el || $("tab-dia").classList.contains("hidden")) return;
+  if (getPinned() && el.dataset.pinned) {
+    const sec = (serverNow() - pinMidnight(serverNow())) / 1000, mine = el.dataset.today === "1";
+    el.querySelectorAll(".day-row").forEach((r) => r.classList.toggle("air", mine && sec >= Number(r.dataset.s) && sec < Number(r.dataset.e)));
+    return;
+  }
   let idx = -1; try { idx = airOrderIndex(); } catch { /* sin emisión */ }
   el.querySelectorAll(".day-row").forEach((r) => r.classList.toggle("air", Number(r.dataset.n) === idx));
 }
@@ -1174,6 +1393,7 @@ function initDay() {
   const list = $("day-list");
   list.addEventListener("click", async (e) => {
     const b = e.target.closest("[data-act]"); if (!b) return;
+    if (b.dataset.act === "noop") return;
     const n = Number(b.dataset.n), act = b.dataset.act, id = state.plan.order[n], it = state.lib.find((x) => x.id === id);
     if (act === "up" || act === "down") { const m = n + (act === "up" ? -1 : 1); await dayEdit((o) => { if (m < 0 || m >= o.length) return false; [o[n], o[m]] = [o[m], o[n]]; }); }
     else if (act === "del") {
@@ -1185,9 +1405,9 @@ function initDay() {
   let from = -1;
   list.addEventListener("dragstart", (e) => { const r = e.target.closest(".day-row"); if (!r) return; from = Number(r.dataset.n); r.classList.add("drag"); try { e.dataTransfer.effectAllowed = "move"; e.dataTransfer.setData("text/plain", String(from)); } catch { /* */ } });
   list.addEventListener("dragend", () => { from = -1; list.querySelectorAll(".drag,.over").forEach((x) => x.classList.remove("drag", "over")); });
-  list.addEventListener("dragover", (e) => { const r = e.target.closest(".day-row"); if (!r || from < 0) return; e.preventDefault(); list.querySelectorAll(".over").forEach((x) => x.classList.remove("over")); r.classList.add("over"); });
+  list.addEventListener("dragover", (e) => { const r = e.target.closest(".day-row"); if (!r || from < 0 || r.dataset.n == null) return; e.preventDefault(); list.querySelectorAll(".over").forEach((x) => x.classList.remove("over")); r.classList.add("over"); });
   list.addEventListener("drop", async (e) => {
-    const r = e.target.closest(".day-row"); if (!r || from < 0) return; e.preventDefault();
+    const r = e.target.closest(".day-row"); if (!r || from < 0 || r.dataset.n == null) return; e.preventDefault();
     const to = Number(r.dataset.n), f = from; from = -1;
     if (to !== f) await dayEdit((o) => { const [x] = o.splice(f, 1); o.splice(to, 0, x); });
   });
@@ -1198,6 +1418,7 @@ function initDay() {
     try { await savePlan(); renderAll(); toast("Deshecho.", "ok"); } catch (err) { fail(err); }
   });
   $("day-pub").addEventListener("click", () => publish(false));
+  initPins();
   setInterval(markDayAir, 5000);
   // Modo ampliado: el panel de control ocupa toda la pantalla y tapa la vista previa
   const sec = document.querySelector('section[aria-label="Control"]');

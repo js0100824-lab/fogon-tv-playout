@@ -166,6 +166,31 @@ html,body{max-width:100%;overflow-x:hidden}
 }
 
 /* ===== Parrilla práctica, añadir rápido, horarios, verificador ===== */
+/* ===== Programas fijados ===== */
+.pin-card{display:flex;align-items:center;gap:10px;justify-content:space-between;flex-wrap:wrap;margin:8px 0;padding:10px 12px;border:1px solid rgba(31,181,196,.45);border-left:4px solid #1fb5c4;border-radius:10px;background:rgba(31,181,196,.07)}
+.pin-card.bad{border-color:#e5484d;background:rgba(229,72,77,.08)}
+.pin-main{display:flex;flex-direction:column;gap:2px;min-width:0;flex:1 1 220px}.pin-main b{overflow-wrap:anywhere}
+.pin-btns{display:flex;gap:6px}
+.day-row.pinrow{background:rgba(31,181,196,.10);border-left:4px solid #1fb5c4}
+.day-row.pinrow .day-grip{cursor:not-allowed;opacity:1}
+.tag.pin{background:#0e6b73;color:#fff}
+.day-tabs{display:flex;gap:6px;flex-wrap:wrap;margin:8px 0}
+.warn{color:#f2bd3a}
+.pin-box{max-width:820px !important;max-height:100%;overflow:auto}
+.pin-box input,.pin-box select{box-sizing:border-box;min-height:40px;font-size:16px;max-width:100%}
+.pin-box .field input,.pin-box .field select{width:100%}
+.pin-sec{margin:14px 0 6px;font-weight:700;font-size:14px}
+.pin-time{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:8px}
+.pin-line{margin:8px 0;padding:10px;border:1px solid rgba(255,255,255,.14);border-radius:10px;display:flex;flex-direction:column;gap:6px}
+.pin-line input{width:100%}
+.pin-line-h{display:flex;gap:8px;align-items:baseline;flex-wrap:wrap}
+.pin-line-r{display:flex;gap:8px;align-items:center;justify-content:space-between;flex-wrap:wrap}
+.pin-line-r label{display:flex;gap:6px;align-items:center}.pin-line-r label input{width:9em}
+.pin-line-b{display:flex;gap:6px}.pin-line-b .btn{min-width:42px;min-height:40px}
+.pin-add{margin:8px 0;padding:10px;border:1px dashed rgba(255,255,255,.25);border-radius:10px;display:flex;flex-direction:column;gap:6px}
+.pin-add .row3{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px}
+.pin-add .pin-add-b{display:flex;gap:8px;flex-wrap:wrap}.pin-add .pin-add-b .btn{flex:1;min-height:44px}
+.pin-actions{flex-wrap:wrap;margin-top:14px}.pin-actions .btn{min-height:44px}
 .pick-list{max-height:280px;overflow-y:auto;margin:8px 0;border:1px solid rgba(255,255,255,.12);border-radius:8px}
 .pick-row{display:flex;align-items:center;gap:8px;padding:8px 10px;border-bottom:1px solid rgba(255,255,255,.08)}
 .pick-row:last-child{border-bottom:0}
@@ -332,7 +357,11 @@ html,body{max-width:100%;overflow-x:hidden}
         </section>
 
         <section id="tab-dia" class="tab hidden">
-          <p class="hint">Cada fila es una emisión del ciclo de 24 horas, con sus repeticiones. Arrastra ⠿ o usa ↑ ↓ para moverla, ⇄ para cambiar el programa, ＋ para insertar uno debajo y ✕ para quitar esa emisión. Al terminar, pulsa «Guardar y publicar».</p>
+          <p class="hint">Cada fila es una emisión del día. Arrastra ⠿ o usa ↑ ↓ para moverla, ⇄ para cambiar el programa, ＋ para insertar uno debajo y ✕ para quitarlo. Con <b>📌 Fijar</b> el programa queda clavado a esa hora: sale <b>siempre</b> en su franja y no se mueve, aunque cambies lo demás. Al terminar, pulsa «Guardar y publicar».</p>
+          <h3 class="sub">Programas fijados</h3>
+          <div class="row"><button class="btn small" id="pin-new" type="button">📌 Fijar programa</button></div>
+          <div id="pin-list"></div>
+          <h3 class="sub">El día</h3>
           <div class="row"><button class="btn small" id="day-add" type="button">＋ Añadir al final</button><button class="btn secondary small" id="day-undo" type="button" disabled>↶ Deshacer</button><button class="btn small" id="day-pub" type="button">Guardar y publicar</button></div>
           <p id="day-info" class="hint"></p>
           <div id="day-list"></div>
@@ -430,7 +459,28 @@ html,body{max-width:100%;overflow-x:hidden}
   </div>
 </div>
 
+<div id="pin" class="dlg hidden" role="dialog" aria-modal="true" aria-labelledby="pin-h"><div class="dlg-box pin-box">
+  <h3 id="pin-h">Fijar programa</h3>
+  <label class="field"><span>Nombre del programa</span><input id="pin-title" maxlength="120" placeholder="Ej.: Caso Cerrado"></label>
+  <div class="pin-sec">Franja fija (sale siempre en este horario)</div>
+  <div id="pin-time" class="pin-time"></div>
+  <p id="pin-time-info" class="hint"></p>
+  <label class="field"><span>¿Puede salir un poco antes de su hora?</span><select id="pin-tol"><option value="0">No: a la hora exacta</option><option value="5">Hasta 5 min antes</option><option value="10">Hasta 10 min antes</option><option value="15">Hasta 15 min antes</option><option value="30">Hasta 30 min antes</option></select></label>
+  <div class="pin-sec">Líneas: variaciones por día (día 1 → línea 1, día 2 → línea 2…)</div>
+  <div id="pin-lines"></div>
+  <div class="pin-add">
+    <b>Agregar otra línea</b>
+    <input id="pin-url" type="text" placeholder="Enlace" autocomplete="off">
+    <input id="pin-ltitle" type="text" placeholder="Nombre (opcional)" maxlength="120">
+    <div class="row3"><input id="pin-dh" type="number" min="0" placeholder="Horas"><input id="pin-dm" type="number" min="0" placeholder="Minutos"><input id="pin-ds" type="number" min="0" max="59" placeholder="Segundos"></div>
+    <div class="pin-add-b"><button class="btn secondary" id="pin-test" type="button">Ver</button><button class="btn" id="pin-add" type="button">Agregar línea</button></div>
+  </div>
+  <div id="pin-view" class="fbv-frame hidden"></div>
+  <div id="pin-seen" class="fbv-nav hidden"><button class="btn" id="pin-ok" type="button">Sí se ve</button><button class="btn danger" id="pin-no" type="button">No se ve</button></div>
+  <div class="dlg-actions pin-actions"><button class="btn danger" id="pin-remove" type="button" hidden>Quitar fijado</button><button class="btn secondary" id="pin-cancel" type="button">Cancelar</button><button class="btn secondary" id="pin-save" type="button">Guardar</button><button class="btn" id="pin-savepub" type="button">Guardar y publicar</button></div>
+</div></div>
+
 <div id="dpick" class="dlg hidden" role="dialog" aria-modal="true" aria-labelledby="dpick-title"><div class="dlg-box dpick-box"><h3 id="dpick-title">Elegir programa</h3><input id="dpick-q" type="search" placeholder="Buscar" autocomplete="off"><select id="dpick-cat" aria-label="Categoría"></select><div id="dpick-list" class="pick-list"></div><div class="dlg-actions"><button class="btn secondary" id="dpick-cancel" type="button">Cancelar</button></div></div></div>
-<script type="module" src="../js/admin.js?v=73"></script>
+<script type="module" src="../js/admin.js?v=74"></script>
 </body>
 </html>
