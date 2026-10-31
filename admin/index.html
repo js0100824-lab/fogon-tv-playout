@@ -357,7 +357,7 @@ html,body{max-width:100%;overflow-x:hidden}
         </section>
 
         <section id="tab-dia" class="tab hidden">
-          <p class="hint">Cada fila es una emisión del día. Arrastra ⠿ o usa ↑ ↓ para moverla, ⇄ para cambiar el programa, ＋ para insertar uno debajo y ✕ para quitarlo. Con <b>📌 Fijar</b> el programa queda clavado a esa hora: sale <b>siempre</b> en su franja y no se mueve, aunque cambies lo demás. Al terminar, pulsa «Guardar y publicar».</p>
+          <p class="hint">Cada fila es una emisión del día. Arrastra ⠿ o usa ↑ ↓ para moverla, ⇄ para cambiar el programa, ＋ para insertar uno debajo y ✕ para quitarlo. Con <b>📌 Fijar</b> el programa queda clavado a esa hora: sale <b>siempre</b> en su franja y no se mueve, aunque cambies lo demás. Lo que queda entre fijados se llena solo con programas de la categoría de esa hora, y ninguno se corta. Al terminar, pulsa «Guardar y publicar».</p>
           <h3 class="sub">Programas fijados</h3>
           <div class="row"><button class="btn small" id="pin-new" type="button">📌 Fijar programa</button></div>
           <div id="pin-list"></div>
@@ -465,7 +465,7 @@ html,body{max-width:100%;overflow-x:hidden}
   <div class="pin-sec">Franja fija (sale siempre en este horario)</div>
   <div id="pin-time" class="pin-time"></div>
   <p id="pin-time-info" class="hint"></p>
-  <label class="field"><span>¿Puede salir un poco antes de su hora?</span><select id="pin-tol"><option value="0">No: a la hora exacta</option><option value="5">Hasta 5 min antes</option><option value="10">Hasta 10 min antes</option><option value="15">Hasta 15 min antes</option><option value="30">Hasta 30 min antes</option></select></label>
+  <label class="field"><span>Margen: ¿puede salir un poco antes o después de su hora?</span><select id="pin-tol"><option value="0">No: a la hora exacta (se rellena con anuncios)</option><option value="5">Hasta 5 min antes o después</option><option value="10">Hasta 10 min antes o después</option><option value="15">Hasta 15 min antes o después</option><option value="30">Hasta 30 min antes o después</option></select></label>
   <div class="pin-sec">Líneas: variaciones por día (día 1 → línea 1, día 2 → línea 2…)</div>
   <div id="pin-lines"></div>
   <div class="pin-add">
@@ -481,6 +481,6 @@ html,body{max-width:100%;overflow-x:hidden}
 </div></div>
 
 <div id="dpick" class="dlg hidden" role="dialog" aria-modal="true" aria-labelledby="dpick-title"><div class="dlg-box dpick-box"><h3 id="dpick-title">Elegir programa</h3><input id="dpick-q" type="search" placeholder="Buscar" autocomplete="off"><select id="dpick-cat" aria-label="Categoría"></select><div id="dpick-list" class="pick-list"></div><div class="dlg-actions"><button class="btn secondary" id="dpick-cancel" type="button">Cancelar</button></div></div></div>
-<script type="module" src="../js/admin.js?v=74"></script>
+<script type="module" src="../js/admin.js?v=75"></script>
 </body>
 </html>

@@ -7,7 +7,7 @@ import {
   doc, getDoc, setDoc, addDoc, deleteDoc, updateDoc, deleteField, getDocs, collection, query, orderBy, limit, serverTimestamp
 } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore.js";
 import { ref as sRef, uploadBytesResumable, getDownloadURL, deleteObject } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-storage.js";
-import { parseDuration, fmtDuration, youtubeId, facebookUrl, parseLiveLink, buildCycle, cycleLength, locate, planWithDefaults, compactChannel, expandChannel, describeCuts, itemLabel, intervalSeconds, seamlessPublish, jumpPublish, settleChannel, buildSchedule, normalizeSlots, sortPrograms, placeNewProgram, buildPinnedCycle, pinLines, pinWindow, pinDayIndex, pinEpoch, DAY_MS, PIN_ANCHOR_MS } from "./engine.js?v=37";
+import { parseDuration, fmtDuration, youtubeId, facebookUrl, parseLiveLink, buildCycle, cycleLength, locate, planWithDefaults, compactChannel, expandChannel, describeCuts, itemLabel, intervalSeconds, seamlessPublish, jumpPublish, settleChannel, buildSchedule, normalizeSlots, sortPrograms, placeNewProgram, buildPinnedCycle, pinLines, pinWindow, pinDayIndex, pinEpoch, DAY_MS, PIN_ANCHOR_MS } from "./engine.js?v=38";
 import { serverNow, startClock } from "./clock.js";
 
 const $ = (id) => document.getElementById(id);
@@ -747,7 +747,7 @@ function renderPinnedCycle(pc) {
   const ads = day.items.filter((i) => i.type === "comercial").length, cuts = new Set(day.items.filter((i) => i.type === "comercial").map((i) => i.breakNo)).size;
   $("cycle-total").textContent = `Hoy (día ${today + 1} de ${pc.K} de rotación) · ${day.rows.length} programas, ${state.plan.pins.length} fijado${state.plan.pins.length === 1 ? "" : "s"} · ${cuts} cortes · ${ads} anuncios · el día cierra a las 12:00 AM`;
   let t = mid;
-  $("cycle-list").innerHTML = day.items.slice(0, 600).map((i) => { const li = `<li class="${i.type === "comercial" ? "ad" : ""}">${hms(t)} · ${esc(itemLabel(i))} · ${fmtDuration(i.duration)}${i.type === "comercial" ? ` (corte ${i.breakNo})` : (i.parts > 1 ? ` (del minuto ${fmtDuration(i.startAt)} al ${fmtDuration(i.startAt + i.duration)})` : "")}</li>`; t += i.duration * 1000; return li; }).join("");
+  $("cycle-list").innerHTML = day.items.slice(0, 600).map((i) => { const li = `<li class="${i.type === "comercial" ? "ad" : ""}">${hms(t)} · ${esc(itemLabel(i))} · ${fmtDuration(i.duration)}${i.type === "comercial" ? ` (${i.breakNo ? `corte ${i.breakNo}` : "relleno para llegar a la hora fija"})` : (i.parts > 1 ? ` (del minuto ${fmtDuration(i.startAt)} al ${fmtDuration(i.startAt + i.duration)})` : "")}</li>`; t += i.duration * 1000; return li; }).join("");
   $("st-cycle").textContent = state.channel?.items?.length ? `${state.channel.items.length} elementos` : "Sin publicar";
   updateAirTimes();
 }
@@ -766,7 +766,7 @@ function renderPinList() {
   const today = pc && !pc.error ? pinDayIndex(serverNow(), pc.K) : null;
   el.innerHTML = pins.map((p) => {
     const w = pinWindow(p), n = pinLines(p).length, hoy = today != null && n ? ` · hoy: línea ${(today % n) + 1}` : "";
-    return `<div class="pin-card${n ? "" : " bad"}"><div class="pin-main"><b>📌 ${esc(p.title)}</b><span>${clockTxt(w.f)} → ${clockTxt(w.t % 1440)}</span><span class="hint">${n} línea${n === 1 ? "" : "s"}${hoy} · ${p.tolMin > 0 ? `puede salir hasta ${p.tolMin} min antes` : "a la hora exacta"}</span>${n ? "" : '<span class="warn">Sin líneas válidas: no se emite.</span>'}</div><div class="pin-btns"><button class="btn small" data-pa="edit" data-pin="${esc(p.id)}" type="button">Líneas y hora</button><button class="btn danger small" data-pa="unpin" data-pin="${esc(p.id)}" type="button">Quitar</button></div></div>`;
+    return `<div class="pin-card${n ? "" : " bad"}"><div class="pin-main"><b>📌 ${esc(p.title)}</b><span>${clockTxt(w.f)} → ${clockTxt(w.t % 1440)}</span><span class="hint">${n} línea${n === 1 ? "" : "s"}${hoy} · ${p.tolMin > 0 ? `margen de ${p.tolMin} min antes o después` : "a la hora exacta"}</span>${n ? "" : '<span class="warn">Sin líneas válidas: no se emite.</span>'}</div><div class="pin-btns"><button class="btn small" data-pa="edit" data-pin="${esc(p.id)}" type="button">Líneas y hora</button><button class="btn danger small" data-pa="unpin" data-pin="${esc(p.id)}" type="button">Quitar</button></div></div>`;
   }).join("");
 }
 
@@ -789,7 +789,7 @@ function renderDayPinned(el, pc) {
       const pin = p.pins.find((x) => x.id === r.pin), late = r.delta > 60, early = r.delta < -60;
       html += `<div class="day-row pinrow" data-s="${r.start}" data-e="${r.end}"><span class="day-grip" title="Fijado: no se mueve">📌</span>
         <span class="day-t">${esc(clock(r.start))}<small>→ ${esc(clock(r.end))}</small></span>
-        <span class="day-main"><b>${esc(pin?.title || r.title)}</b><span class="day-meta"><span class="tag pin">Fijado ${esc(clock(r.from))} → ${esc(clock(r.to % 86400))}</span>${r.lines > 1 ? `<span class="tag rep">Línea ${r.lineNo} de ${r.lines}</span>` : ""}${early ? `<span class="tag off">Sale ${mins(r.delta)} min antes</span>` : ""}${late ? `<span class="tag bad">Sale ${mins(r.delta)} min tarde (el anterior se pasó)</span>` : ""}${r.endDelta > 60 ? `<span class="tag off">Termina ${mins(r.endDelta)} min después de su franja</span>` : ""}<span>${esc(r.title === pin?.title ? "" : r.title)}</span></span></span>
+        <span class="day-main"><b>${esc(pin?.title || r.title)}</b><span class="day-meta"><span class="tag pin">Fijado ${esc(clock(r.from))} → ${esc(clock(r.to % 86400))}</span>${r.lines > 1 ? `<span class="tag rep">Línea ${r.lineNo} de ${r.lines}</span>` : ""}${early ? `<span class="tag off">Sale ${mins(r.delta)} min antes</span>` : ""}${late ? `<span class="tag bad">Sale ${mins(r.delta)} min tarde (el anterior se pasó)</span>` : ""}${r.pad > 30 ? `<span class="tag off">${mins(r.pad)} min de anuncios antes, para llegar a su hora</span>` : ""}${r.endDelta > 60 ? `<span class="tag off">Termina ${mins(r.endDelta)} min después de su franja</span>` : ""}<span>${esc(r.title === pin?.title ? "" : r.title)}</span></span></span>
         <span class="day-btns"><button class="btn secondary small" data-pa="edit" data-pin="${esc(r.pin)}" type="button">Líneas</button><button class="btn danger small" data-pa="unpin" data-pin="${esc(r.pin)}" type="button" title="Quitar el fijado">✕</button></span></div>`;
       continue;
     }
@@ -797,12 +797,12 @@ function renderDayPinned(el, pc) {
     const sl = si >= 0 ? p.slots[si] : null, off = sl && sl.cat !== "*" && i.cat !== sl.cat;
     html += `<div class="day-row" draggable="true" data-n="${r.oi}" data-s="${r.start}" data-e="${r.end}"><span class="day-grip" title="Arrastrar">⠿</span>
       <span class="day-t">${esc(clock(r.start))}<small>→ ${esc(clock(r.end))}</small></span>
-      <span class="day-main"><b>${esc(i.title)}</b><span class="day-meta">${i.cat ? `<span class="tag">${esc(i.cat)}</span>` : ""}${off ? '<span class="tag off">Fuera de su franja</span>' : ""}<span>${fmtDuration(i.duration)}${r.end - r.start < i.duration - 5 ? " · se corta para dar paso al fijado" : ""}</span></span></span>
+      <span class="day-main"><b>${esc(i.title)}</b><span class="day-meta">${i.cat ? `<span class="tag">${esc(i.cat)}</span>` : ""}${off ? '<span class="tag off">Fuera de su franja</span>' : ""}<span>${fmtDuration(i.duration)}</span></span></span>
       <span class="day-btns"><button class="btn secondary small" data-act="up" data-n="${r.oi}" type="button" aria-label="Subir">↑</button><button class="btn secondary small" data-act="down" data-n="${r.oi}" type="button" aria-label="Bajar">↓</button><button class="btn secondary small" data-act="swap" data-n="${r.oi}" type="button" title="Cambiar por otro programa" aria-label="Cambiar">⇄</button><button class="btn secondary small" data-act="ins" data-n="${r.oi}" type="button" title="Insertar uno debajo" aria-label="Insertar debajo">＋</button><button class="btn small" data-pa="pinrow" data-n="${r.oi}" data-s="${r.start}" data-e="${r.end}" type="button" title="Fijar este programa en esta hora">📌 Fijar</button><button class="btn danger small" data-act="del" data-n="${r.oi}" type="button" aria-label="Quitar">✕</button></span></div>`;
   }
   el.innerHTML = html;
   const w = day.warn.length ? ` · ⚠ ${day.warn.join(" ")}` : "";
-  $("day-info").textContent = `Día ${view + 1} de ${pc.K}${view === today ? " (hoy)" : ""} · ${day.rows.length} programas · el día cierra justo a las 12:00 AM${w}`;
+  $("day-info").textContent = `Día ${view + 1} de ${pc.K}${view === today ? " (hoy)" : ""} · ${day.rows.length} programas · nunca se corta un programa · el día cierra a las 12:00 AM${w}`;
   $("day-undo").disabled = !dayUndo.length;
   markDayAir();
 }
@@ -881,7 +881,7 @@ function initPins() {
   $("pin-new").addEventListener("click", async () => {
     const nid = await pickProgram("Elegir el programa a fijar"); const it = nid && state.lib.find((x) => x.id === nid); if (!it) return;
     const f = Math.ceil(nowMin() / 5) * 5, to = f + Math.max(5, Math.ceil(it.duration / 300) * 5);
-    openPinEditor({ id: newId(), title: it.title, from: hmTxt(f), to: to >= 1440 ? "00:00" : hmTxt(to), tolMin: 5, lines: [{ id: newId(), url: it.url, duration: it.duration, title: it.title, ...(it.fbOk != null ? { fbOk: it.fbOk } : {}) }] });
+    openPinEditor({ id: newId(), title: it.title, from: hmTxt(f), to: to >= 1440 ? "00:00" : hmTxt(to), tolMin: 10, lines: [{ id: newId(), url: it.url, duration: it.duration, title: it.title, ...(it.fbOk != null ? { fbOk: it.fbOk } : {}) }] });
   });
   $("tab-dia").addEventListener("click", async (e) => {
     const b = e.target.closest("[data-pa]"); if (!b) return;
@@ -892,7 +892,7 @@ function initPins() {
     else if (a === "pinrow") {
       const oi = Number(b.dataset.n), id = state.plan.order[oi], it = state.lib.find((x) => x.id === id); if (!it) return;
       const s = Number(b.dataset.s), en = Number(b.dataset.e), f = Math.round(s / 300) * 5, to = Math.ceil(en / 300) * 5;
-      openPinEditor({ id: newId(), title: it.title, from: hmTxt(f), to: to >= 1440 ? "00:00" : hmTxt(to), tolMin: 5, lines: [{ id: newId(), url: it.url, duration: it.duration, title: it.title, ...(it.fbOk != null ? { fbOk: it.fbOk } : {}) }] }, { oi, id });
+      openPinEditor({ id: newId(), title: it.title, from: hmTxt(f), to: to >= 1440 ? "00:00" : hmTxt(to), tolMin: 10, lines: [{ id: newId(), url: it.url, duration: it.duration, title: it.title, ...(it.fbOk != null ? { fbOk: it.fbOk } : {}) }] }, { oi, id });
     }
   });
   const dlg = $("pin");
