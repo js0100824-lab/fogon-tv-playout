@@ -99,6 +99,28 @@ console.log("4) Programa nuevo entra en su categoría");
   const none = placeNewProgram(library2, p, mk("x", "Infantil", min(30)), 0);
   ok(none === null, "Categoría infantil sin franja: no se mete en Variado");
 }
+console.log("4b) Programa nuevo sustituye una repetición");
+{
+  seed = 5; const r = gen(6 * 60);
+  const p = { ...plan, order: [...r.order], fit: { order: [...r.order], durs: { ...r.durs } }, slotMap: JSON.parse(JSON.stringify(r.slotMap)) };
+  const uniq = new Set(p.order).size, total = p.order.length;
+  const cnt = (id) => p.order.filter((x) => x === id).length;
+  const repCar = p.order.filter((id, n) => id.startsWith("car") && p.order.indexOf(id) !== n);
+  ok(repCar.length > 0, `Hay repeticiones de Caricaturas en el ciclo (${repCar.length})`);
+  const before = Object.fromEntries(["car0", "car1", "car2"].map((id) => [id, cnt(id)]));
+  const n = mk("carNueva", "Caricaturas", min(24)), lib3 = [...full, n];
+  const res = placeNewProgram(lib3, p, n, 0);
+  ok(res && res.replaced && p.order.length === total, `Sustituye una repetición (de «${res?.replaced}») y el ciclo no gana posiciones (${p.order.length}/${total})`);
+  ok(p.order.includes("carNueva") && new Set(p.order).size === uniq + 1, "Sale en el ciclo y los originales siguen en la parrilla");
+  ok(["car0", "car1", "car2"].every((id) => cnt(id) >= 1), "Ninguno de los originales desapareció (solo perdió una repetición)");
+  ok(["car0", "car1", "car2"].filter((id) => cnt(id) < before[id]).length === 1, "Exactamente un original perdió una repetición");
+  const air = placeNewProgram(lib3, { ...p, order: ["car0", "car1", "car0"], slotMap: null, fit: null }, mk("c9", "Caricaturas", 60), 2);
+  ok(air === null, "Si la única repetición es la que está al aire, no se toca");
+  const p2 = { ...plan, order: [...r.order], fit: null, slotMap: JSON.parse(JSON.stringify(r.slotMap)) };
+  const n2 = mk("deporte1", "Deportes", min(30));
+  const res2 = placeNewProgram([...full, n2], p2, n2, 0);
+  ok(!res2 || res2.replaced === null, "Sin repeticiones de esa categoría: se suma en lugar de sustituir");
+}
 console.log("5) Parrilla editada a mano: respaldo");
 {
   seed = 5; const r = gen(6 * 60);

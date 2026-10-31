@@ -462,19 +462,32 @@ export function absorbTail(library, plan) {
   return changed;
 }
 
-// Mete un programa nuevo en la franja de su categoría. airIdx = posición (en plan.order) del programa al aire (-1 si no se sabe).
-// Si el programa al aire está en esa franja, el nuevo sale justo después; si la franja viene más adelante, sale primero en ella; si ya pasó hoy, queda para la próxima repetición.
-// Devuelve { at, cat } o null (no hay franja para esa categoría o la parrilla se editó a mano y ya no se sabe dónde va cada franja).
+// Mete un programa nuevo en la parrilla. airIdx = posición (en plan.order) del programa al aire (-1 si no se sabe).
+// 1) Lo normal: SUSTITUYE una repetición de su misma categoría en el ciclo (la primera que aún no ha salido; si todas ya pasaron, la primera de la próxima vuelta).
+//    El programa sustituido no se toca en la parrilla principal: solo pierde esa repetición, y nunca la que está al aire.
+// 2) Si no queda ninguna repetición de esa categoría, se SUMA en su franja: justo después del programa al aire si es de esa franja, primero en ella si viene más adelante.
+// Devuelve { at, cat, replaced } (replaced = título del programa que perdió una repetición, o null si se sumó) o null si no hay dónde ponerlo.
 export function placeNewProgram(library, plan, item, airIdx = -1) {
   const sm = plan.slotMap, order = plan.order || [];
-  if (!sm || !Array.isArray(sm.rows) || !item?.cat || order.includes(item.id)) return null;
-  if (!(Array.isArray(sm.order) && sm.order.length === order.length && sm.order.every((id, n) => id === order[n]))) {
+  if (!item?.cat || order.includes(item.id)) return null;
+  const byId = new Map(library.map((i) => [i.id, i]));
+  const valid = !!(sm && Array.isArray(sm.rows) && Array.isArray(sm.order) && sm.order.length === order.length && sm.order.every((id, n) => id === order[n]));
+  const repeats = [];   // posiciones que son repetición (el programa ya había salido antes en el ciclo) de la misma categoría
+  const seen = new Set(); order.forEach((id, n) => { if (seen.has(id) && byId.get(id)?.cat === item.cat && n !== airIdx) repeats.push(n); seen.add(id); });
+  if (repeats.length) {
+    const at = repeats.find((n) => n > airIdx) ?? repeats[0], old = byId.get(order[at]);
+    order[at] = item.id;
+    const durs = { ...(plan.fit?.durs || {}) }; delete durs[at];   // si esa posición estaba recortada, deja de estarlo
+    if (valid) { plan.fit = { order: [...order], durs }; sm.order = [...order]; absorbTail(library, plan); } else plan.fit = null;
+    return { at, cat: item.cat, replaced: old?.title || null };
+  }
+  if (!sm || !Array.isArray(sm.rows)) return null;
+  if (!valid) {
     // La parrilla se tocó a mano y ya no se sabe dónde cae cada franja: entra después del último programa de su categoría.
-    const byId = new Map(library.map((i) => [i.id, i])); let j = -1;
-    order.forEach((id, n) => { if (byId.get(id)?.cat === item.cat) j = n; });
+    let j = -1; order.forEach((id, n) => { if (byId.get(id)?.cat === item.cat) j = n; });
     if (j < 0) return null;
     order.splice(j + 1, 0, item.id); plan.fit = null; plan.slotMap = { ...sm, order: null };
-    return { at: j + 1, cat: item.cat };
+    return { at: j + 1, cat: item.cat, replaced: null };
   }
   let cand = sm.rows.map((r, n) => ({ r, n })).filter(({ r }) => r.cat === item.cat);
   if (!cand.length && !isKids(item.cat)) cand = sm.rows.map((r, n) => ({ r, n })).filter(({ r }) => r.cat === "*");
@@ -487,5 +500,5 @@ export function placeNewProgram(library, plan, item, airIdx = -1) {
   plan.fit = { order: [...order], durs }; sm.order = [...order];
   if (sm.tailFrom >= 0) sm.tailFrom = sm.rows[sm.rows.length - 1].i0;
   absorbTail(library, plan);
-  return { at, cat: r.cat === "*" ? "Variado" : r.cat };
+  return { at, cat: r.cat === "*" ? "Variado" : r.cat, replaced: null };
 }

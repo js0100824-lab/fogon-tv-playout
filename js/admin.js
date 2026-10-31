@@ -7,7 +7,7 @@ import {
   doc, getDoc, setDoc, addDoc, deleteDoc, updateDoc, deleteField, getDocs, collection, query, orderBy, limit, serverTimestamp
 } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore.js";
 import { ref as sRef, uploadBytesResumable, getDownloadURL, deleteObject } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-storage.js";
-import { parseDuration, fmtDuration, youtubeId, facebookUrl, parseLiveLink, buildCycle, cycleLength, locate, planWithDefaults, compactChannel, expandChannel, describeCuts, itemLabel, intervalSeconds, seamlessPublish, jumpPublish, settleChannel, buildSchedule, normalizeSlots, sortPrograms, placeNewProgram } from "./engine.js?v=35";
+import { parseDuration, fmtDuration, youtubeId, facebookUrl, parseLiveLink, buildCycle, cycleLength, locate, planWithDefaults, compactChannel, expandChannel, describeCuts, itemLabel, intervalSeconds, seamlessPublish, jumpPublish, settleChannel, buildSchedule, normalizeSlots, sortPrograms, placeNewProgram } from "./engine.js?v=36";
 import { serverNow, startClock } from "./clock.js";
 
 const $ = (id) => document.getElementById(id);
@@ -155,7 +155,7 @@ async function initPanel() {
   }
   // Vaciar la parrilla de golpe
   $("order-clear").addEventListener("click", async () => {
-    const n = state.plan.order.length;
+    const n = new Set(state.plan.order).size;
     if (!n) { toast("La parrilla ya está vacía.", "error"); return; }
     if (!(await askConfirm({ title: "¿Vaciar la parrilla?", text: `Se quitan los ${n} programas. Siguen en la biblioteca.`, ok: "Vaciar", danger: true }))) return;
     state.plan.order = []; savePlan().then(() => { renderAll(); toast("Parrilla vaciada.", "ok"); }).catch(fail);
@@ -382,7 +382,7 @@ function renderLibrary() {
   });
   const card = (i, num) => {
     const n = state.plan.order.filter((x) => x === i.id).length, prog = i.kind === "programa";
-    const onGrid = prog && n > 0 ? `<span class="tag ok">✓ En parrilla${n > 1 ? ` ×${n}` : ""}</span>` : "";
+    const onGrid = prog && n > 0 ? `<span class="tag ok">✓ En parrilla</span>` : "";
     const fbTag = i.fbOk === true ? '<span class="tag ok">✓ Se ve</span>' : i.fbOk === false ? '<span class="tag bad">✗ No se ve</span>' : "";
     const dur = fmtDuration(i.duration) + (i.kind === "comercial" && i.playFor > 0 ? ` · al aire ${fmtDuration(Math.min(i.playFor, i.duration))}` : "");
     const catSel = prog ? `<select class="cat-sel" data-cat="${esc(i.id)}" aria-label="Categoría"><option value="">Sin categoría</option>${catsAll().map((c) => `<option value="${esc(c)}"${c === i.cat ? " selected" : ""}>${esc(c)}</option>`).join("")}</select>` : "";
@@ -487,29 +487,33 @@ async function savePlanFromCommercial() {
 const savePlan = () => setDoc(doc(db, "config", "plan"), state.plan);
 
 /* Programación */
+// Parrilla principal: cada programa UNA sola vez (sin repeticiones ni horarios duplicados). Todas las emisiones, con sus repeticiones y horas, están en «Ciclo de emisión».
+const orderFirsts = () => { const seen = new Set(), out = []; state.plan.order.forEach((id, n) => { if (!seen.has(id)) { seen.add(id); out.push(n); } }); return out; };   // posición de la primera emisión de cada programa
 function renderOrder() {
-  $("order-sum").textContent = `Parrilla (${state.plan.order.length} programa${state.plan.order.length === 1 ? "" : "s"})`;
+  const firsts = orderFirsts(), total = state.plan.order.length;
+  $("order-sum").textContent = `Parrilla principal (${firsts.length} programa${firsts.length === 1 ? "" : "s"})`;
   const el = $("order-list");
-  if (!state.plan.order.length) { el.innerHTML = '<p class="hint">Parrilla vacía</p>'; return; }
-  el.innerHTML = state.plan.order.map((id, n) => {
-    const i = state.lib.find((x) => x.id === id);
-    return `<div class="item ord"><span class="ord-n">${n + 1}.</span><span class="grow"><b>${esc(i.title)}</b></span><span class="ord-d">${fmtDuration(i.duration)}</span>
-      <div class="ord-btns"><button class="btn secondary small" data-mv="${n}:-1" type="button" aria-label="Subir">↑</button>
-      <button class="btn secondary small" data-mv="${n}:1" type="button" aria-label="Bajar">↓</button>
-      <button class="btn secondary small" data-rm="${n}" type="button">Quitar</button></div>
+  if (!firsts.length) { el.innerHTML = '<p class="hint">Parrilla vacía</p>'; return; }
+  el.innerHTML = (total > firsts.length ? `<p class="hint">${total - firsts.length} repeticion${total - firsts.length === 1 ? "" : "es"} más en el ciclo de emisión.</p>` : "") + firsts.map((n, r) => {
+    const i = state.lib.find((x) => x.id === state.plan.order[n]);
+    return `<div class="item ord"><span class="ord-n">${r + 1}.</span><span class="grow"><b>${esc(i.title)}</b></span><span class="ord-d">${fmtDuration(i.duration)}</span>
+      <div class="ord-btns"><button class="btn secondary small" data-mv="${r}:-1" type="button" aria-label="Subir">↑</button>
+      <button class="btn secondary small" data-mv="${r}:1" type="button" aria-label="Bajar">↓</button>
+      <button class="btn secondary small" data-rm="${r}" type="button">Quitar</button></div>
       <div class="airt" data-air="${n}"></div></div>`;
   }).join("");
   el.querySelectorAll("[data-mv]").forEach((b) => b.addEventListener("click", () => {
-    const [n, d] = b.dataset.mv.split(":").map(Number), o = state.plan.order, m = n + d;
-    if (m < 0 || m >= o.length) return;
-    [o[n], o[m]] = [o[m], o[n]]; savePlan().then(renderAll).catch(fail);
+    const [r, d] = b.dataset.mv.split(":").map(Number), o = state.plan.order, f = orderFirsts(), m = r + d;
+    if (m < 0 || m >= f.length) return;
+    [o[f[r]], o[f[m]]] = [o[f[m]], o[f[r]]]; savePlan().then(renderAll).catch(fail);   // se intercambian sus primeras emisiones; las repeticiones no se mueven
   }));
   el.querySelectorAll("[data-rm]").forEach((b) => b.addEventListener("click", async () => {
     const airId = airProgramId();   // programa que suena ahora (antes de quitar)
-    state.plan.order.splice(Number(b.dataset.rm), 1);
+    const id = state.plan.order[orderFirsts()[Number(b.dataset.rm)]];
+    state.plan.order = state.plan.order.filter((x) => x !== id);   // sale de la parrilla y también todas sus repeticiones
     try {
       await savePlan(); renderAll();
-      // Si quitaste el que estaba al aire (y ya no queda otro igual en la parrilla), se publica al instante: salta al siguiente.
+      // Si quitaste el que estaba al aire, se publica al instante: salta al siguiente.
       if (airId && !state.plan.order.includes(airId)) await publish(true);
     } catch (err) { fail(err); }
   }));
@@ -541,7 +545,7 @@ function renderCycle() {
   const cyc = buildCycle(state.lib, state.plan);
   const ads = cyc.filter((i) => i.type === "comercial").length, cuts = new Set(cyc.filter((i) => i.type === "comercial").map((i) => i.breakNo)).size;
   const clk = cycleClock(cyc);
-  $("cycle-total").textContent = cyc.length ? `${cuts} cortes · ${ads} anuncios · ciclo ${fmtDuration(cycleLength(cyc))}` : "Sin ciclo";
+  $("cycle-total").textContent = cyc.length ? `${state.plan.order.length} emisiones de programas (con repeticiones) · ${cuts} cortes · ${ads} anuncios · ciclo ${fmtDuration(cycleLength(cyc))}` : "Sin ciclo";
   let t = 0;
   $("cycle-list").innerHTML = cyc.slice(0, 400).map((i, k) => { const li = `<li class="${i.type === "comercial" ? "ad" : ""}">${clk ? hms(clk.starts[k]) : fmtDuration(t)} · ${esc(itemLabel(i))} · ${fmtDuration(i.duration)}${i.type === "comercial" ? ` (corte ${i.breakNo})` : (i.parts > 1 ? ` (del minuto ${fmtDuration(i.startAt)} al ${fmtDuration(i.startAt + i.duration)})` : "")}</li>`; t += i.duration; return li; }).join("")
     + (cyc.length > 400 ? `<li class="hint">… y ${cyc.length - 400} más</li>` : "");
@@ -949,12 +953,13 @@ function renderPick() {
   const progs = sortProgs(state.lib.filter((i) => i.kind === "programa" && (!q || (i.title || "").toLowerCase().includes(q))), "old");
   el.innerHTML = progs.length ? progs.map((i) => {
     const n = state.plan.order.filter((x) => x === i.id).length;
-    return `<div class="pick-row"><span class="pick-t">${esc(i.title)}</span><span class="pick-d">${fmtDuration(i.duration)}${n ? ` · ✓${n > 1 ? ` ×${n}` : ""}` : ""}${i.fbOk === false ? " · ✗" : ""}</span><button class="btn small" data-pick="${esc(i.id)}" type="button" aria-label="Añadir">＋</button></div>`;
+    return `<div class="pick-row"><span class="pick-t">${esc(i.title)}</span><span class="pick-d">${fmtDuration(i.duration)}${n ? " · ✓" : ""}${i.fbOk === false ? " · ✗" : ""}</span><button class="btn small" data-pick="${esc(i.id)}" type="button" aria-label="Añadir">＋</button></div>`;
   }).join("") : '<p class="hint">Sin resultados</p>';
   el.scrollTop = st;
 }
 function addToGrid(id) {
   if (!state.lib.some((x) => x.id === id)) return;
+  if (state.plan.order.includes(id)) { toast("Ya está en la parrilla principal.", "error"); return; }   // cada programa va una sola vez; las repeticiones las arma el ciclo
   state.plan.order.push(id);
   savePlan().then(() => { renderAll(); toast("Añadido a la parrilla.", "ok"); }).catch(fail);
 }
@@ -998,7 +1003,7 @@ async function autoPlace(it) {
     if (!r) return false;
     await savePlan(); renderAll();
     if (state.channel?.items?.length) await publish(true);
-    toast(`«${it.title}» entró a la parrilla en ${r.cat}.`, "ok");
+    toast(r.replaced ? `«${it.title}» sustituyó una repetición de «${r.replaced}» en el ciclo (${r.cat}). «${r.replaced}» sigue en la parrilla.` : `«${it.title}» entró a la parrilla en ${r.cat}.`, "ok");
     return true;
   } catch (err) { fail(err); return false; }
 }
