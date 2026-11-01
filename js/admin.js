@@ -7,7 +7,7 @@ import {
   doc, getDoc, setDoc, addDoc, deleteDoc, updateDoc, deleteField, getDocs, collection, query, orderBy, limit, serverTimestamp
 } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore.js";
 import { ref as sRef, uploadBytesResumable, getDownloadURL, deleteObject } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-storage.js";
-import { parseDuration, fmtDuration, youtubeId, facebookUrl, parseLiveLink, buildCycle, cycleLength, locate, planWithDefaults, compactChannel, expandChannel, describeCuts, itemLabel, intervalSeconds, seamlessPublish, jumpPublish, settleChannel, buildSchedule, normalizeSlots, sortPrograms, placeNewProgram, buildPinnedCycle, pinLines, pinWindow, pinDayIndex, pinEpoch, DAY_MS, PIN_ANCHOR_MS, endMinOf, sameCat } from "./engine.js?v=92";
+import { parseDuration, fmtDuration, youtubeId, facebookUrl, parseLiveLink, buildCycle, cycleLength, locate, planWithDefaults, compactChannel, expandChannel, describeCuts, itemLabel, intervalSeconds, seamlessPublish, jumpPublish, settleChannel, buildSchedule, normalizeSlots, sortPrograms, placeNewProgram, buildPinnedCycle, pinLines, pinLineId, pinWindow, pinDayIndex, pinEpoch, DAY_MS, PIN_ANCHOR_MS, endMinOf, sameCat } from "./engine.js?v=92";
 import { serverNow, startClock } from "./clock.js";
 
 const $ = (id) => document.getElementById(id);
@@ -885,8 +885,15 @@ async function pinAddLine() {
   ["pin-url", "pin-ltitle", "pin-dh", "pin-dm", "pin-ds"].forEach((id) => { $(id).value = ""; });
   renderPinLines(); toast(`Línea ${pinDraft.lines.length} agregada. Pulsa «Ver» para comprobar que se reproduce.`, "ok");
 }
+// Firma de lo que sale HOY de los fijados (línea, enlace, duración, título): si cambia, hay que republicar para que el aire se actualice.
+function pinTodaySig() {
+  const pc = getPinned(); if (!pc || pc.error) return "";
+  const day = pc.days[pinDayIndex(serverNow(), pc.K)]; if (!day) return "";
+  return JSON.stringify(day.rows.filter((r) => r.kind === "pin").map((r) => { const pin = state.plan.pins.find((x) => x.id === r.pin), l = pin && pinLines(pin).find((x) => pinLineId(pin, x) === r.id); return [r.id, l?.url, l?.duration, l?.title || ""]; }));
+}
 async function pinSave(publishToo) {
   const d = pinDraft; if (!d) return;
+  const sigBefore = pinTodaySig();
   d.title = ($("pin-title").value || "").trim() || d.lines[0]?.title || "Programa fijado";
   if (!pinLines(d).length) { toast("Agrega al menos una línea con enlace y duración.", "error"); return; }
   const ov = pinOverlap(d); if (ov) { toast(`La franja se cruza con «${ov.title}». Cambia la hora.`, "error"); return; }
@@ -896,8 +903,10 @@ async function pinSave(publishToo) {
   let moved = "";
   if (pinFromOrder && state.plan.order[pinFromOrder.oi] === pinFromOrder.id) { state.plan.order.splice(pinFromOrder.oi, 1); moved = " Salió de la parrilla de abajo: ahora solo sale en su hora fija."; }
   pinFromOrder = null; closePin();
+  let autoPub = false;
   try { await savePlan(); renderAll(); } catch (err) { fail(err); return; }
-  toast(`«${d.title}» fijado: se lanza a las ${clockTxt(pinWindow(d).f)} y puede extenderse hasta las ${clockTxt(pinWindow(d).t % 1440)}.${moved}${publishToo ? "" : " Pulsa «Guardar y publicar» para que salga al aire."}`, "ok");
+  if (!publishToo && state.channel?.items?.length && pinTodaySig() !== sigBefore) { publishToo = autoPub = true; }   // cambió el enlace/duración de la línea de HOY: se publica solo
+  toast(`«${d.title}» fijado: se lanza a las ${clockTxt(pinWindow(d).f)} y puede extenderse hasta las ${clockTxt(pinWindow(d).t % 1440)}.${moved}${publishToo ? (autoPub ? " Cambió la línea de hoy: actualizando el aire…" : "") : " Pulsa «Guardar y publicar» para que salga al aire."}`, "ok");
   if (publishToo) await publish(false);
 }
 async function unpin(id) {
