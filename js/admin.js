@@ -800,7 +800,7 @@ function renderDayPinned(el, pc) {
       const pin = p.pins.find((x) => x.id === r.pin), late = r.delta > 60, early = r.delta < -60;
       html += `<div class="day-row pinrow" data-s="${r.start}" data-e="${r.end}"><span class="day-grip" title="Fijado: no se mueve">Fijo</span>
         <span class="day-t">${esc(clock(r.start))}<small>→ ${esc(clock(r.end))}</small></span>
-        <span class="day-main"><b>${esc(pin?.title || r.title)}</b><span class="day-meta"><span class="tag pin">Se lanza ${esc(clock(r.from))} · se extiende hasta ${esc(clock(r.to % 86400))}</span>${r.lines > 1 ? `<span class="tag rep">Línea ${r.lineNo} de ${r.lines}</span>` : ""}${early ? `<span class="tag off">Sale ${mins(r.delta)} min antes</span>` : ""}${late ? (r.start > r.by + 60 ? `<span class="tag bad">Sale ${mins(r.delta)} min tarde (el anterior se pasó)</span>` : `<span class="tag off">Sale ${mins(r.delta)} min después de su hora</span>`) : ""}${r.pad > 30 ? `<span class="tag off">${mins(r.pad)} min de anuncios repartidos antes, para llegar a su hora</span>` : ""}${r.ext > 30 ? `<span class="tag off">Se extiende ${mins(r.ext)} min con anuncios dentro del programa</span>` : ""}${r.endDelta > 60 ? `<span class="tag off">Termina ${mins(r.endDelta)} min después de su franja; el siguiente empieza al terminar</span>` : ""}<span>${esc(r.title === pin?.title ? "" : r.title)}</span></span></span>
+        <span class="day-main"><b>${esc(pin?.title || r.title)}</b><span class="day-meta"><span class="tag pin">${pin?.strict ? "Hora exacta · " : ""}Se lanza ${esc(clock(late || early ? r.start : r.from))}${late || early ? ` (fijado a las ${esc(clock(r.from))})` : ""} · se extiende hasta ${esc(clock(r.to % 86400))}</span>${r.lines > 1 ? `<span class="tag rep">Línea ${r.lineNo} de ${r.lines}</span>` : ""}${early ? `<span class="tag off">Sale ${mins(r.delta)} min antes</span>` : ""}${late ? (r.start > r.by + 60 ? `<span class="tag bad">Sale ${mins(r.delta)} min tarde (el anterior termina a las ${esc(clock(r.start))})</span><button class="btn small" data-pa="fit" data-pin="${esc(r.pin)}" data-st="${r.start}" type="button">Ajustar a las ${esc(clock(r.start))}</button><button class="btn small" data-pa="strict" data-pin="${esc(r.pin)}" type="button">Salir a las ${esc(clock(r.from))}</button>` : `<span class="tag off">Sale ${mins(r.delta)} min después de su hora</span>`) : ""}${r.pad > 30 ? `<span class="tag off">${mins(r.pad)} min de anuncios repartidos antes, para llegar a su hora</span>` : ""}${r.ext > 30 ? `<span class="tag off">Se extiende ${mins(r.ext)} min con anuncios dentro del programa</span>` : ""}${r.endDelta > 60 ? `<span class="tag off">Termina ${mins(r.endDelta)} min después de su franja; el siguiente empieza al terminar</span>` : ""}<span>${esc(r.title === pin?.title ? "" : r.title)}</span></span></span>
         <span class="day-btns"><button class="btn secondary small" data-pa="edit" data-pin="${esc(r.pin)}" type="button">Líneas</button><button class="btn danger small" data-pa="unpin" data-pin="${esc(r.pin)}" type="button" title="Quitar el fijado">✕</button></span></div>`;
       continue;
     }
@@ -849,7 +849,7 @@ function renderPinTimeSel() {
 function renderPinEditor() {
   const d = pinDraft;
   $("pin-h").textContent = pinIsNew ? "Fijar programa" : "Programa fijado";
-  $("pin-title").value = d.title; $("pin-tol").value = String(d.tolMin ?? 5);
+  $("pin-strict").checked = !!d.strict; $("pin-title").value = d.title; $("pin-tol").value = String(d.tolMin ?? 5);
   const mx = $("pin-maxext"), cur = String(d.maxExtraMin || 0); if (![...mx.options].some((o) => o.value === cur)) mx.add(new Option(`Máximo ${cur} min de anuncios extra`, cur)); mx.value = cur;
   renderPinTimeSel();
   $("pin-remove").hidden = pinIsNew; $("pin-view").classList.add("hidden"); $("pin-view").innerHTML = ""; $("pin-seen").classList.add("hidden");
@@ -913,6 +913,20 @@ function initPins() {
     if (a === "view") { dayView = Number(b.dataset.d); renderDay(); }
     else if (a === "edit") { const pin = state.plan.pins.find((x) => x.id === b.dataset.pin); if (pin) openPinEditor(pin); }
     else if (a === "unpin") await unpin(b.dataset.pin);
+    else if (a === "strict") {   // el fijado sale exactamente a su hora: lo anterior se acorta si hace falta
+      const pin = state.plan.pins.find((x) => x.id === b.dataset.pin); if (!pin) return;
+      pin.strict = true;
+      try { await savePlan(); renderAll(); toast(`«${pin.title}» saldrá a las ${clockTxt(pinWindow(pin).f)} en punto. Publica para que el público lo vea.`, "ok"); } catch (err) { fail(err); }
+    }
+    else if (a === "fit") {   // el fijado pasa a la hora real a la que sale (cuando termina el programa anterior)
+      const pin = state.plan.pins.find((x) => x.id === b.dataset.pin); if (!pin) return;
+      const f0 = pinWindow(pin).f, w = pinWindow(pin), keep = Math.max(0, pinStartBy(pin) - w.f), nf = Math.floor(Number(b.dataset.st) / 60), d = nf - f0;
+      if (!(d > 0) || nf >= 1440) return;
+      const nxt = state.plan.pins.filter((x) => x.id !== pin.id && pinWindow(x).f > f0).map((x) => pinWindow(x).f).sort((x, y) => x - y)[0];
+      let nt = w.t + d; if (nxt != null && nt > nxt) nt = Math.max(nxt, nf + 5); if (nt >= 1440) nt = 1440;
+      pin.from = hmTxt(nf); pin.to = nt >= 1440 ? "00:00" : hmTxt(nt); pin.startBy = hmTxt(Math.min(nf + keep, nt));
+      try { await savePlan(); renderAll(); toast(`«${pin.title}» ahora se lanza a las ${clockTxt(nf)}. Publica para que el público lo vea.`, "ok"); } catch (err) { fail(err); }
+    }
     else if (a === "pinrow") {
       const oi = Number(b.dataset.n), id = state.plan.order[oi], it = state.lib.find((x) => x.id === id); if (!it) return;
       const s = Number(b.dataset.s), en = Number(b.dataset.e), f = Math.round(s / 300) * 5, to = Math.ceil(en / 300) * 5;
@@ -922,6 +936,7 @@ function initPins() {
   const dlg = $("pin");
   $("pin-title").addEventListener("input", () => { if (pinDraft) pinDraft.title = $("pin-title").value; });
   $("pin-tol").addEventListener("change", () => { if (pinDraft) { pinDraft.tolMin = Number($("pin-tol").value) || 0; renderPinTimeInfo(); } });
+  $("pin-strict").addEventListener("change", () => { if (pinDraft) pinDraft.strict = $("pin-strict").checked; });
   $("pin-maxext").addEventListener("change", () => { if (pinDraft) pinDraft.maxExtraMin = Number($("pin-maxext").value) || 0; });
   $("pin-time").addEventListener("change", (e) => {
     const box = e.target.closest(".tsel"); if (!box || !pinDraft) return;

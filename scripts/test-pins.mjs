@@ -146,6 +146,15 @@ ok(r3.days[0].rows.find((x) => x.pin === "M").delta > 0, "el siguiente fijado sa
     const t4 = run(pin, { shortOn: false }); ok(t4.row("a").ext > min(30), "corto: con la función apagada vuelve la extensión de antes");
     ok(Math.abs(cycleLength(t.day.items) - DAY_SEC) < 0.01, "corto: el día sigue durando 24 h");
     const big = run([{ id: "a", title: "A", from: "08:00", to: "10:00", tolMin: 0, lines: [line("a", min(40))] }]); ok(big.row("a").short === false, "no corto: 40 min sigue con la extensión normal"); }
+  // Fijado a su hora exacta: el programa anterior (más largo que su franja) se acorta para que el siguiente salga a las 9:00
+  { const A = { id: "a", title: "A", from: "08:00", to: "09:00", tolMin: 0, lines: [line("a", min(109))] };
+    const mkB = (strict) => ({ id: "b", title: "Info", from: "09:00", to: "10:00", tolMin: 0, strict, lines: [line("b", min(45))] });
+    const t0 = run([A, mkB(false)]); ok(t0.row("b").delta > min(40), `sin hora exacta: el informativo sale tarde (${Math.round(t0.row("b").delta / 60)} min)`);
+    const t1 = run([A, mkB(true)]), b = t1.row("b"), a = t1.row("a");
+    ok(Math.abs(b.start - 9 * 3600) < 1, `hora exacta: el informativo sale a las 9:00 (${b.start / 3600})`);
+    ok(a.end <= 9 * 3600 + 1 && a.end > 8.5 * 3600, "hora exacta: el programa anterior termina justo a las 9:00");
+    ok(t1.day.warn.some((w) => w.includes("se acorta")), "hora exacta: el panel avisa cuánto se acorta");
+    ok(Math.abs(cycleLength(t1.day.items) - DAY_SEC) < 0.01, "hora exacta: el día sigue durando 24 h"); }
   // 1) «puede comenzar hasta»: el fijado puede salir tarde hasta ese límite (no más), y 0 min tarde si no se da margen
   { const base = { id: "a", title: "A", from: "08:00", to: "09:00", tolMin: 0, lines: [line("a", min(40))] };
     const d0 = run([{ ...base, startBy: "08:00" }]).row("a").delta, d20 = run([{ ...base, startBy: "08:20" }]).row("a").delta;
