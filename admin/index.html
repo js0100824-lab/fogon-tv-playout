@@ -407,7 +407,6 @@ html,body{max-width:100%;overflow-x:hidden}
           <label class="field"><span><input id="plan-short-on" type="checkbox"> Activar para fijados de menos de <b id="plan-short-max">25</b> min</span></label>
           <div id="plan-short-box">
             <label class="field"><span>Un corte cada (minutos)</span><input id="plan-short-every" type="number" min="1" max="24" step="any"></label>
-            <label class="field"><span>Anuncios por corte (vacío = los mismos del corte general)</span><input id="plan-short-count" type="number" min="0" max="20" placeholder="igual que arriba"></label>
           </div>
           <button class="btn small" id="plan-save-com" type="button">Guardar</button>
           <h3 class="sub">Cortes</h3>
@@ -499,6 +498,6 @@ html,body{max-width:100%;overflow-x:hidden}
 </div></div>
 
 <div id="dpick" class="dlg hidden" role="dialog" aria-modal="true" aria-labelledby="dpick-title"><div class="dlg-box dpick-box"><h3 id="dpick-title">Elegir programa</h3><input id="dpick-q" type="search" placeholder="Buscar" autocomplete="off"><select id="dpick-cat" aria-label="Categoría"></select><div id="dpick-list" class="pick-list"></div><div class="dlg-actions"><button class="btn secondary" id="dpick-cancel" type="button">Cancelar</button></div></div></div>
-<script type="module" src="../js/admin.js?v=78"></script>
+<script type="module" src="../js/admin.js?v=79"></script>
 </body>
 </html>

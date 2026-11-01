@@ -7,7 +7,7 @@ import {
   doc, getDoc, setDoc, addDoc, deleteDoc, updateDoc, deleteField, getDocs, collection, query, orderBy, limit, serverTimestamp
 } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore.js";
 import { ref as sRef, uploadBytesResumable, getDownloadURL, deleteObject } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-storage.js";
-import { parseDuration, fmtDuration, youtubeId, facebookUrl, parseLiveLink, buildCycle, cycleLength, locate, planWithDefaults, compactChannel, expandChannel, describeCuts, itemLabel, intervalSeconds, seamlessPublish, jumpPublish, settleChannel, buildSchedule, normalizeSlots, sortPrograms, placeNewProgram, buildPinnedCycle, pinLines, pinWindow, pinDayIndex, pinEpoch, DAY_MS, PIN_ANCHOR_MS } from "./engine.js?v=39";
+import { parseDuration, fmtDuration, youtubeId, facebookUrl, parseLiveLink, buildCycle, cycleLength, locate, planWithDefaults, compactChannel, expandChannel, describeCuts, itemLabel, intervalSeconds, seamlessPublish, jumpPublish, settleChannel, buildSchedule, normalizeSlots, sortPrograms, placeNewProgram, buildPinnedCycle, pinLines, pinWindow, pinDayIndex, pinEpoch, DAY_MS, PIN_ANCHOR_MS } from "./engine.js?v=40";
 import { serverNow, startClock } from "./clock.js";
 
 const $ = (id) => document.getElementById(id);
@@ -147,7 +147,7 @@ async function initPanel() {
   $("b-logo-file").addEventListener("change", onLogoFile);
   $("b-logo-rm").addEventListener("click", () => { state.brand.logo = ""; renderBrand(); saveBrand(true); });
   $("plan-save-com").addEventListener("click", savePlanFromCommercial);
-  ["plan-mode", "plan-iv", "plan-iu", "plan-count", "plan-repeat", "plan-end", "plan-every", "plan-short-on", "plan-short-every", "plan-short-count"].forEach((id) => $(id).addEventListener("input", previewPlan));
+  ["plan-mode", "plan-iv", "plan-iu", "plan-count", "plan-repeat", "plan-end", "plan-every", "plan-short-on", "plan-short-every"].forEach((id) => $(id).addEventListener("input", previewPlan));
   startClock();   // hora del servidor: la misma para el panel y para todos los espectadores
   for (const [id, key] of [["order-box", "fogon.orderOpen"], ["cycle-box", "fogon.cycleOpen"]]) {
     const box = $(id);
@@ -432,7 +432,7 @@ function readPlanForm() {
     mode: $("plan-mode").value, intervalValue: Number($("plan-iv").value), intervalUnit: $("plan-iu").value,
     breakCount: Math.max(0, parseInt($("plan-count").value, 10) || 0), breakRepeat: Math.max(1, parseInt($("plan-repeat").value, 10) || 1),
     breakAtEnd: $("plan-end").checked, everyN: Math.max(0, parseInt($("plan-every").value, 10) || 0),
-    shortOn: $("plan-short-on").checked, shortEveryMin: Math.max(1, Number($("plan-short-every").value) || 10), shortCount: Math.max(0, parseInt($("plan-short-count").value, 10) || 0)
+    shortOn: $("plan-short-on").checked, shortEveryMin: Math.max(1, Number($("plan-short-every").value) || 10), shortCount: 0
   });
 }
 function renderCutSummary(plan) {
@@ -457,7 +457,7 @@ function renderAds() {
   const p = state.plan;
   $("plan-mode").value = p.mode; $("plan-iv").value = p.intervalValue; $("plan-iu").value = p.intervalUnit;
   $("plan-count").value = p.breakCount; $("plan-repeat").value = p.breakRepeat; $("plan-end").checked = !!p.breakAtEnd; $("plan-every").value = p.everyN;
-  $("plan-short-on").checked = p.shortOn !== false; $("plan-short-every").value = p.shortEveryMin || 10; $("plan-short-count").value = p.shortCount > 0 ? p.shortCount : ""; $("plan-short-max").textContent = p.shortMaxMin || 25; $("plan-short-box").classList.toggle("hidden", p.shortOn === false);
+  $("plan-short-on").checked = p.shortOn !== false; $("plan-short-every").value = p.shortEveryMin || 10; $("plan-short-max").textContent = p.shortMaxMin || 25; $("plan-short-box").classList.toggle("hidden", p.shortOn === false);
   const ads = allAdsOrdered();
   $("ads-list").innerHTML = ads.length ? ads.map((i, n) => `<div class="item"><input type="checkbox" data-ad="${esc(i.id)}" ${i.active !== false ? "checked" : ""} aria-label="Activo">
     <span class="grow"><b>${n + 1}. ${esc(i.title)}</b>
@@ -739,7 +739,7 @@ let pinMemo = { key: "", val: null };
 const isShortPin = (p) => state.plan.shortOn !== false && pinLines(p).length > 0 && pinLines(p).every((l) => l.duration < (state.plan.shortMaxMin || 25) * 60);
 function getPinned() {
   const p = state.plan; if (!p.pins?.length) return null;
-  const key = JSON.stringify([p.order, p.pins, p.mode, p.intervalValue, p.intervalUnit, p.breakCount, p.breakRepeat, p.breakAtEnd, p.everyN, p.minTailSec, p.shortOn, p.shortMaxMin, p.shortEveryMin, p.shortCount, p.adOrder, state.lib.map((i) => [i.id, i.kind, i.duration, i.active, i.playFor, i.url, i.title])]);
+  const key = JSON.stringify([p.order, p.pins, p.mode, p.intervalValue, p.intervalUnit, p.breakCount, p.breakRepeat, p.breakAtEnd, p.everyN, p.minTailSec, p.shortOn, p.shortMaxMin, p.shortEveryMin, p.adOrder, state.lib.map((i) => [i.id, i.kind, i.duration, i.active, i.playFor, i.url, i.title])]);
   if (key !== pinMemo.key) pinMemo = { key, val: buildPinnedCycle(state.lib, p) };
   return pinMemo.val;
 }
