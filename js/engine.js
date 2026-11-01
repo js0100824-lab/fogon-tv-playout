@@ -365,9 +365,12 @@ export function sortPrograms(list, how, createdMs = () => 0, rng = Math.random) 
   return f ? list.slice().sort(f) : list.slice();
 }
 
+// Una hora de FIN en :59 cuenta como la hora siguiente en punto: «hasta 2:59» = «hasta las 3:00».
+export const endMinOf = (m) => (m % 60 === 59 ? m + 1 : m);
+
 // Franjas {from,to,cat} → trozos del día contados desde el minuto S. La franja en curso se parte: primero lo que le queda, al final lo que ya pasó.
 export function normalizeSlots(slots, S0, toMin) {
-  const raw = (slots || []).map((s) => ({ f: toMin(s.from), t: toMin(s.to), cat: s.cat }));
+  const raw = (slots || []).map((s) => ({ f: toMin(s.from), t: endMinOf(toMin(s.to)), cat: s.cat }));
   if (!raw.length) return null;
   const S = S0 == null ? 360 : S0, out = [];   // sin hora dada, el ciclo de 24 h empieza a las 6:00 a. m.
   
@@ -552,7 +555,7 @@ export function pinLines(pin) {
   return good.length ? good : ok;
 }
 // Franja en minutos del día. Si «hasta» no es posterior a «desde» (p. ej. 12:00 AM), la franja llega hasta medianoche.
-export function pinWindow(pin) { const f = hhmm(pin.from), t = hhmm(pin.to); return { f, t: t > f ? t : 1440 }; }
+export function pinWindow(pin) { const f = hhmm(pin.from), t = endMinOf(hhmm(pin.to)); return { f, t: t > f ? t : 1440 }; }   // «hasta» en :59 = la hora siguiente en punto
 // Fijados válidos y en orden; si dos se pisan, se descarta el que empieza dentro del anterior.
 export function activePins(plan) {
   const all = (plan?.pins || []).filter((p) => p && p.id && pinLines(p).length).map((p) => { const w = pinWindow(p), f = relMin(w.f); return { p, f, t: Math.min(1440, f + (w.t - w.f)) }; }).sort((a, b) => a.f - b.f);
@@ -681,7 +684,7 @@ export function buildPinnedCycle(library, rawPlan) {
   const adList = activeAds(library, plan);
   const adDur = (a) => (a.playFor > 0 ? Math.min(a.playFor, a.duration) : a.duration);
   // Categoría que toca a cada momento del ciclo (sec = segundos desde las 6:00 a. m.)
-  const slots = (plan.slots || []).map((x) => ({ f: hhmm(x.from), len: ((hhmm(x.to) - hhmm(x.from) + 1440) % 1440) || 1440, cat: x.cat }));
+  const slots = (plan.slots || []).map((x) => ({ f: hhmm(x.from), len: ((endMinOf(hhmm(x.to)) - hhmm(x.from) + 1440) % 1440) || 1440, cat: x.cat }));
   const slotOf = (m) => { let best = null, bo = 1e9; for (const y of slots) { const o = (m - y.f + 1440) % 1440; if (o < y.len && o < bo) { bo = o; best = y; } } return best; };   // si dos franjas se pisan, gana la que empezó más tarde
   const clockMin = (sec) => (Math.floor(sec / 60) + DAY_START_MIN) % 1440;
   const catAt = (sec) => { const x = slotOf(clockMin(sec)); return x ? x.cat : "*"; };

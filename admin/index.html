@@ -311,7 +311,8 @@ html,body{max-width:100%;overflow-x:hidden}
       <h2 class="col-h">Vista previa</h2>
       <div class="col-b">
         <div class="monitor"><iframe id="monitor" title="Vista previa en vivo" allow="autoplay; fullscreen"></iframe></div>
-        <div class="tl-tools"><span>Línea de tiempo</span><span class="tl-btns"><button class="btn small" id="tl-minus" type="button">−</button><button class="btn small" id="tl-plus" type="button">+</button><button class="btn small" id="tl-now" type="button">Ahora</button></span></div>
+        <div class="tl-tools"><span>Línea de tiempo</span><span class="tl-btns"><button class="btn small" id="tl-left" type="button" aria-label="Mover la línea a la izquierda">◀</button><button class="btn small" id="tl-right" type="button" aria-label="Mover la línea a la derecha">▶</button><button class="btn small" id="tl-minus" type="button" aria-label="Alejar">−</button><button class="btn small" id="tl-plus" type="button" aria-label="Acercar">+</button><button class="btn small" id="tl-now" type="button">Ahora</button></span></div>
+        <div class="tl-tools"><span>Atrasar / adelantar lo que sale al aire</span><span class="tl-btns"><button class="btn small" type="button" data-nudge="-300">− 5 min</button><button class="btn small" type="button" data-nudge="-60">− 1 min</button><button class="btn small" type="button" data-nudge="-10">− 10 s</button><button class="btn small" type="button" data-nudge="10">+ 10 s</button><button class="btn small" type="button" data-nudge="60">+ 1 min</button><button class="btn small" type="button" data-nudge="300">+ 5 min</button></span></div>
         <div id="timeline" class="timeline" aria-label="Línea de tiempo del ciclo"></div>
         <div class="live-wrap"><table class="live"><thead><tr><th>Inicio</th><th>Nombre</th><th>Tipo</th><th>Duración</th></tr></thead><tbody id="live-body"></tbody></table></div>
       </div>
@@ -502,6 +503,6 @@ html,body{max-width:100%;overflow-x:hidden}
 </div></div>
 
 <div id="dpick" class="dlg hidden" role="dialog" aria-modal="true" aria-labelledby="dpick-title"><div class="dlg-box dpick-box"><h3 id="dpick-title">Elegir programa</h3><input id="dpick-q" type="search" placeholder="Buscar" autocomplete="off"><select id="dpick-cat" aria-label="Categoría"></select><div id="dpick-list" class="pick-list"></div><div class="dlg-actions"><button class="btn secondary" id="dpick-cancel" type="button">Cancelar</button></div></div></div>
-<script type="module" src="../js/admin.js?v=90"></script>
+<script type="module" src="../js/admin.js?v=91"></script>
 </body>
 </html>
