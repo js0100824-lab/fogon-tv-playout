@@ -103,11 +103,11 @@ section.ctl-big .day-h{top:52px}
 @media (max-width:700px){.day-row{flex-wrap:wrap}.day-t{width:auto}.day-btns{max-width:none;flex:0 0 100%}.day-btns .btn{flex:1}}
 #day-info{margin:6px 0}
 /* ===== Franjas: barra de 24 horas ===== */
-#slot-strip{position:relative;height:46px;margin:8px 0 22px;background:#0b0f0d;border-radius:8px}
-#slot-strip i{position:absolute;top:0;bottom:0;display:flex;align-items:center;padding:0 5px;overflow:hidden;font-style:normal;font-size:11px;font-weight:700;color:#fff;box-shadow:inset -1px 0 0 rgba(0,0,0,.5);white-space:nowrap;text-overflow:ellipsis}
-#slot-strip i.ov{outline:2px solid #e5484d;outline-offset:-2px;z-index:2}
-#slot-strip b{position:absolute;top:100%;margin-top:3px;transform:translateX(-50%);font-size:10px;font-weight:400;opacity:.7;white-space:nowrap}
-#slot-warn{margin:-14px 0 8px;font-size:13px}
+#slot-strip,#day-strip{position:relative;height:46px;margin:8px 0 22px;background:#0b0f0d;border-radius:8px}
+#slot-strip i,#day-strip i{position:absolute;top:0;bottom:0;display:flex;align-items:center;padding:0 5px;overflow:hidden;font-style:normal;font-size:11px;font-weight:700;color:#fff;box-shadow:inset -1px 0 0 rgba(0,0,0,.5);white-space:nowrap;text-overflow:ellipsis}
+#slot-strip i.ov,#day-strip i.ov{outline:2px solid #e5484d;outline-offset:-2px;z-index:2}
+#slot-strip b,#day-strip b{position:absolute;top:100%;margin-top:3px;transform:translateX(-50%);font-size:10px;font-weight:400;opacity:.7;white-space:nowrap}
+#slot-warn,#day-strip-warn{margin:-14px 0 8px;font-size:13px}
 .slot-sum{margin:10px 0 -4px;font-weight:700;font-size:14px;display:flex;justify-content:space-between;gap:8px}
 .slot-sum span{opacity:.7;font-weight:400}
 .dpick-box{max-width:560px !important}
@@ -373,6 +373,8 @@ html,body{max-width:100%;overflow-x:hidden}
           <div id="pin-fold" class="pin-fold" inert><div class="pin-fold-in"><div id="pin-list"></div></div></div>
           <h3 class="sub">El día</h3>
           <div class="row"><button class="btn small" id="day-add" type="button">＋ Añadir al final</button><button class="btn secondary small" id="day-undo" type="button" disabled>↶ Deshacer</button><button class="btn small" id="day-pub" type="button">Guardar y publicar</button></div>
+          <div id="day-strip" aria-label="Las 24 horas del día por franja"></div>
+          <p id="day-strip-warn" class="warn"></p>
           <p id="day-info" class="hint"></p>
           <div id="day-list"></div>
         </section>
@@ -500,6 +502,6 @@ html,body{max-width:100%;overflow-x:hidden}
 </div></div>
 
 <div id="dpick" class="dlg hidden" role="dialog" aria-modal="true" aria-labelledby="dpick-title"><div class="dlg-box dpick-box"><h3 id="dpick-title">Elegir programa</h3><input id="dpick-q" type="search" placeholder="Buscar" autocomplete="off"><select id="dpick-cat" aria-label="Categoría"></select><div id="dpick-list" class="pick-list"></div><div class="dlg-actions"><button class="btn secondary" id="dpick-cancel" type="button">Cancelar</button></div></div></div>
-<script type="module" src="../js/admin.js?v=88"></script>
+<script type="module" src="../js/admin.js?v=89"></script>
 </body>
 </html>

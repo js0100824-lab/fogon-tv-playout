@@ -7,7 +7,7 @@ import {
   doc, getDoc, setDoc, addDoc, deleteDoc, updateDoc, deleteField, getDocs, collection, query, orderBy, limit, serverTimestamp
 } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore.js";
 import { ref as sRef, uploadBytesResumable, getDownloadURL, deleteObject } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-storage.js";
-import { parseDuration, fmtDuration, youtubeId, facebookUrl, parseLiveLink, buildCycle, cycleLength, locate, planWithDefaults, compactChannel, expandChannel, describeCuts, itemLabel, intervalSeconds, seamlessPublish, jumpPublish, settleChannel, buildSchedule, normalizeSlots, sortPrograms, placeNewProgram, buildPinnedCycle, pinLines, pinWindow, pinDayIndex, pinEpoch, DAY_MS, PIN_ANCHOR_MS } from "./engine.js?v=88";
+import { parseDuration, fmtDuration, youtubeId, facebookUrl, parseLiveLink, buildCycle, cycleLength, locate, planWithDefaults, compactChannel, expandChannel, describeCuts, itemLabel, intervalSeconds, seamlessPublish, jumpPublish, settleChannel, buildSchedule, normalizeSlots, sortPrograms, placeNewProgram, buildPinnedCycle, pinLines, pinWindow, pinDayIndex, pinEpoch, DAY_MS, PIN_ANCHOR_MS } from "./engine.js?v=89";
 import { serverNow, startClock } from "./clock.js";
 
 const $ = (id) => document.getElementById(id);
@@ -792,30 +792,29 @@ function renderDayPinned(el, pc) {
   const slotAt = (min) => { let bi = -1, bo = 1e9; (p.slots || []).forEach((s, i) => { const o = (min - toMin(s.from) + 1440) % 1440; if (o < slotLen(s) && o < bo) { bo = o; bi = i; } }); return bi; };
   const clock = (sec) => clockTxt(sec / 60 + 360), mins = (sec) => Math.round(Math.abs(sec) / 60);
   let html = pc.K > 1 ? `<div class="day-tabs">${pc.days.map((_, k) => `<button type="button" class="btn small${k === view ? "" : " secondary"}" data-pa="view" data-d="${k}">Día ${k + 1}${k === today ? " · hoy" : ""}</button>`).join("")}</div>` : "";
-  let lastSlot = -2;
-  const slotsOrd = (p.slots || []).map((s, i) => i), headOf = (si) => { const sl = p.slots?.[si]; return `<div class="day-h"><span>${sl ? `${esc(slotLabel(sl))} · ${esc(sl.cat === "*" ? "Variado" : sl.cat)}` : "Sin franja"}</span><span>${sl ? esc(slotHours(sl)) : ""}</span></div>`; };
+  const headOf = (si) => { const sl = p.slots?.[si]; return `<div class="day-h"><span>${sl ? `${esc(slotLabel(sl))} · ${esc(sl.cat === "*" ? "Variado" : sl.cat)}` : "Sin franja"}</span><span>${sl ? esc(slotHours(sl)) : ""}</span></div>`; };
+  const buckets = new Map();
   for (const r of day.rows) {
-    const si = slotAt((Math.floor(r.start / 60) + 360) % 1440);
-    if (si !== lastSlot && si >= 0 && lastSlot >= 0) {   // franjas intermedias que ningún programa llegó a empezar (las cubrió uno más largo)
-      for (let k = slotsOrd.indexOf(lastSlot) + 1; k < slotsOrd.indexOf(si); k++) html += headOf(slotsOrd[k]).replace("</span><span>", " · la cubre el programa anterior</span><span>");
-    }
-    if (si !== lastSlot) { lastSlot = si; const sl = p.slots?.[si]; html += `<div class="day-h"><span>${sl ? `${esc(slotLabel(sl))} · ${esc(sl.cat === "*" ? "Variado" : sl.cat)}` : "Sin franja"}</span><span>${sl ? esc(slotHours(sl)) : ""}</span></div>`; }
+    let rowH = ""; const si = slotAt((Math.floor(r.start / 60) + 360) % 1440), push = () => { if (!buckets.has(si)) buckets.set(si, []); buckets.get(si).push(rowH); };
     if (r.kind === "pin") {
       const pin = p.pins.find((x) => x.id === r.pin), late = r.delta > 60, early = r.delta < -60;
-      html += `<div class="day-row pinrow" data-s="${r.start}" data-e="${r.end}"><span class="day-grip" title="Fijado: no se mueve">Fijo</span>
+      rowH += `<div class="day-row pinrow" data-s="${r.start}" data-e="${r.end}"><span class="day-grip" title="Fijado: no se mueve">Fijo</span>
         <span class="day-t">${esc(clock(r.start))}<small>→ ${esc(clock(r.end))}</small></span>
         <span class="day-main"><b>${esc(pin?.title || r.title)}</b><span class="day-meta"><span class="tag pin">Debe lanzarse entre ${esc(clock(r.from))} y ${esc(clock(r.by))} · sale ${esc(clock(r.start))}</span>${r.lines > 1 ? `<span class="tag rep">Línea ${r.lineNo} de ${r.lines}</span>` : ""}${r.start > r.by + 60 ? `<span class="tag bad">Sale ${mins(r.start - r.by)} min después de su intervalo (el anterior termina a las ${esc(clock(r.start))}; no se corta)</span><button class="btn small" data-pa="fit" data-pin="${esc(r.pin)}" data-st="${r.start}" type="button">Ampliar el intervalo hasta las ${esc(clock(r.start))}</button>` : ""}${r.start < r.from - 60 ? `<span class="tag off">Sale ${mins(r.from - r.start)} min antes de su intervalo</span>` : ""}${r.pad > 30 ? `<span class="tag off">${mins(r.pad)} min de anuncios de relleno</span>` : ""}${r.ext > 30 ? `<span class="tag off">Se extiende ${mins(r.ext)} min con anuncios</span>` : ""}<span>${esc(r.title === pin?.title ? "" : r.title)}</span></span></span>
-        <span class="day-btns"><button class="btn secondary small" data-pa="shift" data-d="-15" data-pin="${esc(r.pin)}" type="button" title="Adelantar el intervalo 15 min">⏪ 15</button><button class="btn secondary small" data-pa="shift" data-d="15" data-pin="${esc(r.pin)}" type="button" title="Atrasar el intervalo 15 min">15 ⏩</button><button class="btn secondary small" data-pa="edit" data-pin="${esc(r.pin)}" type="button">Líneas</button><button class="btn danger small" data-pa="unpin" data-pin="${esc(r.pin)}" type="button" title="Quitar el fijado">✕</button></span></div>`;
-      continue;
+        <span class="day-btns"><button class="btn secondary small" data-pa="edit" data-pin="${esc(r.pin)}" type="button">Líneas</button><button class="btn danger small" data-pa="unpin" data-pin="${esc(r.pin)}" type="button" title="Quitar el fijado">✕</button></span></div>`;
+      push(); continue;
     }
     const i = state.lib.find((x) => x.id === r.id); if (!i) continue;
     const sl = si >= 0 ? p.slots[si] : null, off = sl && sl.cat !== "*" && i.cat !== sl.cat;
     const inGrid = r.oi >= 0;
-    html += `<div class="day-row"${inGrid ? ' draggable="true"' : ""}${inGrid ? ` data-n="${r.oi}"` : ""} data-s="${r.start}" data-e="${r.end}"><span class="day-grip" title="${inGrid ? "Arrastrar" : "De la biblioteca (según la categoría)"}">${inGrid ? "⠿" : "·"}</span>
+    rowH += `<div class="day-row"${inGrid ? ' draggable="true"' : ""}${inGrid ? ` data-n="${r.oi}"` : ""} data-s="${r.start}" data-e="${r.end}"><span class="day-grip" title="${inGrid ? "Arrastrar" : "De la biblioteca (según la categoría)"}">${inGrid ? "⠿" : "·"}</span>
       <span class="day-t">${esc(clock(r.start))}<small>→ ${esc(clock(r.end))}</small></span>
       <span class="day-main"><b>${esc(i.title)}</b><span class="day-meta">${i.cat ? `<span class="tag">${esc(i.cat)}</span>` : ""}${off ? '<span class="tag off">Fuera de su franja</span>' : ""}<span>${fmtDuration(i.duration)}</span></span></span>
       <span class="day-btns">${!inGrid ? `<button class="btn small" data-pa="pinrow" data-n="-1" data-s="${r.start}" data-e="${r.end}" data-id="${esc(r.id)}" type="button" title="Fijar este programa">Fijar</button>` : `<button class="btn secondary small" data-act="up" data-n="${r.oi}" type="button" aria-label="Subir">↑</button><button class="btn secondary small" data-act="down" data-n="${r.oi}" type="button" aria-label="Bajar">↓</button><button class="btn secondary small" data-act="swap" data-n="${r.oi}" type="button" title="Cambiar por otro programa" aria-label="Cambiar">⇄</button><button class="btn secondary small" data-act="ins" data-n="${r.oi}" type="button" title="Insertar uno debajo" aria-label="Insertar debajo">＋</button><button class="btn small" data-pa="pinrow" data-n="${r.oi}" data-s="${r.start}" data-e="${r.end}" type="button" title="Fijar este programa en esta hora">Fijar</button><button class="btn danger small" data-act="del" data-n="${r.oi}" type="button" aria-label="Quitar">✕</button>`}</span></div>`;
+    push();
   }
+  (p.slots || []).forEach((_, si) => { html += headOf(si) + (buckets.has(si) ? buckets.get(si).join("") : '<p class="hint day-empty">Ningún programa empieza en esta franja: la cubre el programa anterior.</p>'); });
+  if (buckets.has(-1)) html += headOf(-1) + buckets.get(-1).join("");
   el.innerHTML = html;
   const w = day.warn.length ? ` · Aviso: ${day.warn.join(" ")}` : "";
   $("day-info").textContent = `Día ${view + 1} de ${pc.K}${view === today ? " (hoy)" : ""} · ${day.rows.length} programas · nunca se corta ni se rellena con anuncios · el ciclo va de 6:00 AM a 6:00 AM${w}`;
@@ -918,12 +917,6 @@ function initPins() {
     if (a === "view") { dayView = Number(b.dataset.d); renderDay(); }
     else if (a === "edit") { const pin = state.plan.pins.find((x) => x.id === b.dataset.pin); if (pin) openPinEditor(pin); }
     else if (a === "unpin") await unpin(b.dataset.pin);
-    else if (a === "shift") {   // adelanta (−) o atrasa (+) el intervalo de lanzamiento del fijado
-      const pin = state.plan.pins.find((x) => x.id === b.dataset.pin); if (!pin) return;
-      const d = Number(b.dataset.d) || 0, mv = (t) => hmTxt(toMin(t) + d);
-      pin.from = mv(pin.from); pin.to = mv(pin.to); if (pin.startBy) pin.startBy = mv(pin.startBy);
-      try { await savePlan(); renderAll(); toast(`«${pin.title}»: intervalo ${d < 0 ? "adelantado" : "atrasado"} ${Math.abs(d)} min (${clockTxt(toMin(pin.from))} → ${clockTxt(toMin(pin.to))}).`, "ok"); } catch (err) { fail(err); }
-    }
     else if (a === "fit") {   // amplía el intervalo de lanzamiento hasta la hora real a la que sale (el programa anterior no se corta)
       const pin = state.plan.pins.find((x) => x.id === b.dataset.pin); if (!pin) return;
       const w = pinWindow(pin), nf = Math.floor(Number(b.dataset.st) / 60) + 360;
@@ -1340,8 +1333,8 @@ const slotLabel = (s) => `${clockTxt(toMin(s.from))} → ${clockTxt(toMin(s.to))
 const slotHours = (s) => { const m = slotLen(s), h = Math.floor(m / 60), r = m % 60; return `${h ? `${h} h` : ""}${h && r ? " " : ""}${r ? `${r} min` : ""}`; };
 const CAT_COLORS = ["#2f7d5d", "#3b6fb6", "#9a5bb5", "#c27a2c", "#b8505a", "#4a9aa5", "#7d8a2f", "#8a6a4a"];
 const catColor = (c) => (c === "*" ? "#6b7280" : CAT_COLORS[Math.max(0, catsAll().indexOf(c)) % CAT_COLORS.length]);
-function renderSlotStrip() {
-  const el = $("slot-strip"), warn = $("slot-warn"); if (!el) return;
+function renderSlotStrip(id = "slot-strip", warnId = "slot-warn") {
+  const el = $(id), warn = $(warnId); if (!el) return;
   const sl = state.plan.slots || [], cover = new Array(1440).fill(0), parts = [];
   sl.forEach((s) => {   // posiciones contadas desde las 6:00 AM: la barra es el ciclo de 24 h en el orden de la parrilla
     const f = relMin6(s.from), len = slotLen(s);
@@ -1353,7 +1346,7 @@ function renderSlotStrip() {
   html += [0, 6, 12, 18, 24].map((h) => `<b style="left:${(h / 24) * 100}%">${clockTxt((h * 60 + 360) % 1440)}</b>`).join("");
   el.innerHTML = html;
   const gaps = cover.filter((x) => x === 0).length, ovl = cover.filter((x) => x > 1).length, fmt = (m) => `${Math.floor(m / 60) ? Math.floor(m / 60) + " h " : ""}${m % 60 ? (m % 60) + " min" : ""}`.trim();
-  warn.textContent = [gaps ? `Faltan ${fmt(gaps)} sin franja.` : "", ovl ? `Hay ${fmt(ovl)} donde se cruzan dos franjas (borde rojo).` : ""].filter(Boolean).join(" ");
+  if (warn) warn.textContent = [gaps ? `Faltan ${fmt(gaps)} sin franja.` : "", ovl ? `Hay ${fmt(ovl)} donde se cruzan dos franjas (borde rojo).` : ""].filter(Boolean).join(" ");
 }
 
 /* ===== Elegir un programa de la biblioteca (ventana con búsqueda y categoría) ===== */
@@ -1396,7 +1389,7 @@ function dayTimes() {
 }
 function renderDay() {
   const el = $("day-list"); if (!el) return;
-  renderPinList();
+  renderPinList(); renderSlotStrip("day-strip", "day-strip-warn");
   const pc = getPinned();
   if (pc) { renderDayPinned(el, pc); return; }
   const p = state.plan, order = p.order, S = Number.isFinite(p.dayStart) ? p.dayStart : null, { times, total } = dayTimes();
@@ -1410,6 +1403,7 @@ function renderDay() {
     if (t && S != null) si = slotAt(((S + t.start / 60) % 1440 + 1440) % 1440);
     if (t && t.start >= 86400 && !warned) { warned = true; html += `<div class="day-h warn"><span>Desde aquí el ciclo pasa de las 24 horas</span></div>`; lastSlot = -2; }
     if (S != null && si !== lastSlot) {
+      if (si >= 0 && lastSlot >= 0 && si > lastSlot + 1) for (let k = lastSlot + 1; k < si; k++) { const z = p.slots[k]; html += `<div class="day-h"><span>${esc(slotLabel(z))} · ${esc(z.cat === "*" ? "Variado" : z.cat)}</span><span>la cubre el programa anterior</span></div>`; }
       lastSlot = si; const sl = p.slots[si];
       html += `<div class="day-h"><span>${sl ? `${esc(slotLabel(sl))} · ${esc(sl.cat === "*" ? "Variado" : sl.cat)}` : "Sin franja"}</span><span>${sl ? esc(slotHours(sl)) : ""}</span></div>`;
     }
