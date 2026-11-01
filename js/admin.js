@@ -7,7 +7,7 @@ import {
   doc, getDoc, setDoc, addDoc, deleteDoc, updateDoc, deleteField, getDocs, collection, query, orderBy, limit, serverTimestamp
 } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore.js";
 import { ref as sRef, uploadBytesResumable, getDownloadURL, deleteObject } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-storage.js";
-import { parseDuration, fmtDuration, youtubeId, facebookUrl, parseLiveLink, buildCycle, cycleLength, locate, planWithDefaults, compactChannel, expandChannel, describeCuts, itemLabel, intervalSeconds, seamlessPublish, jumpPublish, settleChannel, buildSchedule, normalizeSlots, sortPrograms, placeNewProgram, buildPinnedCycle, pinLines, pinWindow, pinDayIndex, pinEpoch, DAY_MS, PIN_ANCHOR_MS, endMinOf, sameCat } from "./engine.js?v=91";
+import { parseDuration, fmtDuration, youtubeId, facebookUrl, parseLiveLink, buildCycle, cycleLength, locate, planWithDefaults, compactChannel, expandChannel, describeCuts, itemLabel, intervalSeconds, seamlessPublish, jumpPublish, settleChannel, buildSchedule, normalizeSlots, sortPrograms, placeNewProgram, buildPinnedCycle, pinLines, pinWindow, pinDayIndex, pinEpoch, DAY_MS, PIN_ANCHOR_MS, endMinOf, sameCat } from "./engine.js?v=92";
 import { serverNow, startClock } from "./clock.js";
 
 const $ = (id) => document.getElementById(id);
@@ -739,7 +739,7 @@ let pinMemo = { key: "", val: null };
 const isShortPin = (p) => state.plan.shortOn !== false && pinLines(p).length > 0 && pinLines(p).every((l) => l.duration < (state.plan.shortMaxMin || 25) * 60);
 function getPinned() {
   const p = state.plan; if (!p.pins?.length) return null;
-  const key = JSON.stringify([p.order, p.pins, p.mode, p.intervalValue, p.intervalUnit, p.breakCount, p.breakRepeat, p.breakAtEnd, p.everyN, p.minTailSec, p.slots, p.shortOn, p.shortMaxMin, p.shortEveryMin, p.fillAds, p.adOrder, state.lib.map((i) => [i.id, i.kind, i.duration, i.active, i.playFor, i.url, i.title])]);
+  const key = JSON.stringify([p.order, p.skip, p.pins, p.mode, p.intervalValue, p.intervalUnit, p.breakCount, p.breakRepeat, p.breakAtEnd, p.everyN, p.minTailSec, p.slots, p.shortOn, p.shortMaxMin, p.shortEveryMin, p.fillAds, p.adOrder, state.lib.map((i) => [i.id, i.kind, i.duration, i.active, i.playFor, i.url, i.title])]);
   if (key !== pinMemo.key) pinMemo = { key, val: buildPinnedCycle(state.lib, p) };
   return pinMemo.val;
 }
@@ -810,11 +810,13 @@ function renderDayPinned(el, pc) {
     rowH += `<div class="day-row"${inGrid ? ' draggable="true"' : ""}${inGrid ? ` data-n="${r.oi}"` : ""} data-s="${r.start}" data-e="${r.end}"><span class="day-grip" title="${inGrid ? "Arrastrar" : "De la biblioteca (según la categoría)"}">${inGrid ? "⠿" : "·"}</span>
       <span class="day-t">${esc(clock(r.start))}<small>→ ${esc(clock(r.end))}</small></span>
       <span class="day-main"><b>${esc(i.title)}</b><span class="day-meta">${i.cat ? `<span class="tag">${esc(i.cat)}</span>` : ""}${off ? '<span class="tag off">Fuera de su franja</span>' : ""}<span>${fmtDuration(i.duration)}</span></span></span>
-      <span class="day-btns">${!inGrid ? `<button class="btn secondary small" data-pa="slotadd" data-si="${si}" type="button" title="Poner otro programa en esta franja">Cambiar</button><button class="btn small" data-pa="pinrow" data-n="-1" data-s="${r.start}" data-e="${r.end}" data-id="${esc(r.id)}" type="button" title="Fijar este programa">Fijar</button>` : `<button class="btn secondary small" data-act="up" data-n="${r.oi}" type="button" aria-label="Subir">↑</button><button class="btn secondary small" data-act="down" data-n="${r.oi}" type="button" aria-label="Bajar">↓</button><button class="btn secondary small" data-act="swap" data-n="${r.oi}" type="button" title="Cambiar por otro programa" aria-label="Cambiar">⇄</button><button class="btn secondary small" data-act="ins" data-n="${r.oi}" type="button" title="Insertar uno debajo" aria-label="Insertar debajo">＋</button><button class="btn small" data-pa="pinrow" data-n="${r.oi}" data-s="${r.start}" data-e="${r.end}" type="button" title="Fijar este programa en esta hora">Fijar</button><button class="btn danger small" data-act="del" data-n="${r.oi}" type="button" aria-label="Quitar">✕</button>`}</span></div>`;
+      <span class="day-btns">${!inGrid ? `<button class="btn secondary small" data-pa="rowswap" data-s="${r.start}" data-id="${esc(r.id)}" type="button" title="Cambiar este programa por otro">Cambiar</button><button class="btn danger small" data-pa="rowhide" data-id="${esc(r.id)}" type="button" aria-label="Quitar" title="Quitar del día">✕</button><button class="btn small" data-pa="pinrow" data-n="-1" data-s="${r.start}" data-e="${r.end}" data-id="${esc(r.id)}" type="button" title="Fijar este programa">Fijar</button>` : `<button class="btn secondary small" data-act="up" data-n="${r.oi}" type="button" aria-label="Subir">↑</button><button class="btn secondary small" data-act="down" data-n="${r.oi}" type="button" aria-label="Bajar">↓</button><button class="btn secondary small" data-act="swap" data-n="${r.oi}" type="button" title="Cambiar por otro programa" aria-label="Cambiar">⇄</button><button class="btn secondary small" data-act="ins" data-n="${r.oi}" type="button" title="Insertar uno debajo" aria-label="Insertar debajo">＋</button><button class="btn small" data-pa="pinrow" data-n="${r.oi}" data-s="${r.start}" data-e="${r.end}" type="button" title="Fijar este programa en esta hora">Fijar</button><button class="btn danger small" data-act="del" data-n="${r.oi}" type="button" aria-label="Quitar">✕</button>`}</span></div>`;
     push();
   }
   (p.slots || []).forEach((_, si) => { html += headOf(si) + (buckets.has(si) ? buckets.get(si).join("") : '<p class="hint day-empty">Ningún programa empieza en esta franja: la cubre el programa anterior.</p>'); });
   if (buckets.has(-1)) html += headOf(-1) + buckets.get(-1).join("");
+  const gone = (p.skip || []).map((id) => state.lib.find((x) => x.id === id)).filter(Boolean);
+  if (gone.length) html += `<div class="day-h"><span>Quitados de la parrilla</span><span></span></div>${gone.map((i) => `<div class="day-row"><span class="day-main"><b>${esc(i.title)}</b></span><span class="day-btns"><button class="btn secondary small" data-pa="unskip" data-id="${esc(i.id)}" type="button">Volver</button></span></div>`).join("")}`;
   el.innerHTML = html;
   const w = day.warn.length ? ` · Aviso: ${day.warn.join(" ")}` : "";
   $("day-info").textContent = `Día ${view + 1} de ${pc.K}${view === today ? " (hoy)" : ""} · ${day.rows.length} programas · nunca se corta ni se rellena con anuncios · el ciclo va de 6:00 AM a 6:00 AM${w}`;
@@ -916,6 +918,9 @@ function initPins() {
     const a = b.dataset.pa;
     if (a === "view") { dayView = Number(b.dataset.d); renderDay(); }
     else if (a === "slotadd") await slotAdd(Number(b.dataset.si));
+    else if (a === "rowhide") await rowHide(b.dataset.id);
+    else if (a === "unskip") await dayEdit((o) => { state.plan.skip = (state.plan.skip || []).filter((x) => x !== b.dataset.id); }, "Vuelve a poder salir. Pulsa «Guardar y publicar» para aplicarlo.");
+    else if (a === "rowswap") await rowSwap(Number(b.dataset.s), b.dataset.id);
     else if (a === "edit") { const pin = state.plan.pins.find((x) => x.id === b.dataset.pin); if (pin) openPinEditor(pin); }
     else if (a === "unpin") await unpin(b.dataset.pin);
     else if (a === "fit") {   // amplía el intervalo de lanzamiento hasta la hora real a la que sale (el programa anterior no se corta)
@@ -1450,14 +1455,31 @@ function markDayAir() {
 }
 // Aplica un cambio a la lista de emisiones, lo guarda y deja el paso anterior para «Deshacer».
 async function dayEdit(fn, msg) {
-  const before = [...state.plan.order];
+  const before = { order: [...state.plan.order], skip: [...(state.plan.skip || [])] };
   if (fn(state.plan.order) === false) return;
   dayUndo.push(before); if (dayUndo.length > 40) dayUndo.shift();
   try { await savePlan(); renderAll(); if (msg) toast(msg, "ok"); } catch (err) { fail(err); }
 }
 // Agrega a mano un programa a una franja (aunque esa categoría no tenga ninguno): si es de otra categoría se pasa a la de la franja, y sale primero en ella.
+// «Cambiar» en una fila que sale de la biblioteca (no está en la parrilla): se fija la secuencia del día tal como se ve y se cambia solo esa fila.
+// ✕ en una fila que sale de la biblioteca: se quita del día y no vuelve como relleno (se puede recuperar abajo o con «Deshacer»).
+async function rowHide(id) {
+  const it = state.lib.find((x) => x.id === id);
+  await dayEdit((o) => { const sk = new Set(state.plan.skip || []); sk.add(id); state.plan.skip = [...sk]; }, `Quité «${it?.title || ""}» de la parrilla. Pulsa «Guardar y publicar» para aplicarlo.`);
+}
+async function rowSwap(start, id) {
+  const pc = getPinned(); if (!pc || pc.error) return;
+  const today = pinDayIndex(serverNow(), pc.K), view = dayView == null || dayView >= pc.K ? today : dayView, day = pc.days[view];
+  const fill = day.rows.filter((r) => r.kind === "filler");
+  const n = fill.findIndex((r) => r.start === start && r.id === id); if (n < 0) return;
+  const nid = await pickProgram("Cambiar por otro programa", state.lib.find((x) => x.id === id)?.cat); if (!nid || nid === id) return;
+  const ids = fill.map((r) => r.id), m = ids.indexOf(nid);
+  if (m >= 0) [ids[n], ids[m]] = [ids[m], ids[n]]; else ids[n] = nid;   // si ya salía ese día, se intercambian
+  const keep = state.plan.order.filter((x) => !ids.includes(x));
+  await dayEdit((o) => { o.splice(0, o.length, ...new Set(ids), ...keep); }, "Cambiado. Pulsa «Guardar y publicar» para aplicarlo al aire.");
+}
 async function slotAdd(si) {
-  const sl = state.plan.slots?.[si]; if (!sl) return;
+  const sl = state.plan.slots?.[si]; if (!sl) { toast("Esta fila no está dentro de ninguna franja. Crea o ajusta las franjas en Horarios.", "error"); return; }
   const cat = sl.cat === "*" ? "" : sl.cat;
   const id = await pickProgram(`Agregar a la franja ${slotLabel(sl)} · ${cat || "Variado"}`, cat); if (!id) return;
   const it = state.lib.find((x) => x.id === id); if (!it) return;
@@ -1475,7 +1497,7 @@ function initDay() {
     const n = Number(b.dataset.n), act = b.dataset.act, id = state.plan.order[n], it = state.lib.find((x) => x.id === id);
     if (act === "up" || act === "down") { const m = n + (act === "up" ? -1 : 1); await dayEdit((o) => { if (m < 0 || m >= o.length) return false; [o[n], o[m]] = [o[m], o[n]]; }); }
     else if (act === "del") {
-      await dayEdit((o) => { o.splice(n, 1); }, state.plan.order.includes(id) ? `Quité esa emisión de «${it?.title}». Sigue en la parrilla principal.` : `Quité «${it?.title}»: ya no queda ninguna emisión suya, salió de la parrilla principal.`);
+      await dayEdit((o) => { o.splice(n, 1); if (state.plan.pins?.length && !o.includes(id)) state.plan.skip = [...new Set([...(state.plan.skip || []), id])]; }, state.plan.order.includes(id) ? `Quité esa emisión de «${it?.title}». Sigue en la parrilla principal.` : `Quité «${it?.title}»: ya no queda ninguna emisión suya, salió de la parrilla principal.`);
     } else if (act === "swap") { const nid = await pickProgram("Cambiar por otro programa", it?.cat); if (nid) await dayEdit((o) => { o[n] = nid; }); }
     else if (act === "ins") { const nid = await pickProgram("Insertar debajo", it?.cat); if (nid) await dayEdit((o) => { o.splice(n + 1, 0, nid); }); }
   });
@@ -1492,7 +1514,7 @@ function initDay() {
   $("day-add").addEventListener("click", async () => { const nid = await pickProgram("Añadir al final del ciclo"); if (nid) await dayEdit((o) => { o.push(nid); }, "Añadido al final."); });
   $("day-undo").addEventListener("click", async () => {
     const prev = dayUndo.pop(); if (!prev) return;
-    state.plan.order = prev;
+    state.plan.order = prev.order; state.plan.skip = prev.skip;
     try { await savePlan(); renderAll(); toast("Deshecho.", "ok"); } catch (err) { fail(err); }
   });
   $("day-pub").addEventListener("click", () => publish(false));

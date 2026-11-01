@@ -675,7 +675,8 @@ export function buildPinnedCycle(library, rawPlan) {
   const byId2 = new Map(lib2.map((i) => [i.id, i]));
   // Programas que pueden llenar huecos: primero los de la parrilla principal (en su orden), luego TODOS los demás de la biblioteca.
   const orderIdx = new Map(); (plan.order || []).forEach((id, oi) => { if (!orderIdx.has(id)) orderIdx.set(id, oi); });
-  const okProg = (i) => i && i.kind === "programa" && i.duration > 0 && i.fbOk !== false;
+  const skip = new Set(plan.skip || []);   // quitados a mano de la parrilla de 24 h: no rellenan huecos
+  const okProg = (i) => i && i.kind === "programa" && i.duration > 0 && i.fbOk !== false && !skip.has(i.id);
   const fillers = [
     ...[...orderIdx].filter(([id]) => okProg(byId.get(id))).map(([id, oi]) => ({ oi, id })),
     ...library.filter((i) => okProg(i) && !orderIdx.has(i.id)).map((i) => ({ oi: -1, id: i.id }))
