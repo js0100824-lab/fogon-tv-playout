@@ -52,7 +52,9 @@ export const PLAN_DEFAULTS = {
   breakRepeat: 1,          // cuántas veces se repite esa tanda en cada corte
   breakAtEnd: true,        // corte también al terminar cada programa
   everyN: 2,               // modo "programs"
-  minTailSec: 15           // no cortar si al programa le quedan menos de estos segundos
+  minTailSec: 15,          // no cortar si al programa le quedan menos de estos segundos
+  // Programas FIJADOS cortos: cortes propios (cada X min) y sin extensión de anuncios
+  shortOn: true, shortMaxMin: 25, shortEveryMin: 10, shortCount: 0   // shortCount 0 = los mismos anuncios por corte que el plan general
 };
 export const planWithDefaults = (p) => ({ ...PLAN_DEFAULTS, ...(p || {}) });
 
@@ -95,6 +97,7 @@ export function continuousLayout(programs, rawPlan) {
   const rows = []; let acc = 0;
   for (const p of programs) {
     const D = p.duration, row = { lead: false, cuts: [], end: false };
+    if (p.cutEvery > 0) { acc = 0; rows.push(row); continue; }   // fijado corto: lleva sus propios cortes y reinicia el reloj de cortes
     let pos = 0, guard = 0;
     while (T > 0 && guard++ < 2000) {
       const at = pos + (T - acc);                        // punto del programa donde toca el siguiente corte
@@ -125,16 +128,27 @@ export function buildCycle(library, rawPlan) {
   const out = [];
   let cursor = 0, breakNo = 0;
 
-  const addBreak = () => {
+  const addBreak = (n = count) => {
     if (!canBreak) return;
     breakNo++;
     const tanda = [];
-    for (let k = 0; k < count; k++) tanda.push(ads[cursor++ % ads.length]);
+    for (let k = 0; k < n; k++) tanda.push(ads[cursor++ % ads.length]);
     for (let r = 0; r < repeat; r++) for (const ad of tanda) out.push(toItem(ad, "comercial", { breakNo }));
   };
 
   const cont = plan.mode === "continuous" && canBreak ? continuousLayout(programs, plan) : null;
+  const shortN = Math.floor(Number(plan.shortCount) || 0) > 0 ? Math.floor(Number(plan.shortCount)) : count;
   programs.forEach((p, idx) => {
+    if (p.cutEvery > 0) {   // programa fijado corto: un corte cada `cutEvery` segundos, con la tanda de anuncios ya definida (sin extensión)
+      const tail = Math.max(0, Number(plan.minTailSec) || 0), cuts = [];
+      if (canBreak) for (let t = p.cutEvery; t < p.duration - tail && cuts.length < 500; t += p.cutEvery) cuts.push(t);
+      const edges = [0, ...cuts, p.duration], parts = edges.length - 1;
+      for (let k = 0; k < parts; k++) {
+        out.push(toItem(p, "programa", { startAt: edges[k], duration: edges[k + 1] - edges[k], ...(parts > 1 ? { part: k + 1, parts } : {}) }));
+        if (k < parts - 1) addBreak(shortN);
+      }
+      return;
+    }
     if (cont) {
       const r = cont.rows[idx];
       if (r.lead) addBreak();
@@ -638,7 +652,8 @@ export function buildPinnedCycle(library, rawPlan) {
   const pins = activePins(plan); if (!pins.length) return null;
   const K = pinDays(pins), byId = new Map(library.map((i) => [i.id, i]));
   const lib2 = library.slice();
-  for (const p of pins) for (const l of pinLines(p)) lib2.push({ id: pinLineId(p, l), kind: "programa", title: l.title || p.title || "Programa fijado", url: l.url, duration: l.duration, active: true });
+  const shortSec = plan.shortOn !== false ? Math.max(0, Number(plan.shortMaxMin) || 25) * 60 : 0, shortEvery = Math.max(60, Math.round((Number(plan.shortEveryMin) || 10) * 60));
+  for (const p of pins) for (const l of pinLines(p)) lib2.push({ id: pinLineId(p, l), kind: "programa", title: l.title || p.title || "Programa fijado", url: l.url, duration: l.duration, active: true, ...(shortSec > 0 && l.duration < shortSec ? { cutEvery: shortEvery } : {}) });
   lib2.push({ id: "__fin__", kind: "programa", title: "", url: "x", duration: 3600, active: true });   // programa de mentira: marca dónde empezaría lo que sigue al fijado
   const byId2 = new Map(lib2.map((i) => [i.id, i]));
   const fillers = (plan.order || []).map((id, oi) => ({ oi, id })).filter((f) => { const i = byId.get(f.id); return i && i.kind === "programa" && i.duration > 0; });
@@ -689,7 +704,7 @@ export function buildPinnedCycle(library, rawPlan) {
     for (const dp of dayPins) {
       fillTo(dp.f, dp.early, dp.late, dp.id); order.push(dp.id); tags.push({ pin: dp }); lastId = dp.id;
       // Si el fijado termina antes de su límite («puede extenderse hasta»), se extiende con anuncios dentro del mismo programa; los demás esperan.
-      if (adList.length) {
+      if (adList.length && !(byId2.get(dp.id)?.cutEvery > 0)) {   // un fijado corto no se extiende con anuncios
         const room = dp.t - (startOf([...order, "__fin__"], "__fin__") + padAcc), ext = dp.maxExtra > 0 ? Math.min(room, dp.maxExtra) : room;
         if (ext > 0.5) { exts.set(dp.id, ext); padAcc += ext; }
       }
@@ -743,7 +758,7 @@ export function buildPinnedCycle(library, rawPlan) {
     const spans = spansOf(items), rows = [];
     spans.forEach((sp, k) => {
       const tg = tags[k]; if (!tg) return;
-      if (tg.pin) { const dp = tg.pin; rows.push({ kind: "pin", pin: dp.pin.id, line: dp.line.id, lineNo: dp.lineNo, lines: dp.lines, id: sp.id, title: byId2.get(sp.id)?.title || dp.pin.title, start: sp.start, end: sp.end + sp.tail, from: dp.f, to: dp.t, by: dp.f + dp.late, delta: sp.start - dp.f, endDelta: sp.end + sp.tail - dp.t, pad: pads.get(dp.id) || 0, ext: exts.get(dp.id) || 0 }); }
+      if (tg.pin) { const dp = tg.pin; rows.push({ kind: "pin", pin: dp.pin.id, line: dp.line.id, lineNo: dp.lineNo, lines: dp.lines, id: sp.id, title: byId2.get(sp.id)?.title || dp.pin.title, start: sp.start, end: sp.end + sp.tail, from: dp.f, to: dp.t, by: dp.f + dp.late, delta: sp.start - dp.f, endDelta: sp.end + sp.tail - dp.t, pad: pads.get(dp.id) || 0, ext: exts.get(dp.id) || 0, short: byId2.get(sp.id)?.cutEvery > 0 }); }
       else rows.push({ kind: "filler", oi: tg.oi, id: sp.id, title: byId2.get(sp.id)?.title || "", start: sp.start, end: sp.end });
     });
     days.push({ items, rows, warn, endPad: pads.get("END") || 0 });

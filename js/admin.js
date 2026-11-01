@@ -7,7 +7,7 @@ import {
   doc, getDoc, setDoc, addDoc, deleteDoc, updateDoc, deleteField, getDocs, collection, query, orderBy, limit, serverTimestamp
 } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore.js";
 import { ref as sRef, uploadBytesResumable, getDownloadURL, deleteObject } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-storage.js";
-import { parseDuration, fmtDuration, youtubeId, facebookUrl, parseLiveLink, buildCycle, cycleLength, locate, planWithDefaults, compactChannel, expandChannel, describeCuts, itemLabel, intervalSeconds, seamlessPublish, jumpPublish, settleChannel, buildSchedule, normalizeSlots, sortPrograms, placeNewProgram, buildPinnedCycle, pinLines, pinWindow, pinDayIndex, pinEpoch, DAY_MS, PIN_ANCHOR_MS } from "./engine.js?v=78";
+import { parseDuration, fmtDuration, youtubeId, facebookUrl, parseLiveLink, buildCycle, cycleLength, locate, planWithDefaults, compactChannel, expandChannel, describeCuts, itemLabel, intervalSeconds, seamlessPublish, jumpPublish, settleChannel, buildSchedule, normalizeSlots, sortPrograms, placeNewProgram, buildPinnedCycle, pinLines, pinWindow, pinDayIndex, pinEpoch, DAY_MS, PIN_ANCHOR_MS } from "./engine.js?v=39";
 import { serverNow, startClock } from "./clock.js";
 
 const $ = (id) => document.getElementById(id);
@@ -147,7 +147,7 @@ async function initPanel() {
   $("b-logo-file").addEventListener("change", onLogoFile);
   $("b-logo-rm").addEventListener("click", () => { state.brand.logo = ""; renderBrand(); saveBrand(true); });
   $("plan-save-com").addEventListener("click", savePlanFromCommercial);
-  ["plan-mode", "plan-iv", "plan-iu", "plan-count", "plan-repeat", "plan-end", "plan-every"].forEach((id) => $(id).addEventListener("input", previewPlan));
+  ["plan-mode", "plan-iv", "plan-iu", "plan-count", "plan-repeat", "plan-end", "plan-every", "plan-short-on", "plan-short-every", "plan-short-count"].forEach((id) => $(id).addEventListener("input", previewPlan));
   startClock();   // hora del servidor: la misma para el panel y para todos los espectadores
   for (const [id, key] of [["order-box", "fogon.orderOpen"], ["cycle-box", "fogon.cycleOpen"]]) {
     const box = $(id);
@@ -431,7 +431,8 @@ function readPlanForm() {
     ...state.plan,
     mode: $("plan-mode").value, intervalValue: Number($("plan-iv").value), intervalUnit: $("plan-iu").value,
     breakCount: Math.max(0, parseInt($("plan-count").value, 10) || 0), breakRepeat: Math.max(1, parseInt($("plan-repeat").value, 10) || 1),
-    breakAtEnd: $("plan-end").checked, everyN: Math.max(0, parseInt($("plan-every").value, 10) || 0)
+    breakAtEnd: $("plan-end").checked, everyN: Math.max(0, parseInt($("plan-every").value, 10) || 0),
+    shortOn: $("plan-short-on").checked, shortEveryMin: Math.max(1, Number($("plan-short-every").value) || 10), shortCount: Math.max(0, parseInt($("plan-short-count").value, 10) || 0)
   });
 }
 function renderCutSummary(plan) {
@@ -449,13 +450,14 @@ function renderCutSummary(plan) {
 }
 function previewPlan() {
   const p = readPlanForm();
-  $("plan-time-box").classList.toggle("hidden", p.mode === "programs"); $("plan-end-row").classList.toggle("hidden", p.mode === "continuous"); $("plan-prog-box").classList.toggle("hidden", p.mode !== "programs");
+  $("plan-time-box").classList.toggle("hidden", p.mode === "programs"); $("plan-end-row").classList.toggle("hidden", p.mode === "continuous"); $("plan-prog-box").classList.toggle("hidden", p.mode !== "programs"); $("plan-short-box").classList.toggle("hidden", !p.shortOn);
   renderCutSummary(p);
 }
 function renderAds() {
   const p = state.plan;
   $("plan-mode").value = p.mode; $("plan-iv").value = p.intervalValue; $("plan-iu").value = p.intervalUnit;
   $("plan-count").value = p.breakCount; $("plan-repeat").value = p.breakRepeat; $("plan-end").checked = !!p.breakAtEnd; $("plan-every").value = p.everyN;
+  $("plan-short-on").checked = p.shortOn !== false; $("plan-short-every").value = p.shortEveryMin || 10; $("plan-short-count").value = p.shortCount > 0 ? p.shortCount : ""; $("plan-short-max").textContent = p.shortMaxMin || 25; $("plan-short-box").classList.toggle("hidden", p.shortOn === false);
   const ads = allAdsOrdered();
   $("ads-list").innerHTML = ads.length ? ads.map((i, n) => `<div class="item"><input type="checkbox" data-ad="${esc(i.id)}" ${i.active !== false ? "checked" : ""} aria-label="Activo">
     <span class="grow"><b>${n + 1}. ${esc(i.title)}</b>
@@ -734,9 +736,10 @@ async function publish(auto, restart, opts) {
 }
 /* ===== Programas FIJADOS: salen SIEMPRE en su franja (de X a Y), con líneas/variaciones por día ===== */
 let pinMemo = { key: "", val: null };
+const isShortPin = (p) => state.plan.shortOn !== false && pinLines(p).length > 0 && pinLines(p).every((l) => l.duration < (state.plan.shortMaxMin || 25) * 60);
 function getPinned() {
   const p = state.plan; if (!p.pins?.length) return null;
-  const key = JSON.stringify([p.order, p.pins, p.mode, p.intervalValue, p.intervalUnit, p.breakCount, p.breakRepeat, p.breakAtEnd, p.everyN, p.minTailSec, p.adOrder, state.lib.map((i) => [i.id, i.kind, i.duration, i.active, i.playFor, i.url, i.title])]);
+  const key = JSON.stringify([p.order, p.pins, p.mode, p.intervalValue, p.intervalUnit, p.breakCount, p.breakRepeat, p.breakAtEnd, p.everyN, p.minTailSec, p.shortOn, p.shortMaxMin, p.shortEveryMin, p.shortCount, p.adOrder, state.lib.map((i) => [i.id, i.kind, i.duration, i.active, i.playFor, i.url, i.title])]);
   if (key !== pinMemo.key) pinMemo = { key, val: buildPinnedCycle(state.lib, p) };
   return pinMemo.val;
 }
@@ -774,7 +777,7 @@ function renderPinList() {
   const today = pc && !pc.error ? pinDayIndex(serverNow(), pc.K) : null;
   el.innerHTML = pins.map((p) => {
     const w = pinWindow(p), n = pinLines(p).length, hoy = today != null && n ? ` · hoy: línea ${(today % n) + 1}` : "";
-    return `<div class="pin-card${n ? "" : " bad"}"><div class="pin-main"><b>${esc(p.title)}</b><span class="pin-tags"><span>Se lanza a las ${clockTxt(w.f)}</span><span>Puede comenzar hasta las ${clockTxt(pinStartBy(p))}</span><span>Puede extenderse hasta las ${clockTxt(w.t % 1440)}</span></span><span class="hint">${n} línea${n === 1 ? "" : "s"}${hoy} · ${p.tolMin > 0 ? `puede salir hasta ${p.tolMin} min antes` : "no sale antes de su hora"}${p.maxExtraMin > 0 ? ` · máx. ${p.maxExtraMin} min de anuncios extra` : ""}</span>${n ? "" : '<span class="warn">Sin líneas válidas: no se emite.</span>'}</div><div class="pin-btns"><button class="btn small" data-pa="edit" data-pin="${esc(p.id)}" type="button">Líneas y hora</button><button class="btn danger small" data-pa="unpin" data-pin="${esc(p.id)}" type="button">Quitar</button></div></div>`;
+    return `<div class="pin-card${n ? "" : " bad"}"><div class="pin-main"><b>${esc(p.title)}</b><span class="pin-tags"><span>Se lanza a las ${clockTxt(w.f)}</span><span>Puede comenzar hasta las ${clockTxt(pinStartBy(p))}</span>${isShortPin(p) ? `<span>Programa corto: anuncios cada ${state.plan.shortEveryMin || 10} min</span>` : `<span>Puede extenderse hasta las ${clockTxt(w.t % 1440)}</span>`}</span><span class="hint">${n} línea${n === 1 ? "" : "s"}${hoy} · ${p.tolMin > 0 ? `puede salir hasta ${p.tolMin} min antes` : "no sale antes de su hora"}${p.maxExtraMin > 0 && !isShortPin(p) ? ` · máx. ${p.maxExtraMin} min de anuncios extra` : ""}</span>${n ? "" : '<span class="warn">Sin líneas válidas: no se emite.</span>'}</div><div class="pin-btns"><button class="btn small" data-pa="edit" data-pin="${esc(p.id)}" type="button">Líneas y hora</button><button class="btn danger small" data-pa="unpin" data-pin="${esc(p.id)}" type="button">Quitar</button></div></div>`;
   }).join("");
 }
 

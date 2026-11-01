@@ -403,6 +403,12 @@ html,body{max-width:100%;overflow-x:hidden}
           <div id="plan-prog-box" class="hidden"><label class="field"><span>Corte cada N programas</span><input id="plan-every" type="number" min="0" max="20"></label></div>
           <label class="field"><span>Anuncios por corte</span><input id="plan-count" type="number" min="0" max="20"></label>
           <label class="field"><span>Repetir la tanda</span><input id="plan-repeat" type="number" min="1" max="10"></label>
+          <h3 class="sub">Programas fijados cortos</h3>
+          <label class="field"><span><input id="plan-short-on" type="checkbox"> Activar para fijados de menos de <b id="plan-short-max">25</b> min</span></label>
+          <div id="plan-short-box">
+            <label class="field"><span>Un corte cada (minutos)</span><input id="plan-short-every" type="number" min="1" max="24" step="any"></label>
+            <label class="field"><span>Anuncios por corte (vacío = los mismos del corte general)</span><input id="plan-short-count" type="number" min="0" max="20" placeholder="igual que arriba"></label>
+          </div>
           <button class="btn small" id="plan-save-com" type="button">Guardar</button>
           <h3 class="sub">Cortes</h3>
           <div id="cut-summary"></div>

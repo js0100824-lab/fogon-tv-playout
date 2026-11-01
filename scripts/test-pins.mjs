@@ -125,12 +125,27 @@ ok(r3.days[0].rows.find((x) => x.pin === "M").delta > 0, "el siguiente fijado sa
     ok(rows[ia + 1] === b && Math.abs(b.start - a.end) < 1, "largo: B empieza inmediatamente cuando termina A (aunque ya pasó su hora)");
     ok(Math.abs(cycleLength(t.day.items) - DAY_SEC) < 0.01, "largo: el día sigue durando 24 h"); }
   // 2) programa corto (20 min en 8-9): se extiende con anuncios hasta las 9:00; con tope de 10 min, lo demás lo llena un programa
-  { const t = run([{ id: "a", title: "A", from: "08:00", to: "09:00", tolMin: 0, lines: [line("a", min(20))] }]), a = t.row("a");
+  { const t = run([{ id: "a", title: "A", from: "08:00", to: "09:00", tolMin: 0, lines: [line("a", min(20))] }], { shortOn: false }), a = t.row("a");
     ok(Math.abs(a.end - 9 * 3600) < 1 && a.ext > min(30), `corto: 20 min en una franja de 1 h termina a las 9:00 (extensión ${Math.round(a.ext / 60)} min)`);
-    const t2 = run([{ id: "a", title: "A", from: "08:00", to: "09:00", tolMin: 0, maxExtraMin: 10, lines: [line("a", min(20))] }]), a2 = t2.row("a");
+    const t2 = run([{ id: "a", title: "A", from: "08:00", to: "09:00", tolMin: 0, maxExtraMin: 10, lines: [line("a", min(20))] }], { shortOn: false }), a2 = t2.row("a");
     ok(Math.abs(a2.ext - min(10)) < 1, `tope: la extensión se limita a 10 min (${Math.round(a2.ext / 60)})`);
     const nxt = t2.day.rows[t2.day.rows.indexOf(a2) + 1];
     ok(nxt && nxt.kind === "filler" && Math.abs(nxt.start - a2.end) < 90, "tope: lo que queda de la franja lo llena el siguiente programa"); }
+  // Programas fijados CORTOS (<25 min): sin extensión gigante; cortes propios cada X min con los anuncios ya definidos
+  { const pin = [{ id: "a", title: "A", from: "08:00", to: "10:00", tolMin: 0, lines: [line("a", min(22))] }];
+    const t = run(pin, { shortEveryMin: 10 }), a = t.row("a"), its = t.day.items.filter((x) => x.id === a.id || (x.type === "comercial" && x.breakNo > 0));
+    const mine = t.day.items.filter((x) => x.id === a.id), cuts = mine.length - 1;
+    ok(a.short === true && a.ext === 0, `corto: sin extensión de anuncios (ext ${a.ext})`);
+    ok(cuts === 2, `corto: 22 min con corte cada 10 → 2 cortes (${cuts})`);
+    ok(Math.abs(mine[1].startAt - min(10)) < 1 && Math.abs(mine[2].startAt - min(20)) < 1, "corto: los cortes caen a los 10 y 20 min");
+    const brk = []; let cur = null; for (const x of t.day.items) { if (x.type === "comercial") { cur ? cur.n++ : (cur = { n: 1 }); } else { if (cur) brk.push(cur.n); cur = null; } }
+    ok(t.day.items.filter((x) => x.id === a.id).length === 3 && Math.max(...t.day.items.filter((x) => x.type === "comercial" && x.breakNo > 0).map(() => 1)) === 1, "corto: se usan solo los anuncios del plan");
+    const t3 = run(pin, { shortEveryMin: 10, shortCount: 5 }), m3 = t3.day.items, i3 = m3.findIndex((x) => x.id === a.id && x.part === 1);
+    let n = 0; for (let k = i3 + 1; m3[k] && m3[k].type === "comercial"; k++) n++;
+    ok(n === 5, `corto: con «anuncios por corte» = 5 salen 5 anuncios (${n})`);
+    const t4 = run(pin, { shortOn: false }); ok(t4.row("a").ext > min(30), "corto: con la función apagada vuelve la extensión de antes");
+    ok(Math.abs(cycleLength(t.day.items) - DAY_SEC) < 0.01, "corto: el día sigue durando 24 h");
+    const big = run([{ id: "a", title: "A", from: "08:00", to: "10:00", tolMin: 0, lines: [line("a", min(40))] }]); ok(big.row("a").short === false, "no corto: 40 min sigue con la extensión normal"); }
   // 1) «puede comenzar hasta»: el fijado puede salir tarde hasta ese límite (no más), y 0 min tarde si no se da margen
   { const base = { id: "a", title: "A", from: "08:00", to: "09:00", tolMin: 0, lines: [line("a", min(40))] };
     const d0 = run([{ ...base, startBy: "08:00" }]).row("a").delta, d20 = run([{ ...base, startBy: "08:20" }]).row("a").delta;
