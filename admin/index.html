@@ -366,7 +366,7 @@ html,body{max-width:100%;overflow-x:hidden}
         </section>
 
         <section id="tab-dia" class="tab hidden">
-          <p class="hint">Cada fila es una emisión del día. Arrastra ⠿ o usa ↑ ↓ para moverla, ⇄ para cambiar el programa, ＋ para insertar uno debajo y ✕ para quitarlo. Con <b>Fijar</b> el programa queda clavado a esa hora: sale <b>siempre</b> en su franja y no se mueve, aunque cambies lo demás. Si termina antes de su límite, se extiende con anuncios hasta completar la franja y luego sigue el siguiente; si dura más, el siguiente empieza justo al terminar. Lo que queda libre entre fijados se llena con programas de la categoría de esa hora, y ninguno se corta. Al terminar, pulsa «Guardar y publicar».</p>
+          <p class="hint">Cada fila es una emisión del día. Arrastra ⠿ o usa ↑ ↓ para moverla, ⇄ para cambiar el programa, ＋ para insertar uno debajo y ✕ para quitarlo. Con <b>Fijar</b> indicas el <b>intervalo</b> en el que ese programa debe lanzarse (no una hora exacta ni una duración): puede salir a cualquier hora dentro de ese intervalo y conserva su duración real. Lo que queda libre entre fijados se llena con programas de la categoría de esa hora, en el orden de las franjas, y ninguno se corta ni se rellena con anuncios. El ciclo va de 6:00 a. m. a 6:00 a. m. Al terminar, pulsa «Guardar y publicar».</p>
           <h3 class="sub">Programas fijados</h3>
           <div class="row"><button class="btn small" id="pin-new" type="button">Fijar programa</button></div>
           <button class="pin-fold-h" id="pin-toggle" type="button" aria-expanded="false" aria-controls="pin-fold"><span id="pin-toggle-t">Ver programas fijados</span><span class="pin-chev" aria-hidden="true"></span></button>
@@ -403,11 +403,12 @@ html,body{max-width:100%;overflow-x:hidden}
           <div id="plan-prog-box" class="hidden"><label class="field"><span>Corte cada N programas</span><input id="plan-every" type="number" min="0" max="20"></label></div>
           <label class="field"><span>Anuncios por corte</span><input id="plan-count" type="number" min="0" max="20"></label>
           <label class="field"><span>Repetir la tanda</span><input id="plan-repeat" type="number" min="1" max="10"></label>
+          <h3 class="sub">Relleno con anuncios</h3>
+          <label class="field"><span><input id="plan-fillads" type="checkbox"> Rellenar con anuncios el tiempo que sobre o falte (apagado: los anuncios solo salen en los cortes configurados)</span></label>
           <h3 class="sub">Programas fijados cortos</h3>
           <label class="field"><span><input id="plan-short-on" type="checkbox"> Activar para fijados de menos de <b id="plan-short-max">25</b> min</span></label>
           <div id="plan-short-box">
             <label class="field"><span>Un corte cada (minutos)</span><input id="plan-short-every" type="number" min="1" max="24" step="any"></label>
-            <label class="field"><span>Anuncios por corte (vacío = los mismos del corte general)</span><input id="plan-short-count" type="number" min="0" max="20" placeholder="igual que arriba"></label>
           </div>
           <button class="btn small" id="plan-save-com" type="button">Guardar</button>
           <h3 class="sub">Cortes</h3>
@@ -479,11 +480,11 @@ html,body{max-width:100%;overflow-x:hidden}
   <h3 id="pin-h">Fijar programa</h3>
   <label class="field"><span>Nombre del programa</span><input id="pin-title" maxlength="120" placeholder="Ej.: Caso Cerrado"></label>
   <div class="pin-sec">Horario del programa</div>
-  <p class="hint">La hora de lanzamiento es la referencia para saber cuándo sale. Si el programa termina antes de su límite, se extiende con anuncios hasta completar la franja; si dura más, el siguiente empieza justo al terminar.</p>
+  <p class="hint">Fijar un programa es indicar el INTERVALO en el que debe lanzarse: puede empezar a cualquier hora entre «desde» y «hasta» (por ejemplo a las 3:30 o 3:50), no tiene que empezar ni terminar a una hora exacta. Conserva su duración real y el siguiente empieza cuando termina.</p>
   <div id="pin-time" class="pin-time"></div>
   <p id="pin-time-info" class="hint"></p>
-  <label class="field"><span>¿Puede salir antes de su hora de lanzamiento?</span><select id="pin-tol"><option value="0">No: a la hora exacta (se rellena con anuncios)</option><option value="5">Hasta 5 min antes</option><option value="10">Hasta 10 min antes</option><option value="15">Hasta 15 min antes</option><option value="30">Hasta 30 min antes</option></select></label>
-  <label class="field"><span>Límite de anuncios para extender el programa</span><select id="pin-maxext"><option value="0">Hasta completar su franja («puede extenderse hasta»)</option><option value="10">Máximo 10 min de anuncios extra</option><option value="15">Máximo 15 min de anuncios extra</option><option value="20">Máximo 20 min de anuncios extra</option><option value="30">Máximo 30 min de anuncios extra</option><option value="45">Máximo 45 min de anuncios extra</option><option value="60">Máximo 60 min de anuncios extra</option></select></label>
+  <label class="field"><span>¿Puede salir antes de su hora de lanzamiento?</span><select id="pin-tol"><option value="0">No: no sale antes de su hora</option><option value="5">Hasta 5 min antes</option><option value="10">Hasta 10 min antes</option><option value="15">Hasta 15 min antes</option><option value="30">Hasta 30 min antes</option></select></label>
+  <label class="field"><span>Límite de anuncios de extensión (solo si el relleno con anuncios está activado)</span><select id="pin-maxext"><option value="0">Hasta completar su franja («puede extenderse hasta»)</option><option value="10">Máximo 10 min de anuncios extra</option><option value="15">Máximo 15 min de anuncios extra</option><option value="20">Máximo 20 min de anuncios extra</option><option value="30">Máximo 30 min de anuncios extra</option><option value="45">Máximo 45 min de anuncios extra</option><option value="60">Máximo 60 min de anuncios extra</option></select></label>
   <div class="pin-sec">Líneas: variaciones por día (día 1 → línea 1, día 2 → línea 2…)</div>
   <div id="pin-lines"></div>
   <div class="pin-add">
@@ -499,6 +500,6 @@ html,body{max-width:100%;overflow-x:hidden}
 </div></div>
 
 <div id="dpick" class="dlg hidden" role="dialog" aria-modal="true" aria-labelledby="dpick-title"><div class="dlg-box dpick-box"><h3 id="dpick-title">Elegir programa</h3><input id="dpick-q" type="search" placeholder="Buscar" autocomplete="off"><select id="dpick-cat" aria-label="Categoría"></select><div id="dpick-list" class="pick-list"></div><div class="dlg-actions"><button class="btn secondary" id="dpick-cancel" type="button">Cancelar</button></div></div></div>
-<script type="module" src="../js/admin.js?v=78"></script>
+<script type="module" src="../js/admin.js?v=87"></script>
 </body>
 </html>

@@ -54,7 +54,8 @@ export const PLAN_DEFAULTS = {
   everyN: 2,               // modo "programs"
   minTailSec: 15,          // no cortar si al programa le quedan menos de estos segundos
   // Programas FIJADOS cortos: cortes propios (cada X min) y sin extensión de anuncios
-  shortOn: true, shortMaxMin: 25, shortEveryMin: 10, shortCount: 0   // shortCount 0 = los mismos anuncios por corte que el plan general
+  shortOn: true, shortMaxMin: 25, shortEveryMin: 10, shortCount: 0,   // shortCount 0 = los mismos anuncios por corte que el plan general
+  fillAds: false           // RELLENO con anuncios para completar horas: apagado por defecto (los anuncios solo salen según la configuración de cortes)
 };
 export const planWithDefaults = (p) => ({ ...PLAN_DEFAULTS, ...(p || {}) });
 
@@ -344,6 +345,8 @@ export function nowNext(items, epochMs, nowMs, nextItems) {
    · La única excepción es el último bloque del día, si es «Variado» (*): ahí la hora se repite y se corta de golpe para dar paso a lo que sigue.
    · Cuando los programas de una categoría no alcanzan, se repiten al azar en otro orden: si la primera vuelta fue A-B-C, la siguiente no puede ser A-B-C.
    · Un programa nuevo entra enseguida en la franja de su categoría (placeNewProgram). */
+export const catKey = (c) => String(c || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").trim().toLowerCase();
+export const sameCat = (a, b) => catKey(a) === catKey(b);
 export const isKids = (c) => /caricatur|mu[nñ]equit|infantil|dibujos/i.test(c || "");
 
 export function shuffleList(list, rng = Math.random) {
@@ -366,7 +369,8 @@ export function sortPrograms(list, how, createdMs = () => 0, rng = Math.random) 
 export function normalizeSlots(slots, S0, toMin) {
   const raw = (slots || []).map((s) => ({ f: toMin(s.from), t: toMin(s.to), cat: s.cat }));
   if (!raw.length) return null;
-  const S = S0 == null ? raw[0].f : S0, out = [];
+  const S = S0 == null ? 360 : S0, out = [];   // sin hora dada, el ciclo de 24 h empieza a las 6:00 a. m.
+  
   for (const s of raw) {
     const len = ((s.t - s.f + 1440) % 1440) || 1440, off = (S - s.f + 1440) % 1440;
     if (off < len) {
@@ -379,7 +383,7 @@ export function normalizeSlots(slots, S0, toMin) {
 
 // Programas de una franja. «Variado» (*) va rotando entre las categorías (menos caricaturas), empezando por una distinta cada vez.
 export function poolFor(s, base, how, rot, createdMs, rng) {
-  if (s.cat !== "*") return sortPrograms(base.filter((i) => i.cat === s.cat), how, createdMs, rng);
+  if (s.cat !== "*") return sortPrograms(base.filter((i) => sameCat(i.cat, s.cat)), how, createdMs, rng);
   const groups = new Map();
   for (const i of sortPrograms(base.filter((x) => !isKids(x.cat)), how, createdMs, rng)) { const k = i.cat || ""; if (!groups.has(k)) groups.set(k, []); groups.get(k).push(i); }
   let lists = [...groups.values()]; if (lists.length) { const r = rot % lists.length; lists = lists.slice(r).concat(lists.slice(0, r)); }
@@ -415,7 +419,7 @@ export function buildSchedule({ library, plan, ns, how, skipBad = true, createdM
   const lastSlot = ns.slots.length - 1;
   let len = 0, last = null, rot = 0;
   ns.slots.forEach((s, si) => {
-    const cutOk = si === lastSlot && s.cat === "*";                  // solo aquí se permite cortar de golpe
+    const cutOk = false;                  // nunca se corta un programa
     const end = s.end * 60, pool = poolFor(s, base, how, rot, createdMs, rng), row = { ...s, n: 0, startAt: len, i0: order.length, cut: false };
     if (s.cat === "*") rot++;
     if (!pool.length) { row.empty = true; row.endAt = len; row.i1 = order.length; rows.push(row); return; }
@@ -460,6 +464,8 @@ export function buildSchedule({ library, plan, ns, how, skipBad = true, createdM
 // Tras meter un programa en la parrilla, el ciclo crece. Si el último bloque es «Variado» (se puede cortar), ahí se recupera el tiempo:
 // se acorta el último programa y, si hace falta, se quitan los últimos, para que el día siga cerrando a su hora.
 export function absorbTail(library, plan) {
+  return false;   // nunca se recortan programas para ajustar el día: la programación puede pasarse de la hora prevista
+  // eslint-disable-next-line no-unreachable
   const sm = plan.slotMap; if (!sm || !(sm.tailFrom >= 0) || !(sm.target > 0)) return false;
   const order = plan.order, durs = { ...(plan.fit?.durs || {}) };
   const ev = () => cycleLength(buildCycle(library, { ...plan, order, fit: { order, durs } }));
@@ -487,7 +493,7 @@ export function placeNewProgram(library, plan, item, airIdx = -1) {
   const byId = new Map(library.map((i) => [i.id, i]));
   const valid = !!(sm && Array.isArray(sm.rows) && Array.isArray(sm.order) && sm.order.length === order.length && sm.order.every((id, n) => id === order[n]));
   const repeats = [];   // posiciones que son repetición (el programa ya había salido antes en el ciclo) de la misma categoría
-  const seen = new Set(); order.forEach((id, n) => { if (seen.has(id) && byId.get(id)?.cat === item.cat && n !== airIdx) repeats.push(n); seen.add(id); });
+  const seen = new Set(); order.forEach((id, n) => { if (seen.has(id) && sameCat(byId.get(id)?.cat, item.cat) && n !== airIdx) repeats.push(n); seen.add(id); });
   if (repeats.length) {
     const at = repeats.find((n) => n > airIdx) ?? repeats[0], old = byId.get(order[at]);
     order[at] = item.id;
@@ -498,12 +504,12 @@ export function placeNewProgram(library, plan, item, airIdx = -1) {
   if (!sm || !Array.isArray(sm.rows)) return null;
   if (!valid) {
     // La parrilla se tocó a mano y ya no se sabe dónde cae cada franja: entra después del último programa de su categoría.
-    let j = -1; order.forEach((id, n) => { if (byId.get(id)?.cat === item.cat) j = n; });
+    let j = -1; order.forEach((id, n) => { if (sameCat(byId.get(id)?.cat, item.cat)) j = n; });
     if (j < 0) return null;
     order.splice(j + 1, 0, item.id); plan.fit = null; plan.slotMap = { ...sm, order: null };
     return { at: j + 1, cat: item.cat, replaced: null };
   }
-  let cand = sm.rows.map((r, n) => ({ r, n })).filter(({ r }) => r.cat === item.cat);
+  let cand = sm.rows.map((r, n) => ({ r, n })).filter(({ r }) => sameCat(r.cat, item.cat));
   if (!cand.length && !isKids(item.cat)) cand = sm.rows.map((r, n) => ({ r, n })).filter(({ r }) => r.cat === "*");
   if (!cand.length) return null;
   const pick = cand.find(({ r }) => r.i1 > airIdx) || cand[0], r = pick.r;
@@ -532,7 +538,9 @@ export function placeNewProgram(library, plan, item, airIdx = -1) {
    · El ciclo publicado dura K días exactos (K = largo de la rotación de líneas) y arranca a medianoche de República Dominicana,
      así la hora del reloj y la hora de la emisión siempre coinciden. */
 export const DAY_SEC = 86400, DAY_MS = 86400000, PIN_MAX_DAYS = 14;
-export const PIN_ANCHOR_MS = Date.UTC(2025, 0, 1, 4, 0, 0);   // 00:00 de República Dominicana (UTC−4, sin horario de verano)
+export const DAY_START_MIN = 360;   // el ciclo de 24 h va de 6:00 a. m. a 6:00 a. m.
+export const PIN_ANCHOR_MS = Date.UTC(2025, 0, 1, 10, 0, 0);   // 6:00 a. m. de República Dominicana (UTC−4, sin horario de verano)
+const relMin = (m) => (((m - DAY_START_MIN) % 1440) + 1440) % 1440;   // minuto del reloj → minuto dentro del ciclo (0 = 6:00 a. m.)
 const hhmm = (t) => { const [h, m] = String(t || "0:0").split(":").map(Number); return ((((h || 0) * 60 + (m || 0)) % 1440) + 1440) % 1440; };
 const gcd = (a, b) => (b ? gcd(b, a % b) : a);
 export const pinLineId = (pin, line) => `pin_${pin.id}_${line.id}`;
@@ -547,7 +555,7 @@ export function pinLines(pin) {
 export function pinWindow(pin) { const f = hhmm(pin.from), t = hhmm(pin.to); return { f, t: t > f ? t : 1440 }; }
 // Fijados válidos y en orden; si dos se pisan, se descarta el que empieza dentro del anterior.
 export function activePins(plan) {
-  const all = (plan?.pins || []).filter((p) => p && p.id && pinLines(p).length).map((p) => ({ p, ...pinWindow(p) })).sort((a, b) => a.f - b.f);
+  const all = (plan?.pins || []).filter((p) => p && p.id && pinLines(p).length).map((p) => { const w = pinWindow(p), f = relMin(w.f); return { p, f, t: Math.min(1440, f + (w.t - w.f)) }; }).sort((a, b) => a.f - b.f);
   const out = []; let end = -1;
   for (const x of all) { if (x.f < end) continue; out.push(x.p); end = x.t; }
   return out;
@@ -643,12 +651,18 @@ export function renumberParts(items) {
   return items;
 }
 
-// Devuelve null si no hay fijados; si no, { items, K, days:[{ items, rows, warn }], error? }.
-// rows de cada día: { kind:"filler", oi, id, title, start, end } | { kind:"pin", pin, line, lineNo, lines, id, title, start, end, from, to, delta, endDelta, pad }  (segundos desde las 00:00)
-// REGLAS: (1) los huecos entre fijados se llenan solo con programas de la categoría que toca a esa hora (franjas de Horarios);
-//         (2) NUNCA se corta un programa; (3) si sobra tiempo, el fijado sale antes/después dentro de su margen (tolMin) y lo demás se completa con anuncios.
+// Devuelve null si no hay fijados; si no, { items, K, days:[{ items, rows, warn, carry }], error? }.
+// Tiempos en segundos desde las 6:00 a. m. (inicio del ciclo de 24 h). rows de cada día:
+//   { kind:"filler", oi, id, title, start, end } | { kind:"pin", pin, line, lineNo, lines, id, title, start, end, from, to, by, delta, endDelta, pad, ext }
+// REGLAS NUEVAS:
+//  (1) FIJAR = INTERVALO DE LANZAMIENTO: el programa debe EMPEZAR dentro de [desde, hasta]; no tiene que empezar ni terminar justo en esos minutos.
+//  (2) NUNCA se corta, recorta ni acelera un programa: cada contenido conserva su duración real y la programación puede pasarse de lo previsto.
+//  (3) Los anuncios NO rellenan huecos (solo salen según los cortes configurados), salvo que se active plan.fillAds.
+//  (4) Cada franja usa programas de SU categoría, tomados de TODA la biblioteca (no solo de la parrilla principal), en el orden de las franjas.
+//  (5) Lo que un día se pasa de las 6:00 a. m. se arrastra (carry) al día siguiente; solo en el cierre de todo el ciclo se recorta lo que sobre.
 export function buildPinnedCycle(library, rawPlan) {
   const plan = { ...planWithDefaults(rawPlan), fit: null };
+  const fillAds = plan.fillAds === true;
   const pins = activePins(plan); if (!pins.length) return null;
   const K = pinDays(pins), byId = new Map(library.map((i) => [i.id, i]));
   const lib2 = library.slice();
@@ -656,27 +670,44 @@ export function buildPinnedCycle(library, rawPlan) {
   for (const p of pins) for (const l of pinLines(p)) lib2.push({ id: pinLineId(p, l), kind: "programa", title: l.title || p.title || "Programa fijado", url: l.url, duration: l.duration, active: true, ...(shortSec > 0 && l.duration < shortSec ? { cutEvery: shortEvery } : {}) });
   lib2.push({ id: "__fin__", kind: "programa", title: "", url: "x", duration: 3600, active: true });   // programa de mentira: marca dónde empezaría lo que sigue al fijado
   const byId2 = new Map(lib2.map((i) => [i.id, i]));
-  const fillers = (plan.order || []).map((id, oi) => ({ oi, id })).filter((f) => { const i = byId.get(f.id); return i && i.kind === "programa" && i.duration > 0; });
-  if (!fillers.length) return { items: [], K, days: [], error: "Hace falta al menos un programa en la parrilla principal para llenar las horas libres." };
+  // Programas que pueden llenar huecos: primero los de la parrilla principal (en su orden), luego TODOS los demás de la biblioteca.
+  const orderIdx = new Map(); (plan.order || []).forEach((id, oi) => { if (!orderIdx.has(id)) orderIdx.set(id, oi); });
+  const okProg = (i) => i && i.kind === "programa" && i.duration > 0 && i.fbOk !== false;
+  const fillers = [
+    ...[...orderIdx].filter(([id]) => okProg(byId.get(id))).map(([id, oi]) => ({ oi, id })),
+    ...library.filter((i) => okProg(i) && !orderIdx.has(i.id)).map((i) => ({ oi: -1, id: i.id }))
+  ];
+  if (!fillers.length) return { items: [], K, days: [], error: "Hace falta al menos un programa en la biblioteca para llenar las horas libres." };
   const adList = activeAds(library, plan);
   const adDur = (a) => (a.playFor > 0 ? Math.min(a.playFor, a.duration) : a.duration);
-  // Categoría que toca a cada hora del día
+  // Categoría que toca a cada momento del ciclo (sec = segundos desde las 6:00 a. m.)
   const slots = (plan.slots || []).map((x) => ({ f: hhmm(x.from), len: ((hhmm(x.to) - hhmm(x.from) + 1440) % 1440) || 1440, cat: x.cat }));
-  const catAt = (sec) => { const m = Math.floor(sec / 60) % 1440, x = slots.find((y) => ((m - y.f + 1440) % 1440) < y.len); return x ? x.cat : "*"; };
-  const nonKids = fillers.filter((f) => !isKids(byId.get(f.id).cat));
-  const poolOf = (cat) => { const own = cat === "*" ? nonKids : fillers.filter((f) => byId.get(f.id).cat === cat); return own.length ? own : (nonKids.length ? nonKids : fillers); };
+  const slotOf = (m) => { let best = null, bo = 1e9; for (const y of slots) { const o = (m - y.f + 1440) % 1440; if (o < y.len && o < bo) { bo = o; best = y; } } return best; };   // si dos franjas se pisan, gana la que empezó más tarde
+  const clockMin = (sec) => (Math.floor(sec / 60) + DAY_START_MIN) % 1440;
+  const catAt = (sec) => { const x = slotOf(clockMin(sec)); return x ? x.cat : "*"; };
+  const slotEndAt = (sec) => { const m0 = Math.floor(sec / 60), m = clockMin(sec), x = slotOf(m); if (!x) return Infinity; let rem = x.len - ((m - x.f + 1440) % 1440); for (const y of slots) { if (y === x) continue; const d = (y.f - m + 1440) % 1440; if (d > 0 && d < rem) rem = d; } return (m0 + rem) * 60; };
+  const catOf = (f) => byId.get(f.id).cat;
+  const missingCats = [...new Set(slots.map((x) => x.cat))].filter((c) => c && c !== "*" && !fillers.some((f) => sameCat(catOf(f), c)));
+  const nonKids = fillers.filter((f) => !isKids(catOf(f)));
+  const poolOf = (cat) => { const own = cat === "*" ? nonKids : fillers.filter((f) => sameCat(catOf(f), cat)); return own.length ? own : (nonKids.length ? nonKids : fillers); };
   const queues = new Map();   // una cola por categoría: sigue corriendo de un día al siguiente
-  const qFor = (cat) => { let q = queues.get(cat); if (!q) queues.set(cat, (q = [])); const base = poolOf(cat); while (q.length < 40) for (const f of base) q.push(f); return q; };
-  let lastId = null, adCur = 0;
+  const qFor = (cat) => { const key = catKey(cat); let q = queues.get(key); if (!q) queues.set(key, (q = [])); const base = poolOf(cat); while (q.length < 40) for (const f of base) q.push(f); return q; };
+  let lastId = null, adCur = 0, carry = 0;
   const days = [];
   for (let d = 0; d < K; d++) {
-    const order = [], durs = {}, tags = [], pads = new Map(), exts = new Map();   // pads: id del fijado (o "END") → segundos de anuncios de relleno antes de él
-    let padAcc = 0;
+    const order = [], durs = {}, tags = [], pads = new Map(), exts = new Map(), cutNotes = [];
+    let padAcc = carry;   // desplazamiento del día: lo que el día anterior se pasó de las 6:00 a. m. (más los anuncios de relleno, si están activados)
+    const dayCarry = carry;
     const build = (o) => buildCycle(lib2, { ...plan, order: o, fit: { order: o, durs } });
     const endOf = (o) => cycleLength(build(o));
     const startOf = (o, id) => { let t = 0; for (const it of build(o)) { if (it.id === id && it.type === "programa" && (!it.part || it.part === 1)) return t; t += it.duration; } return t; };
-    const dayPins = pins.map((p) => { const ls = pinLines(p), line = ls[d % ls.length], w = pinWindow(p), f = w.f * 60, t = w.t * 60, early = Math.max(0, Number(p.tolMin) || 0) * 60, by = p.startBy ? hhmm(p.startBy) * 60 : f + early; return { pin: p, line, id: pinLineId(p, line), f, t, early, late: Math.max(0, Math.min(by, t) - f), maxExtra: Math.max(0, Number(p.maxExtraMin) || 0) * 60, lineNo: (d % ls.length) + 1, lines: ls.length }; });
-    // Llena el hueco hasta `target` con programas COMPLETOS de la categoría de cada momento. El fijado puede salir `tol` antes o después.
+    const dayPins = pins.map((p) => {
+      const ls = pinLines(p), line = ls[d % ls.length], w = pinWindow(p), fm = relMin(w.f), f = fm * 60, t = Math.min(1440, fm + (w.t - w.f)) * 60;
+      const by = p.startBy ? relMin(hhmm(p.startBy)) * 60 : t;   // sin «puede comenzar hasta»: todo el intervalo vale
+      return { pin: p, line, id: pinLineId(p, line), f, t, early: Math.max(0, Number(p.tolMin) || 0) * 60, late: Math.max(0, Math.min(by >= f ? by : t, t) - f), maxExtra: Math.max(0, Number(p.maxExtraMin) || 0) * 60, lineNo: (d % ls.length) + 1, lines: ls.length };
+    });
+    // Llena el hueco hasta `target` con programas COMPLETOS de la categoría de cada momento. El fijado puede lanzarse entre target-early y target+late.
+    // Si nada de la categoría cabe, entra el que se pase menos (el programa nunca se corta); solo si así queda más cerca de la hora que dejando el hueco.
     const fillTo = (target, early, late, nextId) => {
       const measure = () => (nextId ? startOf([...order, nextId], nextId) : endOf(order)) + padAcc;
       const after = (f) => (nextId ? startOf([...order, f.id, nextId], nextId) : endOf([...order, f.id])) + padAcc;
@@ -685,83 +716,78 @@ export function buildPinnedCycle(library, rawPlan) {
       for (let guard = 0; guard < 300; guard++) {
         if (cur >= target - early) break;
         const q = qFor(catAt(cur)), okC = (f) => f.id !== lastId || q.every((x) => x.id === f.id);
-        const seen = new Map(); let first = -1, firstT = 0, fin = -1, finT = 0;
-        const near = target - cur < Math.max(...q.slice(0, 30).map((f) => byId.get(f.id).duration)) * 1.2 + (early + late);   // cerca del final del hueco: se busca el que mejor cierre
+        const seen = new Map(); let first = -1, firstT = 0, fin = -1, finT = 0, below = -1, belowT = -1, over = -1, overT = Infinity;
+        const near = target - cur < Math.max(...q.slice(0, 30).map((f) => byId.get(f.id).duration)) * 1.2 + (early + late);
         for (let k = 0, lim = Math.min(q.length, 30); k < lim; k++) {
           const f = q[k]; if (!okC(f)) continue;
           let t = seen.get(f.id); if (t === undefined) { t = after(f); seen.set(f.id, t); }
-          if (t > target + late) continue;
+          if (t > target + late) { if (t < overT) { over = k; overT = t; } continue; }
           if (first < 0) { first = k; firstT = t; if (!near) break; }
+          if (t > belowT) { below = k; belowT = t; }
           if (t >= target - early && (fin < 0 || Math.abs(t - target) < Math.abs(finT - target))) { fin = k; finT = t; }
         }
-        const pick = fin >= 0 ? fin : first, pt = fin >= 0 ? finT : firstT;
-        if (pick < 0) break;   // nada de esta categoría cabe entero: el resto se completa con anuncios
+        let pick = fin >= 0 ? fin : (near ? below : first), pt = fin >= 0 ? finT : (near ? belowT : firstT);
+        if (pick < 0 && over >= 0 && !fillAds && overT - target <= target - cur) { pick = over; pt = overT; }   // se pasa, pero termina completo y queda más cerca de la hora
+        if (pick < 0) break;
         const f = q.splice(pick, 1)[0]; order.push(f.id); tags.push({ oi: f.oi }); lastId = f.id; cur = pt;
       }
       const r = target - cur, pad = nextId ? Math.max(0, r - early) : Math.max(0, r);
-      if (pad > 0.5) { pads.set(nextId || "END", pad); padAcc += pad; }
+      if (fillAds && pad > 0.5) { pads.set(nextId || "END", pad); padAcc += pad; }   // solo con el relleno activado
     };
     for (const dp of dayPins) {
       fillTo(dp.f, dp.early, dp.late, dp.id); order.push(dp.id); tags.push({ pin: dp }); lastId = dp.id;
-      // Si el fijado termina antes de su límite («puede extenderse hasta»), se extiende con anuncios dentro del mismo programa; los demás esperan.
-      if (adList.length && !(byId2.get(dp.id)?.cutEvery > 0)) {   // un fijado corto no se extiende con anuncios
-        const room = dp.t - (startOf([...order, "__fin__"], "__fin__") + padAcc), ext = dp.maxExtra > 0 ? Math.min(room, dp.maxExtra) : room;
+      // Extensión con anuncios dentro del fijado: SOLO si el relleno con anuncios está activado.
+      if (fillAds && adList.length && !(byId2.get(dp.id)?.cutEvery > 0)) {
+        const pinEnd = startOf([...order, "__fin__"], "__fin__") + padAcc, pinStart = startOf(order, dp.id) + padAcc;
+        const room = Math.min(dp.t, slotEndAt(pinStart)) - pinEnd, ext = dp.maxExtra > 0 ? Math.min(room, dp.maxExtra) : room;
         if (ext > 0.5) { exts.set(dp.id, ext); padAcc += ext; }
       }
     }
     fillTo(DAY_SEC, 0, 0, null);
-    if (pads.size && !adList.length) return { items: [], K, days: [], error: "Hace falta al menos un anuncio activo: se usan para completar el tiempo entre programas y fijados sin cortar ningún programa." };
+    if (pads.size && !adList.length) return { items: [], K, days: [], error: "El relleno con anuncios está activado pero no hay ningún anuncio activo." };
     const items = build(order), warn = [];
-    // Anuncios de relleno (el último se acorta para llegar justo a la hora; los programas nunca se tocan)
-    const padItems = (sec) => {
-      const out = []; let rem = sec;
-      while (rem > 0.5 && out.length < 400) {
-        const ad = adList[adCur++ % adList.length]; let dur = Math.min(adDur(ad), rem);
-        if (rem - dur > 0 && rem - dur < 6) dur = Math.max(4, rem - 6);
-        out.push({ ...toItem(ad, "comercial", { breakNo: 0 }), duration: dur }); rem -= dur;
+    warn.push(...cutNotes);
+    for (const c of missingCats) warn.push(`No hay programas de «${c}» en la biblioteca: esa franja se llena con otros programas. Añade uno y ponle esa categoría.`);
+    if (fillAds) {
+      const padItems = (sec) => {
+        const out = []; let rem = sec;
+        while (rem > 0.5 && out.length < 400) {
+          const ad = adList[adCur++ % adList.length]; let dur = Math.min(adDur(ad), rem);
+          if (rem - dur > 0 && rem - dur < 6) dur = Math.max(4, rem - 6);
+          out.push({ ...toItem(ad, "comercial", { breakNo: 0 }), duration: dur }); rem -= dur;
+        }
+        return out;
+      };
+      const sessionSec = Math.max(30, Number(plan.padSessionSec) || PAD_SESSION_SEC);
+      let gapFrom = 0;
+      for (const dp of dayPins) {
+        const k = items.findIndex((it) => it.id === dp.id && it.type === "programa" && (!it.part || it.part === 1));
+        if (k < 0) continue;
+        let kk = k; const pad = pads.get(dp.id);
+        if (pad) { const res = distributePad(items.slice(gapFrom, k), padItems(pad), sessionSec, { minGap: 180 }); items.splice(gapFrom, k - gapFrom, ...res); kk = gapFrom + res.length; }
+        let last = kk; for (let i = kk; i < items.length && !(items[i].type === "programa" && items[i].id !== dp.id); i++) if (items[i].type === "programa") last = i;
+        const ext = exts.get(dp.id);
+        if (ext) { const res = distributePad(items.slice(kk, last + 1), padItems(ext), sessionSec, { atEnd: false, minGap: 180 }); items.splice(kk, last + 1 - kk, ...res); last = kk + res.length - 1; }
+        let e = last + 1; while (e < items.length && !(items[e].type === "programa" && items[e].id !== dp.id)) e++;
+        gapFrom = e;
       }
-      return out;
-    };
-    // El relleno no va de golpe: se reparte en sesiones cortas antes del fijado y, si sobra franja, dentro del mismo fijado (extensión).
-    const sessionSec = Math.max(30, Number(plan.padSessionSec) || PAD_SESSION_SEC);
-    let gapFrom = 0;   // primer tramo del hueco actual (justo después del fijado anterior)
-    for (const dp of dayPins) {
-      const k = items.findIndex((it) => it.id === dp.id && it.type === "programa" && (!it.part || it.part === 1));
-      if (k < 0) continue;
-      let kk = k; const pad = pads.get(dp.id);
-      if (pad) {
-        const res = distributePad(items.slice(gapFrom, k), padItems(pad), sessionSec, { minGap: 180 });
-        items.splice(gapFrom, k - gapFrom, ...res); kk = gapFrom + res.length;
-        if (k === gapFrom) warn.push(`No cabe ningún programa antes de «${dp.pin.title}»: ${Math.round(pad / 60)} min se completan solo con anuncios.`);
-      }
-      let last = kk; for (let i = kk; i < items.length && !(items[i].type === "programa" && items[i].id !== dp.id); i++) if (items[i].type === "programa") last = i;   // última parte del fijado
-      const ext = exts.get(dp.id);
-      if (ext) {
-        const res = distributePad(items.slice(kk, last + 1), padItems(ext), sessionSec, { atEnd: false, minGap: 180 });
-        items.splice(kk, last + 1 - kk, ...res); last = kk + res.length - 1;
-      }
-      let e = last + 1; while (e < items.length && !(items[e].type === "programa" && items[e].id !== dp.id)) e++;   // hasta el final del fijado y su corte
-      gapFrom = e;
+      if (pads.get("END")) { const res = distributePad(items.slice(gapFrom), padItems(pads.get("END")), sessionSec, { minGap: 180 }); items.splice(gapFrom, items.length - gapFrom, ...res); }
     }
-    if (pads.get("END")) {
-      const res = distributePad(items.slice(gapFrom), padItems(pads.get("END")), sessionSec, { minGap: 180 });
-      items.splice(gapFrom, items.length - gapFrom, ...res);
-    }
-    let total = cycleLength(items);
-    if (total > DAY_SEC + 0.0005) {   // un fijado se pasó de medianoche: se corta ahí para que el día siguiente empiece puntual
-      let over = total - DAY_SEC; warn.push("Un fijado se pasa de la medianoche y se corta ahí para que el día siguiente empiece puntual.");
+    const total = cycleLength(items), endLocal = dayCarry + total;
+    if (d < K - 1) carry = endLocal - DAY_SEC;   // lo que se pasó (o faltó) de las 6:00 a. m. pasa al día siguiente
+    else if (endLocal > DAY_SEC + 0.0005) {      // cierre de TODO el ciclo: lo único que se recorta, para que mañana arranque a la hora
+      let over = endLocal - DAY_SEC; warn.push(`El ciclo se pasa ${Math.max(1, Math.round(over / 60))} min de las 6:00 a. m.; esos minutos del último programa se recortan para que el ciclo vuelva a empezar a su hora.`);
       while (over > 0.0005 && items.length) { const last = items[items.length - 1]; if (last.duration > over + 0.0005) { last.duration -= over; over = 0; } else { over -= last.duration; items.pop(); } }
-    } else if (total < DAY_SEC - 0.0005) {   // segundos sueltos de redondeo: los absorbe el último anuncio o programa
-      const r = DAY_SEC - total, last = items[items.length - 1]; if (last && r < 60) last.duration += r;
-    }
-    renumberParts(items);   // los programas que se partieron para meter sesiones quedan numerados (parte 1 de N…)
-    const spans = spansOf(items), rows = [];
+    } else if (endLocal < DAY_SEC - 60) warn.push(`El ciclo termina ${Math.round((DAY_SEC - endLocal) / 60)} min antes de las 6:00 a. m. (no hay programa que complete ese tiempo).`);
+    renumberParts(items);
+    const spans = spansOf(items), rows = [], c = dayCarry;
     spans.forEach((sp, k) => {
       const tg = tags[k]; if (!tg) return;
-      if (tg.pin) { const dp = tg.pin; rows.push({ kind: "pin", pin: dp.pin.id, line: dp.line.id, lineNo: dp.lineNo, lines: dp.lines, id: sp.id, title: byId2.get(sp.id)?.title || dp.pin.title, start: sp.start, end: sp.end + sp.tail, from: dp.f, to: dp.t, by: dp.f + dp.late, delta: sp.start - dp.f, endDelta: sp.end + sp.tail - dp.t, pad: pads.get(dp.id) || 0, ext: exts.get(dp.id) || 0, short: byId2.get(sp.id)?.cutEvery > 0 }); }
-      else rows.push({ kind: "filler", oi: tg.oi, id: sp.id, title: byId2.get(sp.id)?.title || "", start: sp.start, end: sp.end });
+      const st = sp.start + c, en = sp.end + c;
+      if (tg.pin) { const dp = tg.pin; rows.push({ kind: "pin", pin: dp.pin.id, line: dp.line.id, lineNo: dp.lineNo, lines: dp.lines, id: sp.id, title: byId2.get(sp.id)?.title || dp.pin.title, start: st, end: en + sp.tail, from: dp.f, to: dp.t, by: dp.f + dp.late, delta: st - dp.f, endDelta: en + sp.tail - dp.t, pad: pads.get(dp.id) || 0, ext: exts.get(dp.id) || 0, short: byId2.get(sp.id)?.cutEvery > 0 }); }
+      else rows.push({ kind: "filler", oi: tg.oi, id: sp.id, title: byId2.get(sp.id)?.title || "", start: st, end: en });
     });
-    days.push({ items, rows, warn, endPad: pads.get("END") || 0 });
+    days.push({ items, rows, warn, carry: dayCarry, endPad: pads.get("END") || 0 });
   }
   return { items: days.flatMap((x) => x.items), K, days };
 }

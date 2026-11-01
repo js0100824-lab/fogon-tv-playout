@@ -44,7 +44,7 @@ for (const S0 of [null, 6 * 60, 4 * 60 + 15, 13 * 60 + 40, 23 * 60]) {
   idxs.push(acc);
   r.order.forEach((id, n) => { if (!(n in r.durs) && Math.abs(idxs[n] - durOf(id)) > 0.01) bad++; });
   ok(bad === 0, `S=${S0 ?? "1ª franja"}: ningún programa del medio quedó más corto que su duración real`);
-  if (S0 == null || S0 === 6 * 60) ok(Math.abs(cycleLength(cyc) - 86400) <= 60, `S=${S0}: el día cierra en 24 h (${(cycleLength(cyc) / 3600).toFixed(3)} h)`);
+  if (S0 == null || S0 === 6 * 60) ok(cycleLength(cyc) >= 86400 - 1800 && cycleLength(cyc) <= 86400 + 3 * 3600, `S=${S0}: el día dura cerca de 24 h; puede pasarse, nunca se recorta un programa (${(cycleLength(cyc) / 3600).toFixed(3)} h)`);
 }
 
 console.log("2) Un programa que se pasa de la hora termina completo");
@@ -90,7 +90,7 @@ console.log("4) Programa nuevo entra en su categoría");
   const nowRows = p.slotMap.rows.find((x) => x.cat === "Novelas");
   ok(p.order.slice(nowRows.i0, nowRows.i1).includes("nuevaNovela"), "Queda dentro del rango de la franja Novelas");
   const after = cycleLength(buildCycle(library2, p));
-  ok(after <= before + 1 && after >= 86400 - 120, `El día sigue cerrando a su hora gracias al corte del último bloque (${(after / 3600).toFixed(3)} h)`);
+  ok(Object.keys((plan.fit || {}).durs || {}).length === 0, `Meter un programa nuevo no recorta ninguno (${(after / 3600).toFixed(3)} h)`);
   ok(p.order.filter((x) => x === "nuevaNovela").length === 1, "No se duplica");
   const mid = Object.keys(p.fit.durs).map(Number).filter((k) => k < p.slotMap.tailFrom);
   ok(mid.length === 0, "Ningún programa fuera del bloque final quedó recortado");
