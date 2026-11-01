@@ -739,7 +739,7 @@ let pinMemo = { key: "", val: null };
 const isShortPin = (p) => state.plan.shortOn !== false && pinLines(p).length > 0 && pinLines(p).every((l) => l.duration < (state.plan.shortMaxMin || 25) * 60);
 function getPinned() {
   const p = state.plan; if (!p.pins?.length) return null;
-  const key = JSON.stringify([p.order, p.pins, p.mode, p.intervalValue, p.intervalUnit, p.breakCount, p.breakRepeat, p.breakAtEnd, p.everyN, p.minTailSec, p.shortOn, p.shortMaxMin, p.shortEveryMin, p.adOrder, state.lib.map((i) => [i.id, i.kind, i.duration, i.active, i.playFor, i.url, i.title])]);
+  const key = JSON.stringify([p.order, p.pins, p.mode, p.intervalValue, p.intervalUnit, p.breakCount, p.breakRepeat, p.breakAtEnd, p.everyN, p.minTailSec, p.slots, p.shortOn, p.shortMaxMin, p.shortEveryMin, p.adOrder, state.lib.map((i) => [i.id, i.kind, i.duration, i.active, i.playFor, i.url, i.title])]);
   if (key !== pinMemo.key) pinMemo = { key, val: buildPinnedCycle(state.lib, p) };
   return pinMemo.val;
 }
@@ -1152,17 +1152,17 @@ function initSched() {
     $("cat-new").value = ""; savePlan().then(renderAll).catch(fail);
   });
   $("cat-chips").addEventListener("click", (e) => { const b = e.target.closest("[data-catdel]"); if (!b) return; state.plan.cats.splice(Number(b.dataset.catdel), 1); savePlan().then(renderAll).catch(fail); });
-  $("slot-add").addEventListener("click", () => { const l = state.plan.slots.at(-1); state.plan.slots.push({ from: l ? l.to : "06:00", to: plusHour(l ? l.to : "06:00"), cat: "*" }); savePlan().then(renderSched).catch(fail); });
+  $("slot-add").addEventListener("click", () => { const l = state.plan.slots.at(-1); state.plan.slots.push({ from: l ? l.to : "06:00", to: plusHour(l ? l.to : "06:00"), cat: "*" }); savePlan().then(refreshAfterSlots).catch(fail); });
   $("slot-list").addEventListener("change", (e) => {
     const t = e.target, sl = state.plan.slots, box = t.closest(".tsel");
     if (box) {
       const g = (k) => box.querySelector(`[data-tp="${k}"]`).value, h24 = (Number(g("h")) % 12) + (g("a") === "PM" ? 12 : 0);
       sl[+box.dataset.n][box.dataset.k] = `${String(h24).padStart(2, "0")}:${String(Number(g("m"))).padStart(2, "0")}`;
     } else if (t.dataset.sc != null) sl[+t.dataset.sc].cat = t.value; else return;
-    savePlan().then(renderSched).catch(fail);
+    savePlan().then(refreshAfterSlots).catch(fail);
   });
-  $("slot-reset").addEventListener("click", () => { state.plan.slots = DEFAULT_SLOTS.map((x) => ({ ...x })); savePlan().then(() => { renderSched(); toast("Franjas restauradas.", "ok"); }).catch(fail); });
-  $("slot-list").addEventListener("click", (e) => { const b = e.target.closest("[data-sd]"); if (!b) return; state.plan.slots.splice(Number(b.dataset.sd), 1); savePlan().then(renderSched).catch(fail); });
+  $("slot-reset").addEventListener("click", () => { state.plan.slots = DEFAULT_SLOTS.map((x) => ({ ...x })); savePlan().then(() => { refreshAfterSlots(); toast("Franjas restauradas.", "ok"); }).catch(fail); });
+  $("slot-list").addEventListener("click", (e) => { const b = e.target.closest("[data-sd]"); if (!b) return; state.plan.slots.splice(Number(b.dataset.sd), 1); savePlan().then(refreshAfterSlots).catch(fail); });
   $("gen-btn").addEventListener("click", generateSchedule);
   $("align-btn").addEventListener("click", () => publishAligned(false));
   $("fbv-close").addEventListener("click", closeView);
@@ -1173,6 +1173,8 @@ function initSched() {
   $("fbv").addEventListener("click", (e) => { if (e.target === $("fbv")) closeView(); });
 }
 
+// Al cambiar una franja se vuelve a dibujar la lista de franjas, el ciclo y la parrilla de 24 horas.
+function refreshAfterSlots() { renderSched(); renderCycle(); renderDay(); renderNow(); }
 function renderSched() {
   const p = state.plan, cats = catsAll();
   const opts = (sel) => cats.map((c) => `<option value="${esc(c)}"${c === sel ? " selected" : ""}>${esc(c)}</option>`).join("");
