@@ -407,6 +407,7 @@ html,body{max-width:100%;overflow-x:hidden}
           <label class="field"><span><input id="plan-short-on" type="checkbox"> Activar para fijados de menos de <b id="plan-short-max">25</b> min</span></label>
           <div id="plan-short-box">
             <label class="field"><span>Un corte cada (minutos)</span><input id="plan-short-every" type="number" min="1" max="24" step="any"></label>
+            <label class="field"><span>Anuncios por corte (vacío = los mismos del corte general)</span><input id="plan-short-count" type="number" min="0" max="20" placeholder="igual que arriba"></label>
           </div>
           <button class="btn small" id="plan-save-com" type="button">Guardar</button>
           <h3 class="sub">Cortes</h3>
@@ -483,7 +484,6 @@ html,body{max-width:100%;overflow-x:hidden}
   <p id="pin-time-info" class="hint"></p>
   <label class="field"><span>¿Puede salir antes de su hora de lanzamiento?</span><select id="pin-tol"><option value="0">No: a la hora exacta (se rellena con anuncios)</option><option value="5">Hasta 5 min antes</option><option value="10">Hasta 10 min antes</option><option value="15">Hasta 15 min antes</option><option value="30">Hasta 30 min antes</option></select></label>
   <label class="field"><span>Límite de anuncios para extender el programa</span><select id="pin-maxext"><option value="0">Hasta completar su franja («puede extenderse hasta»)</option><option value="10">Máximo 10 min de anuncios extra</option><option value="15">Máximo 15 min de anuncios extra</option><option value="20">Máximo 20 min de anuncios extra</option><option value="30">Máximo 30 min de anuncios extra</option><option value="45">Máximo 45 min de anuncios extra</option><option value="60">Máximo 60 min de anuncios extra</option></select></label>
-  <label class="field"><span><input id="pin-strict" type="checkbox"> Salir exacto a su hora (si lo anterior se pasa, se acorta)</span></label>
   <div class="pin-sec">Líneas: variaciones por día (día 1 → línea 1, día 2 → línea 2…)</div>
   <div id="pin-lines"></div>
   <div class="pin-add">
@@ -499,6 +499,6 @@ html,body{max-width:100%;overflow-x:hidden}
 </div></div>
 
 <div id="dpick" class="dlg hidden" role="dialog" aria-modal="true" aria-labelledby="dpick-title"><div class="dlg-box dpick-box"><h3 id="dpick-title">Elegir programa</h3><input id="dpick-q" type="search" placeholder="Buscar" autocomplete="off"><select id="dpick-cat" aria-label="Categoría"></select><div id="dpick-list" class="pick-list"></div><div class="dlg-actions"><button class="btn secondary" id="dpick-cancel" type="button">Cancelar</button></div></div></div>
-<script type="module" src="../js/admin.js?v=82"></script>
+<script type="module" src="../js/admin.js?v=78"></script>
 </body>
 </html>
