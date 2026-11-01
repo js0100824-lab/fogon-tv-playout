@@ -1148,7 +1148,7 @@ const clockTxt = (min) => { min = Math.round(((min % 1440) + 1440) % 1440); cons
 const plusHour = (t) => `${String((Math.floor(toMin(t) / 60) + 1) % 24).padStart(2, "0")}:${String(toMin(t) % 60).padStart(2, "0")}`;
 let schedVals = false, lastSched = null;
 const tsel = (n, k, v, label) => {
-  const m = toMin(v), h24 = Math.floor(m / 60), h12 = h24 % 12 || 12, mi = m % 60, mins = [...new Set([...Array(12).keys()].map((x) => x * 5).concat(mi))].sort((a, b) => a - b);
+  const m = toMin(v), h24 = Math.floor(m / 60), h12 = h24 % 12 || 12, mi = m % 60, mins = [...Array(60).keys()];   // todos los minutos, de :00 a :59 (antes solo de 5 en 5)
   return `<span class="tsel" data-n="${n}" data-k="${k}"><small class="tl">${label || (k === "from" ? "Desde" : "Hasta")}</small>`
     + `<select data-tp="h" aria-label="Hora">${[...Array(12).keys()].map((x) => `<option value="${x + 1}"${x + 1 === h12 ? " selected" : ""}>${x + 1}</option>`).join("")}</select><b>:</b>`
     + `<select data-tp="m" aria-label="Minutos">${mins.map((x) => `<option value="${x}"${x === mi ? " selected" : ""}>${String(x).padStart(2, "0")}</option>`).join("")}</select>`
