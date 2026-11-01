@@ -7,7 +7,7 @@ import {
   doc, getDoc, setDoc, addDoc, deleteDoc, updateDoc, deleteField, getDocs, collection, query, orderBy, limit, serverTimestamp
 } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore.js";
 import { ref as sRef, uploadBytesResumable, getDownloadURL, deleteObject } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-storage.js";
-import { parseDuration, fmtDuration, youtubeId, facebookUrl, parseLiveLink, buildCycle, cycleLength, locate, planWithDefaults, compactChannel, expandChannel, describeCuts, itemLabel, intervalSeconds, seamlessPublish, jumpPublish, settleChannel, buildSchedule, normalizeSlots, sortPrograms, placeNewProgram, buildPinnedCycle, pinLines, pinWindow, pinDayIndex, pinEpoch, DAY_MS, PIN_ANCHOR_MS } from "./engine.js?v=40";
+import { parseDuration, fmtDuration, youtubeId, facebookUrl, parseLiveLink, buildCycle, cycleLength, locate, planWithDefaults, compactChannel, expandChannel, describeCuts, itemLabel, intervalSeconds, seamlessPublish, jumpPublish, settleChannel, buildSchedule, normalizeSlots, sortPrograms, placeNewProgram, buildPinnedCycle, pinLines, pinWindow, pinDayIndex, pinEpoch, DAY_MS, PIN_ANCHOR_MS } from "./engine.js?v=39";
 import { serverNow, startClock } from "./clock.js";
 
 const $ = (id) => document.getElementById(id);
@@ -147,7 +147,7 @@ async function initPanel() {
   $("b-logo-file").addEventListener("change", onLogoFile);
   $("b-logo-rm").addEventListener("click", () => { state.brand.logo = ""; renderBrand(); saveBrand(true); });
   $("plan-save-com").addEventListener("click", savePlanFromCommercial);
-  ["plan-mode", "plan-iv", "plan-iu", "plan-count", "plan-repeat", "plan-end", "plan-every", "plan-short-on", "plan-short-every"].forEach((id) => $(id).addEventListener("input", previewPlan));
+  ["plan-mode", "plan-iv", "plan-iu", "plan-count", "plan-repeat", "plan-end", "plan-every", "plan-short-on", "plan-short-every", "plan-short-count"].forEach((id) => $(id).addEventListener("input", previewPlan));
   startClock();   // hora del servidor: la misma para el panel y para todos los espectadores
   for (const [id, key] of [["order-box", "fogon.orderOpen"], ["cycle-box", "fogon.cycleOpen"]]) {
     const box = $(id);
@@ -432,7 +432,7 @@ function readPlanForm() {
     mode: $("plan-mode").value, intervalValue: Number($("plan-iv").value), intervalUnit: $("plan-iu").value,
     breakCount: Math.max(0, parseInt($("plan-count").value, 10) || 0), breakRepeat: Math.max(1, parseInt($("plan-repeat").value, 10) || 1),
     breakAtEnd: $("plan-end").checked, everyN: Math.max(0, parseInt($("plan-every").value, 10) || 0),
-    shortOn: $("plan-short-on").checked, shortEveryMin: Math.max(1, Number($("plan-short-every").value) || 10), shortCount: 0
+    shortOn: $("plan-short-on").checked, shortEveryMin: Math.max(1, Number($("plan-short-every").value) || 10), shortCount: Math.max(0, parseInt($("plan-short-count").value, 10) || 0)
   });
 }
 function renderCutSummary(plan) {
@@ -457,7 +457,7 @@ function renderAds() {
   const p = state.plan;
   $("plan-mode").value = p.mode; $("plan-iv").value = p.intervalValue; $("plan-iu").value = p.intervalUnit;
   $("plan-count").value = p.breakCount; $("plan-repeat").value = p.breakRepeat; $("plan-end").checked = !!p.breakAtEnd; $("plan-every").value = p.everyN;
-  $("plan-short-on").checked = p.shortOn !== false; $("plan-short-every").value = p.shortEveryMin || 10; $("plan-short-max").textContent = p.shortMaxMin || 25; $("plan-short-box").classList.toggle("hidden", p.shortOn === false);
+  $("plan-short-on").checked = p.shortOn !== false; $("plan-short-every").value = p.shortEveryMin || 10; $("plan-short-count").value = p.shortCount > 0 ? p.shortCount : ""; $("plan-short-max").textContent = p.shortMaxMin || 25; $("plan-short-box").classList.toggle("hidden", p.shortOn === false);
   const ads = allAdsOrdered();
   $("ads-list").innerHTML = ads.length ? ads.map((i, n) => `<div class="item"><input type="checkbox" data-ad="${esc(i.id)}" ${i.active !== false ? "checked" : ""} aria-label="Activo">
     <span class="grow"><b>${n + 1}. ${esc(i.title)}</b>
@@ -739,7 +739,7 @@ let pinMemo = { key: "", val: null };
 const isShortPin = (p) => state.plan.shortOn !== false && pinLines(p).length > 0 && pinLines(p).every((l) => l.duration < (state.plan.shortMaxMin || 25) * 60);
 function getPinned() {
   const p = state.plan; if (!p.pins?.length) return null;
-  const key = JSON.stringify([p.order, p.pins, p.mode, p.intervalValue, p.intervalUnit, p.breakCount, p.breakRepeat, p.breakAtEnd, p.everyN, p.minTailSec, p.slots, p.shortOn, p.shortMaxMin, p.shortEveryMin, p.adOrder, state.lib.map((i) => [i.id, i.kind, i.duration, i.active, i.playFor, i.url, i.title])]);
+  const key = JSON.stringify([p.order, p.pins, p.mode, p.intervalValue, p.intervalUnit, p.breakCount, p.breakRepeat, p.breakAtEnd, p.everyN, p.minTailSec, p.shortOn, p.shortMaxMin, p.shortEveryMin, p.shortCount, p.adOrder, state.lib.map((i) => [i.id, i.kind, i.duration, i.active, i.playFor, i.url, i.title])]);
   if (key !== pinMemo.key) pinMemo = { key, val: buildPinnedCycle(state.lib, p) };
   return pinMemo.val;
 }
@@ -800,7 +800,7 @@ function renderDayPinned(el, pc) {
       const pin = p.pins.find((x) => x.id === r.pin), late = r.delta > 60, early = r.delta < -60;
       html += `<div class="day-row pinrow" data-s="${r.start}" data-e="${r.end}"><span class="day-grip" title="Fijado: no se mueve">Fijo</span>
         <span class="day-t">${esc(clock(r.start))}<small>→ ${esc(clock(r.end))}</small></span>
-        <span class="day-main"><b>${esc(pin?.title || r.title)}</b><span class="day-meta"><span class="tag pin">Se lanza ${esc(clock(late || early ? r.start : r.from))}${late || early ? ` (fijado a las ${esc(clock(r.from))})` : ""} · se extiende hasta ${esc(clock(r.to % 86400))}</span>${r.lines > 1 ? `<span class="tag rep">Línea ${r.lineNo} de ${r.lines}</span>` : ""}${early ? `<span class="tag off">Sale ${mins(r.delta)} min antes</span>` : ""}${late ? (r.start > r.by + 60 ? `<span class="tag bad">Sale ${mins(r.delta)} min tarde (el anterior termina a las ${esc(clock(r.start))})</span><button class="btn small" data-pa="fit" data-pin="${esc(r.pin)}" data-st="${r.start}" type="button">Ajustar a las ${esc(clock(r.start))}</button>` : `<span class="tag off">Sale ${mins(r.delta)} min después de su hora</span>`) : ""}${r.pad > 30 ? `<span class="tag off">${mins(r.pad)} min de anuncios repartidos antes, para llegar a su hora</span>` : ""}${r.ext > 30 ? `<span class="tag off">Se extiende ${mins(r.ext)} min con anuncios dentro del programa</span>` : ""}${r.endDelta > 60 ? `<span class="tag off">Termina ${mins(r.endDelta)} min después de su franja; el siguiente empieza al terminar</span>` : ""}<span>${esc(r.title === pin?.title ? "" : r.title)}</span></span></span>
+        <span class="day-main"><b>${esc(pin?.title || r.title)}</b><span class="day-meta"><span class="tag pin">Se lanza ${esc(clock(r.from))} · se extiende hasta ${esc(clock(r.to % 86400))}</span>${r.lines > 1 ? `<span class="tag rep">Línea ${r.lineNo} de ${r.lines}</span>` : ""}${early ? `<span class="tag off">Sale ${mins(r.delta)} min antes</span>` : ""}${late ? (r.start > r.by + 60 ? `<span class="tag bad">Sale ${mins(r.delta)} min tarde (el anterior se pasó)</span>` : `<span class="tag off">Sale ${mins(r.delta)} min después de su hora</span>`) : ""}${r.pad > 30 ? `<span class="tag off">${mins(r.pad)} min de anuncios repartidos antes, para llegar a su hora</span>` : ""}${r.ext > 30 ? `<span class="tag off">Se extiende ${mins(r.ext)} min con anuncios dentro del programa</span>` : ""}${r.endDelta > 60 ? `<span class="tag off">Termina ${mins(r.endDelta)} min después de su franja; el siguiente empieza al terminar</span>` : ""}<span>${esc(r.title === pin?.title ? "" : r.title)}</span></span></span>
         <span class="day-btns"><button class="btn secondary small" data-pa="edit" data-pin="${esc(r.pin)}" type="button">Líneas</button><button class="btn danger small" data-pa="unpin" data-pin="${esc(r.pin)}" type="button" title="Quitar el fijado">✕</button></span></div>`;
       continue;
     }
@@ -913,15 +913,6 @@ function initPins() {
     if (a === "view") { dayView = Number(b.dataset.d); renderDay(); }
     else if (a === "edit") { const pin = state.plan.pins.find((x) => x.id === b.dataset.pin); if (pin) openPinEditor(pin); }
     else if (a === "unpin") await unpin(b.dataset.pin);
-    else if (a === "fit") {   // el fijado pasa a la hora real a la que sale (cuando termina el programa anterior)
-      const pin = state.plan.pins.find((x) => x.id === b.dataset.pin); if (!pin) return;
-      const f0 = pinWindow(pin).f, w = pinWindow(pin), keep = Math.max(0, pinStartBy(pin) - w.f), nf = Math.floor(Number(b.dataset.st) / 60), d = nf - f0;
-      if (!(d > 0) || nf >= 1440) return;
-      const nxt = state.plan.pins.filter((x) => x.id !== pin.id && pinWindow(x).f > f0).map((x) => pinWindow(x).f).sort((x, y) => x - y)[0];
-      let nt = w.t + d; if (nxt != null && nt > nxt) nt = Math.max(nxt, nf + 5); if (nt >= 1440) nt = 1440;
-      pin.from = hmTxt(nf); pin.to = nt >= 1440 ? "00:00" : hmTxt(nt); pin.startBy = hmTxt(Math.min(nf + keep, nt));
-      try { await savePlan(); renderAll(); toast(`«${pin.title}» ahora se lanza a las ${clockTxt(nf)}. Publica para que el público lo vea.`, "ok"); } catch (err) { fail(err); }
-    }
     else if (a === "pinrow") {
       const oi = Number(b.dataset.n), id = state.plan.order[oi], it = state.lib.find((x) => x.id === id); if (!it) return;
       const s = Number(b.dataset.s), en = Number(b.dataset.e), f = Math.round(s / 300) * 5, to = Math.ceil(en / 300) * 5;
@@ -971,23 +962,6 @@ let tlKey = "";
 // ---- Línea de tiempo: grande, con desplazamiento y zoom; el cabezal (raya blanca) arrastra la barra si se sale de la vista ----
 const TL_LEVELS = [0.03, 0.06, 0.12, 0.25, 0.5, 1, 2];   // píxeles por segundo
 let tlLevel = 4, tlUserAt = 0, tlDrag = null, tlLastIdx = -1, tlRecenter = true;
-// Adelanta la emisión en marcha X minutos (número negativo = retrasarla): lo que sale al aire salta hacia adelante en el ciclo y todo lo siguiente sale X min antes.
-async function advanceTimeline() {
-  const n = Math.round(Number($("tl-adv-n").value));
-  if (!Number.isFinite(n) || n === 0) { toast("Escribe cuántos minutos.", "error"); return; }
-  if (Math.abs(n) > 720) { toast("El máximo es 720 minutos (12 horas).", "error"); return; }
-  const c = state.channel;
-  if (!c?.items?.length || c.live === false || !Number.isFinite(c.epoch)) { toast("No hay una emisión en marcha para adelantar. Publica primero.", "error"); return; }
-  if (!(await askConfirm({ title: n > 0 ? `¿Adelantar ${n} min la emisión?` : `¿Retrasar ${-n} min la emisión?`, text: n > 0 ? "Lo que está al aire salta hacia adelante y todo lo siguiente sale antes. Si publicas con fijados, la emisión vuelve a alinearse con el reloj." : "Lo que está al aire vuelve atrás y todo lo siguiente sale después.", ok: n > 0 ? "Adelantar" : "Retrasar" }))) return;
-  const d = n * 60000, upd = { epoch: Math.round(c.epoch - d), updatedAt: serverTimestamp() };
-  if (Number.isFinite(c.nextAt)) upd.nextAt = Math.round(c.nextAt - d);   // el relevo pendiente a la lista nueva se mueve igual
-  try {
-    await updateDoc(doc(db, "public", "channel"), upd);
-    c.epoch = upd.epoch; if ("nextAt" in upd) c.nextAt = upd.nextAt;
-    renderCycle(); renderNow(); renderDay();
-    toast(n > 0 ? `Emisión adelantada ${n} min.` : `Emisión retrasada ${-n} min.`, "ok");
-  } catch (err) { fail(err); }
-}
 function renderTimeline(items, loc, total, before, key) {
   const tl = $("timeline"), cw = tl.clientWidth || 600, wpx = Math.max(cw, Math.round(total * TL_LEVELS[tlLevel])), k = `${key}:${tlLevel}:${cw}`;
   if (k !== tlKey) {
@@ -1013,7 +987,6 @@ function initTimeline() {
   $("tl-minus").addEventListener("click", () => zoom(-1));
   $("tl-plus").addEventListener("click", () => zoom(1));
   $("tl-now").addEventListener("click", () => { tlUserAt = 0; tlRecenter = true; renderNow(); });
-  $("tl-adv").addEventListener("click", advanceTimeline);
 }
 
 const TZ = "America/Santo_Domingo";   // hora de República Dominicana
@@ -1179,17 +1152,17 @@ function initSched() {
     $("cat-new").value = ""; savePlan().then(renderAll).catch(fail);
   });
   $("cat-chips").addEventListener("click", (e) => { const b = e.target.closest("[data-catdel]"); if (!b) return; state.plan.cats.splice(Number(b.dataset.catdel), 1); savePlan().then(renderAll).catch(fail); });
-  $("slot-add").addEventListener("click", () => { const l = state.plan.slots.at(-1); state.plan.slots.push({ from: l ? l.to : "06:00", to: plusHour(l ? l.to : "06:00"), cat: "*" }); savePlan().then(refreshAfterSlots).catch(fail); });
+  $("slot-add").addEventListener("click", () => { const l = state.plan.slots.at(-1); state.plan.slots.push({ from: l ? l.to : "06:00", to: plusHour(l ? l.to : "06:00"), cat: "*" }); savePlan().then(renderSched).catch(fail); });
   $("slot-list").addEventListener("change", (e) => {
     const t = e.target, sl = state.plan.slots, box = t.closest(".tsel");
     if (box) {
       const g = (k) => box.querySelector(`[data-tp="${k}"]`).value, h24 = (Number(g("h")) % 12) + (g("a") === "PM" ? 12 : 0);
       sl[+box.dataset.n][box.dataset.k] = `${String(h24).padStart(2, "0")}:${String(Number(g("m"))).padStart(2, "0")}`;
     } else if (t.dataset.sc != null) sl[+t.dataset.sc].cat = t.value; else return;
-    savePlan().then(refreshAfterSlots).catch(fail);
+    savePlan().then(renderSched).catch(fail);
   });
-  $("slot-reset").addEventListener("click", () => { state.plan.slots = DEFAULT_SLOTS.map((x) => ({ ...x })); savePlan().then(() => { refreshAfterSlots(); toast("Franjas restauradas.", "ok"); }).catch(fail); });
-  $("slot-list").addEventListener("click", (e) => { const b = e.target.closest("[data-sd]"); if (!b) return; state.plan.slots.splice(Number(b.dataset.sd), 1); savePlan().then(refreshAfterSlots).catch(fail); });
+  $("slot-reset").addEventListener("click", () => { state.plan.slots = DEFAULT_SLOTS.map((x) => ({ ...x })); savePlan().then(() => { renderSched(); toast("Franjas restauradas.", "ok"); }).catch(fail); });
+  $("slot-list").addEventListener("click", (e) => { const b = e.target.closest("[data-sd]"); if (!b) return; state.plan.slots.splice(Number(b.dataset.sd), 1); savePlan().then(renderSched).catch(fail); });
   $("gen-btn").addEventListener("click", generateSchedule);
   $("align-btn").addEventListener("click", () => publishAligned(false));
   $("fbv-close").addEventListener("click", closeView);
@@ -1200,8 +1173,6 @@ function initSched() {
   $("fbv").addEventListener("click", (e) => { if (e.target === $("fbv")) closeView(); });
 }
 
-// Al cambiar una franja se vuelve a dibujar la lista de franjas, el ciclo y la parrilla de 24 horas.
-function refreshAfterSlots() { renderSched(); renderCycle(); renderDay(); renderNow(); }
 function renderSched() {
   const p = state.plan, cats = catsAll();
   const opts = (sel) => cats.map((c) => `<option value="${esc(c)}"${c === sel ? " selected" : ""}>${esc(c)}</option>`).join("");

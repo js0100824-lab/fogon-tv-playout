@@ -663,7 +663,6 @@ export function buildPinnedCycle(library, rawPlan) {
   // Categoría que toca a cada hora del día
   const slots = (plan.slots || []).map((x) => ({ f: hhmm(x.from), len: ((hhmm(x.to) - hhmm(x.from) + 1440) % 1440) || 1440, cat: x.cat }));
   const catAt = (sec) => { const m = Math.floor(sec / 60) % 1440, x = slots.find((y) => ((m - y.f + 1440) % 1440) < y.len); return x ? x.cat : "*"; };
-  const missingCats = [...new Set(slots.map((x) => x.cat))].filter((c) => c && c !== "*" && !fillers.some((f) => byId.get(f.id).cat === c));   // franjas cuya categoría no tiene ningún programa en la parrilla
   const nonKids = fillers.filter((f) => !isKids(byId.get(f.id).cat));
   const poolOf = (cat) => { const own = cat === "*" ? nonKids : fillers.filter((f) => byId.get(f.id).cat === cat); return own.length ? own : (nonKids.length ? nonKids : fillers); };
   const queues = new Map();   // una cola por categoría: sigue corriendo de un día al siguiente
@@ -713,7 +712,6 @@ export function buildPinnedCycle(library, rawPlan) {
     fillTo(DAY_SEC, 0, 0, null);
     if (pads.size && !adList.length) return { items: [], K, days: [], error: "Hace falta al menos un anuncio activo: se usan para completar el tiempo entre programas y fijados sin cortar ningún programa." };
     const items = build(order), warn = [];
-    for (const c of missingCats) warn.push(`No hay programas de «${c}» en la parrilla: esa franja se llena con otros programas. Añade uno y ponle esa categoría.`);
     // Anuncios de relleno (el último se acorta para llegar justo a la hora; los programas nunca se tocan)
     const padItems = (sec) => {
       const out = []; let rem = sec;
