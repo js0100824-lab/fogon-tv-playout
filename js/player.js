@@ -1,6 +1,6 @@
 import { db, isConfigured } from "./firebase.js";
 import { doc, getDoc, onSnapshot, addDoc, collection, serverTimestamp } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore.js";
-import { locate, expandChannel, cycleLength, itemLabel, settleChannel, nowNext } from "./engine.js?v=42";
+import { locate, expandChannel, cycleLength, itemLabel, settleChannel, nowNext } from "./engine.js?v=43";
 import { serverNow, startClock } from "./clock.js";
 
 const $ = (id) => document.getElementById(id);

@@ -699,14 +699,7 @@ export function buildPinnedCycle(library, rawPlan) {
           if (t >= target - early && (fin < 0 || Math.abs(t - target) < Math.abs(finT - target))) { fin = k; finT = t; }
         }
         const pick = fin >= 0 ? fin : first, pt = fin >= 0 ? finT : firstT;
-        if (pick < 0) {   // nada de esta categoría cabe entero
-          if (nextId) break;   // antes de un fijado: el resto se completa con anuncios
-          // al cierre del día se prueba con «Variado» (programas completos de cualquier categoría menos caricaturas) antes de rellenar con anuncios
-          const q2 = qFor("*"); let bi = -1, bt = 0;
-          for (let k = 0, lim = Math.min(q2.length, 30); k < lim; k++) { const g = q2[k]; if (g.id === lastId) continue; const t = after(g); if (t <= target + 0.5 && t > bt) { bi = k; bt = t; } }
-          if (bi < 0) break;
-          const g = q2.splice(bi, 1)[0]; order.push(g.id); tags.push({ oi: g.oi }); lastId = g.id; cur = bt; continue;
-        }
+        if (pick < 0) break;   // nada de esta categoría cabe entero: el resto se completa con anuncios (nunca con programas de otra categoría)
         const f = q.splice(pick, 1)[0]; order.push(f.id); tags.push({ oi: f.oi }); lastId = f.id; cur = pt;
       }
       const r = target - cur, pad = nextId ? Math.max(0, r - early) : Math.max(0, r);
