@@ -727,7 +727,10 @@ export function buildPinnedCycle(library, rawPlan) {
           if (t >= target - early && (fin < 0 || Math.abs(t - target) < Math.abs(finT - target))) { fin = k; finT = t; }
         }
         let pick = fin >= 0 ? fin : (near ? below : first), pt = fin >= 0 ? finT : (near ? belowT : firstT);
-        if (pick < 0 && over >= 0 && !fillAds && overT - target <= target - cur) { pick = over; pt = overT; }   // se pasa, pero termina completo y queda más cerca de la hora
+        if (pick < 0 && over >= 0 && !fillAds) {   // nada cabe en el intervalo: o el fijado sale unos minutos ANTES (continuidad), o entra uno que se pasa (termina completo). Gana el que menos se desvía.
+          const devEarly = Math.max(0, target - early - cur), devOver = nextId ? Math.max(0, overT - (target + late)) : overT - target;
+          if (nextId ? devOver < devEarly : overT - target <= target - cur) { pick = over; pt = overT; }
+        }
         if (pick < 0) break;
         const f = q.splice(pick, 1)[0]; order.push(f.id); tags.push({ oi: f.oi }); lastId = f.id; cur = pt;
       }

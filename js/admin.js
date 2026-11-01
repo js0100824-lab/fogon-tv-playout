@@ -7,7 +7,7 @@ import {
   doc, getDoc, setDoc, addDoc, deleteDoc, updateDoc, deleteField, getDocs, collection, query, orderBy, limit, serverTimestamp
 } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore.js";
 import { ref as sRef, uploadBytesResumable, getDownloadURL, deleteObject } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-storage.js";
-import { parseDuration, fmtDuration, youtubeId, facebookUrl, parseLiveLink, buildCycle, cycleLength, locate, planWithDefaults, compactChannel, expandChannel, describeCuts, itemLabel, intervalSeconds, seamlessPublish, jumpPublish, settleChannel, buildSchedule, normalizeSlots, sortPrograms, placeNewProgram, buildPinnedCycle, pinLines, pinWindow, pinDayIndex, pinEpoch, DAY_MS, PIN_ANCHOR_MS } from "./engine.js?v=87";
+import { parseDuration, fmtDuration, youtubeId, facebookUrl, parseLiveLink, buildCycle, cycleLength, locate, planWithDefaults, compactChannel, expandChannel, describeCuts, itemLabel, intervalSeconds, seamlessPublish, jumpPublish, settleChannel, buildSchedule, normalizeSlots, sortPrograms, placeNewProgram, buildPinnedCycle, pinLines, pinWindow, pinDayIndex, pinEpoch, DAY_MS, PIN_ANCHOR_MS } from "./engine.js?v=88";
 import { serverNow, startClock } from "./clock.js";
 
 const $ = (id) => document.getElementById(id);
@@ -793,15 +793,19 @@ function renderDayPinned(el, pc) {
   const clock = (sec) => clockTxt(sec / 60 + 360), mins = (sec) => Math.round(Math.abs(sec) / 60);
   let html = pc.K > 1 ? `<div class="day-tabs">${pc.days.map((_, k) => `<button type="button" class="btn small${k === view ? "" : " secondary"}" data-pa="view" data-d="${k}">Día ${k + 1}${k === today ? " · hoy" : ""}</button>`).join("")}</div>` : "";
   let lastSlot = -2;
+  const slotsOrd = (p.slots || []).map((s, i) => i), headOf = (si) => { const sl = p.slots?.[si]; return `<div class="day-h"><span>${sl ? `${esc(slotLabel(sl))} · ${esc(sl.cat === "*" ? "Variado" : sl.cat)}` : "Sin franja"}</span><span>${sl ? esc(slotHours(sl)) : ""}</span></div>`; };
   for (const r of day.rows) {
     const si = slotAt((Math.floor(r.start / 60) + 360) % 1440);
+    if (si !== lastSlot && si >= 0 && lastSlot >= 0) {   // franjas intermedias que ningún programa llegó a empezar (las cubrió uno más largo)
+      for (let k = slotsOrd.indexOf(lastSlot) + 1; k < slotsOrd.indexOf(si); k++) html += headOf(slotsOrd[k]).replace("</span><span>", " · la cubre el programa anterior</span><span>");
+    }
     if (si !== lastSlot) { lastSlot = si; const sl = p.slots?.[si]; html += `<div class="day-h"><span>${sl ? `${esc(slotLabel(sl))} · ${esc(sl.cat === "*" ? "Variado" : sl.cat)}` : "Sin franja"}</span><span>${sl ? esc(slotHours(sl)) : ""}</span></div>`; }
     if (r.kind === "pin") {
       const pin = p.pins.find((x) => x.id === r.pin), late = r.delta > 60, early = r.delta < -60;
       html += `<div class="day-row pinrow" data-s="${r.start}" data-e="${r.end}"><span class="day-grip" title="Fijado: no se mueve">Fijo</span>
         <span class="day-t">${esc(clock(r.start))}<small>→ ${esc(clock(r.end))}</small></span>
         <span class="day-main"><b>${esc(pin?.title || r.title)}</b><span class="day-meta"><span class="tag pin">Debe lanzarse entre ${esc(clock(r.from))} y ${esc(clock(r.by))} · sale ${esc(clock(r.start))}</span>${r.lines > 1 ? `<span class="tag rep">Línea ${r.lineNo} de ${r.lines}</span>` : ""}${r.start > r.by + 60 ? `<span class="tag bad">Sale ${mins(r.start - r.by)} min después de su intervalo (el anterior termina a las ${esc(clock(r.start))}; no se corta)</span><button class="btn small" data-pa="fit" data-pin="${esc(r.pin)}" data-st="${r.start}" type="button">Ampliar el intervalo hasta las ${esc(clock(r.start))}</button>` : ""}${r.start < r.from - 60 ? `<span class="tag off">Sale ${mins(r.from - r.start)} min antes de su intervalo</span>` : ""}${r.pad > 30 ? `<span class="tag off">${mins(r.pad)} min de anuncios de relleno</span>` : ""}${r.ext > 30 ? `<span class="tag off">Se extiende ${mins(r.ext)} min con anuncios</span>` : ""}<span>${esc(r.title === pin?.title ? "" : r.title)}</span></span></span>
-        <span class="day-btns"><button class="btn secondary small" data-pa="edit" data-pin="${esc(r.pin)}" type="button">Líneas</button><button class="btn danger small" data-pa="unpin" data-pin="${esc(r.pin)}" type="button" title="Quitar el fijado">✕</button></span></div>`;
+        <span class="day-btns"><button class="btn secondary small" data-pa="shift" data-d="-15" data-pin="${esc(r.pin)}" type="button" title="Adelantar el intervalo 15 min">⏪ 15</button><button class="btn secondary small" data-pa="shift" data-d="15" data-pin="${esc(r.pin)}" type="button" title="Atrasar el intervalo 15 min">15 ⏩</button><button class="btn secondary small" data-pa="edit" data-pin="${esc(r.pin)}" type="button">Líneas</button><button class="btn danger small" data-pa="unpin" data-pin="${esc(r.pin)}" type="button" title="Quitar el fijado">✕</button></span></div>`;
       continue;
     }
     const i = state.lib.find((x) => x.id === r.id); if (!i) continue;
@@ -914,6 +918,12 @@ function initPins() {
     if (a === "view") { dayView = Number(b.dataset.d); renderDay(); }
     else if (a === "edit") { const pin = state.plan.pins.find((x) => x.id === b.dataset.pin); if (pin) openPinEditor(pin); }
     else if (a === "unpin") await unpin(b.dataset.pin);
+    else if (a === "shift") {   // adelanta (−) o atrasa (+) el intervalo de lanzamiento del fijado
+      const pin = state.plan.pins.find((x) => x.id === b.dataset.pin); if (!pin) return;
+      const d = Number(b.dataset.d) || 0, mv = (t) => hmTxt(toMin(t) + d);
+      pin.from = mv(pin.from); pin.to = mv(pin.to); if (pin.startBy) pin.startBy = mv(pin.startBy);
+      try { await savePlan(); renderAll(); toast(`«${pin.title}»: intervalo ${d < 0 ? "adelantado" : "atrasado"} ${Math.abs(d)} min (${clockTxt(toMin(pin.from))} → ${clockTxt(toMin(pin.to))}).`, "ok"); } catch (err) { fail(err); }
+    }
     else if (a === "fit") {   // amplía el intervalo de lanzamiento hasta la hora real a la que sale (el programa anterior no se corta)
       const pin = state.plan.pins.find((x) => x.id === b.dataset.pin); if (!pin) return;
       const w = pinWindow(pin), nf = Math.floor(Number(b.dataset.st) / 60) + 360;
