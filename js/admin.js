@@ -800,7 +800,7 @@ function renderDayPinned(el, pc) {
       const pin = p.pins.find((x) => x.id === r.pin), late = r.delta > 60, early = r.delta < -60;
       html += `<div class="day-row pinrow" data-s="${r.start}" data-e="${r.end}"><span class="day-grip" title="Fijado: no se mueve">Fijo</span>
         <span class="day-t">${esc(clock(r.start))}<small>→ ${esc(clock(r.end))}</small></span>
-        <span class="day-main"><b>${esc(pin?.title || r.title)}</b><span class="day-meta"><span class="tag pin">${pin?.strict ? "Hora exacta · " : ""}Se lanza ${esc(clock(late || early ? r.start : r.from))}${late || early ? ` (fijado a las ${esc(clock(r.from))})` : ""} · se extiende hasta ${esc(clock(r.to % 86400))}</span>${r.lines > 1 ? `<span class="tag rep">Línea ${r.lineNo} de ${r.lines}</span>` : ""}${early ? `<span class="tag off">Sale ${mins(r.delta)} min antes</span>` : ""}${late ? (r.start > r.by + 60 ? `<span class="tag bad">Sale ${mins(r.delta)} min tarde (el anterior termina a las ${esc(clock(r.start))})</span><button class="btn small" data-pa="fit" data-pin="${esc(r.pin)}" data-st="${r.start}" type="button">Ajustar a las ${esc(clock(r.start))}</button><button class="btn small" data-pa="strict" data-pin="${esc(r.pin)}" type="button">Salir a las ${esc(clock(r.from))}</button>` : `<span class="tag off">Sale ${mins(r.delta)} min después de su hora</span>`) : ""}${r.pad > 30 ? `<span class="tag off">${mins(r.pad)} min de anuncios repartidos antes, para llegar a su hora</span>` : ""}${r.ext > 30 ? `<span class="tag off">Se extiende ${mins(r.ext)} min con anuncios dentro del programa</span>` : ""}${r.endDelta > 60 ? `<span class="tag off">Termina ${mins(r.endDelta)} min después de su franja; el siguiente empieza al terminar</span>` : ""}<span>${esc(r.title === pin?.title ? "" : r.title)}</span></span></span>
+        <span class="day-main"><b>${esc(pin?.title || r.title)}</b><span class="day-meta"><span class="tag pin">Se lanza ${esc(clock(late || early ? r.start : r.from))}${late || early ? ` (fijado a las ${esc(clock(r.from))})` : ""} · se extiende hasta ${esc(clock(r.to % 86400))}</span>${r.lines > 1 ? `<span class="tag rep">Línea ${r.lineNo} de ${r.lines}</span>` : ""}${early ? `<span class="tag off">Sale ${mins(r.delta)} min antes</span>` : ""}${late ? (r.start > r.by + 60 ? `<span class="tag bad">Sale ${mins(r.delta)} min tarde (el anterior termina a las ${esc(clock(r.start))})</span><button class="btn small" data-pa="fit" data-pin="${esc(r.pin)}" data-st="${r.start}" type="button">Ajustar a las ${esc(clock(r.start))}</button>` : `<span class="tag off">Sale ${mins(r.delta)} min después de su hora</span>`) : ""}${r.pad > 30 ? `<span class="tag off">${mins(r.pad)} min de anuncios repartidos antes, para llegar a su hora</span>` : ""}${r.ext > 30 ? `<span class="tag off">Se extiende ${mins(r.ext)} min con anuncios dentro del programa</span>` : ""}${r.endDelta > 60 ? `<span class="tag off">Termina ${mins(r.endDelta)} min después de su franja; el siguiente empieza al terminar</span>` : ""}<span>${esc(r.title === pin?.title ? "" : r.title)}</span></span></span>
         <span class="day-btns"><button class="btn secondary small" data-pa="edit" data-pin="${esc(r.pin)}" type="button">Líneas</button><button class="btn danger small" data-pa="unpin" data-pin="${esc(r.pin)}" type="button" title="Quitar el fijado">✕</button></span></div>`;
       continue;
     }
@@ -849,7 +849,7 @@ function renderPinTimeSel() {
 function renderPinEditor() {
   const d = pinDraft;
   $("pin-h").textContent = pinIsNew ? "Fijar programa" : "Programa fijado";
-  $("pin-strict").checked = !!d.strict; $("pin-title").value = d.title; $("pin-tol").value = String(d.tolMin ?? 5);
+  $("pin-title").value = d.title; $("pin-tol").value = String(d.tolMin ?? 5);
   const mx = $("pin-maxext"), cur = String(d.maxExtraMin || 0); if (![...mx.options].some((o) => o.value === cur)) mx.add(new Option(`Máximo ${cur} min de anuncios extra`, cur)); mx.value = cur;
   renderPinTimeSel();
   $("pin-remove").hidden = pinIsNew; $("pin-view").classList.add("hidden"); $("pin-view").innerHTML = ""; $("pin-seen").classList.add("hidden");
@@ -913,11 +913,6 @@ function initPins() {
     if (a === "view") { dayView = Number(b.dataset.d); renderDay(); }
     else if (a === "edit") { const pin = state.plan.pins.find((x) => x.id === b.dataset.pin); if (pin) openPinEditor(pin); }
     else if (a === "unpin") await unpin(b.dataset.pin);
-    else if (a === "strict") {   // el fijado sale exactamente a su hora: lo anterior se acorta si hace falta
-      const pin = state.plan.pins.find((x) => x.id === b.dataset.pin); if (!pin) return;
-      pin.strict = true;
-      try { await savePlan(); renderAll(); toast(`«${pin.title}» saldrá a las ${clockTxt(pinWindow(pin).f)} en punto. Publica para que el público lo vea.`, "ok"); } catch (err) { fail(err); }
-    }
     else if (a === "fit") {   // el fijado pasa a la hora real a la que sale (cuando termina el programa anterior)
       const pin = state.plan.pins.find((x) => x.id === b.dataset.pin); if (!pin) return;
       const f0 = pinWindow(pin).f, w = pinWindow(pin), keep = Math.max(0, pinStartBy(pin) - w.f), nf = Math.floor(Number(b.dataset.st) / 60), d = nf - f0;
@@ -936,7 +931,6 @@ function initPins() {
   const dlg = $("pin");
   $("pin-title").addEventListener("input", () => { if (pinDraft) pinDraft.title = $("pin-title").value; });
   $("pin-tol").addEventListener("change", () => { if (pinDraft) { pinDraft.tolMin = Number($("pin-tol").value) || 0; renderPinTimeInfo(); } });
-  $("pin-strict").addEventListener("change", () => { if (pinDraft) pinDraft.strict = $("pin-strict").checked; });
   $("pin-maxext").addEventListener("change", () => { if (pinDraft) pinDraft.maxExtraMin = Number($("pin-maxext").value) || 0; });
   $("pin-time").addEventListener("change", (e) => {
     const box = e.target.closest(".tsel"); if (!box || !pinDraft) return;
@@ -977,6 +971,23 @@ let tlKey = "";
 // ---- Línea de tiempo: grande, con desplazamiento y zoom; el cabezal (raya blanca) arrastra la barra si se sale de la vista ----
 const TL_LEVELS = [0.03, 0.06, 0.12, 0.25, 0.5, 1, 2];   // píxeles por segundo
 let tlLevel = 4, tlUserAt = 0, tlDrag = null, tlLastIdx = -1, tlRecenter = true;
+// Adelanta la emisión en marcha X minutos (número negativo = retrasarla): lo que sale al aire salta hacia adelante en el ciclo y todo lo siguiente sale X min antes.
+async function advanceTimeline() {
+  const n = Math.round(Number($("tl-adv-n").value));
+  if (!Number.isFinite(n) || n === 0) { toast("Escribe cuántos minutos.", "error"); return; }
+  if (Math.abs(n) > 720) { toast("El máximo es 720 minutos (12 horas).", "error"); return; }
+  const c = state.channel;
+  if (!c?.items?.length || c.live === false || !Number.isFinite(c.epoch)) { toast("No hay una emisión en marcha para adelantar. Publica primero.", "error"); return; }
+  if (!(await askConfirm({ title: n > 0 ? `¿Adelantar ${n} min la emisión?` : `¿Retrasar ${-n} min la emisión?`, text: n > 0 ? "Lo que está al aire salta hacia adelante y todo lo siguiente sale antes. Si publicas con fijados, la emisión vuelve a alinearse con el reloj." : "Lo que está al aire vuelve atrás y todo lo siguiente sale después.", ok: n > 0 ? "Adelantar" : "Retrasar" }))) return;
+  const d = n * 60000, upd = { epoch: Math.round(c.epoch - d), updatedAt: serverTimestamp() };
+  if (Number.isFinite(c.nextAt)) upd.nextAt = Math.round(c.nextAt - d);   // el relevo pendiente a la lista nueva se mueve igual
+  try {
+    await updateDoc(doc(db, "public", "channel"), upd);
+    c.epoch = upd.epoch; if ("nextAt" in upd) c.nextAt = upd.nextAt;
+    renderCycle(); renderNow(); renderDay();
+    toast(n > 0 ? `Emisión adelantada ${n} min.` : `Emisión retrasada ${-n} min.`, "ok");
+  } catch (err) { fail(err); }
+}
 function renderTimeline(items, loc, total, before, key) {
   const tl = $("timeline"), cw = tl.clientWidth || 600, wpx = Math.max(cw, Math.round(total * TL_LEVELS[tlLevel])), k = `${key}:${tlLevel}:${cw}`;
   if (k !== tlKey) {
@@ -1002,6 +1013,7 @@ function initTimeline() {
   $("tl-minus").addEventListener("click", () => zoom(-1));
   $("tl-plus").addEventListener("click", () => zoom(1));
   $("tl-now").addEventListener("click", () => { tlUserAt = 0; tlRecenter = true; renderNow(); });
+  $("tl-adv").addEventListener("click", advanceTimeline);
 }
 
 const TZ = "America/Santo_Domingo";   // hora de República Dominicana
