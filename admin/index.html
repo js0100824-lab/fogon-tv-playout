@@ -19,6 +19,7 @@ section[aria-label="Biblioteca"] .col-b{overflow-x:hidden}
 .seg button.active{background:#1fb5c4;border-color:#1fb5c4;color:#001012}
 .dlg{position:fixed;inset:0;z-index:9999;display:flex;align-items:center;justify-content:center;padding:16px;background:rgba(0,0,0,.65)}
 .dlg.hidden{display:none !important}
+#toast{z-index:10001 !important}   /* los avisos deben verse por encima de las ventanas (antes quedaban detrás y «Guardar» parecía no hacer nada) */
 .dlg-box{width:100%;max-width:360px;background:#14181d;color:#e8eaed;border:1px solid rgba(255,255,255,.14);border-radius:14px;padding:20px;box-shadow:0 20px 60px rgba(0,0,0,.6)}
 .dlg-box h3{margin:0 0 8px;font-size:18px}
 .dlg-box p{margin:0 0 16px;opacity:.8;line-height:1.4;overflow-wrap:anywhere}
@@ -503,6 +504,6 @@ html,body{max-width:100%;overflow-x:hidden}
 </div></div>
 
 <div id="dpick" class="dlg hidden" role="dialog" aria-modal="true" aria-labelledby="dpick-title"><div class="dlg-box dpick-box"><h3 id="dpick-title">Elegir programa</h3><input id="dpick-q" type="search" placeholder="Buscar" autocomplete="off"><select id="dpick-cat" aria-label="Categoría"></select><div id="dpick-list" class="pick-list"></div><div class="dlg-actions"><button class="btn secondary" id="dpick-cancel" type="button">Cancelar</button></div></div></div>
-<script type="module" src="../js/admin.js?v=94"></script>
+<script type="module" src="../js/admin.js?v=95"></script>
 </body>
 </html>

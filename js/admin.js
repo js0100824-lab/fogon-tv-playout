@@ -832,11 +832,12 @@ function pinStartBy(d) {
   const w = pinWindow(d), by = d.startBy ? toMin(d.startBy) : w.t;   // sin «puede comenzar hasta»: vale todo el intervalo
   return Math.min(Math.max(by, w.f), w.t);
 }
+const ovTxt = (x) => { const o = pinWindow(x); return `de ${clockTxt(o.f)} a ${clockTxt(o.t % 1440)}`; };
 function renderPinTimeInfo() {
   const d = pinDraft, w = pinWindow(d), ov = pinOverlap(d), len = w.t - w.f, bad = toMin(d.to) <= toMin(d.from) && toMin(d.to) !== 0;
   const dur = `${Math.floor(len / 60) ? `${Math.floor(len / 60)} h` : ""} ${len % 60 ? `${len % 60} min` : ""}`.trim();
   $("pin-time-info").innerHTML = `Se lanza a las ${clockTxt(w.f)}, puede comenzar hasta las ${clockTxt(pinStartBy(d))} y puede extenderse hasta las ${clockTxt(w.t % 1440)} (franja de ${dur})`
-    + (ov ? ` · <span class="warn">Se cruza con «${esc(ov.title)}»</span>` : "") + (bad ? ' · <span class="warn">«Hasta» debe ser después de «Desde»; así llega hasta las 12:00 AM</span>' : "");
+    + (ov ? ` · <span class="warn">Se cruza con «${esc(ov.title)}» (${ovTxt(ov)}). Cambia la hora de uno de los dos.</span>` : "") + (bad ? ' · <span class="warn">«Hasta» debe ser después de «Desde»; así llega hasta las 12:00 AM</span>' : "");
 }
 function renderPinLines() {
   const ls = pinDraft.lines, el = $("pin-lines");
@@ -896,7 +897,7 @@ async function pinSave(publishToo) {
   const sigBefore = pinTodaySig();
   d.title = ($("pin-title").value || "").trim() || d.lines[0]?.title || "Programa fijado";
   if (!pinLines(d).length) { toast("Agrega al menos una línea con enlace y duración.", "error"); return; }
-  const ov = pinOverlap(d); if (ov) { toast(`La franja se cruza con «${ov.title}». Cambia la hora.`, "error"); return; }
+  const ov = pinOverlap(d); if (ov) { toast(`No se guardó: la franja se cruza con «${ov.title}» (${ovTxt(ov)}). Cambia la hora de uno de los dos.`, "error"); return; }
   d.startBy = hmTxt(pinStartBy(d)); d.maxExtraMin = Math.max(0, Number(d.maxExtraMin) || 0);
   const pins = state.plan.pins = state.plan.pins || [], i = pins.findIndex((x) => x.id === d.id);
   if (i >= 0) pins[i] = d; else pins.push(d);
