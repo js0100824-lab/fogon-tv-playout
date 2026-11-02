@@ -7,7 +7,7 @@ import {
   doc, getDoc, setDoc, addDoc, deleteDoc, updateDoc, deleteField, getDocs, collection, query, orderBy, limit, serverTimestamp
 } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore.js";
 import { ref as sRef, uploadBytesResumable, getDownloadURL, deleteObject } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-storage.js";
-import { parseDuration, fmtDuration, youtubeId, facebookUrl, parseLiveLink, buildCycle, cycleLength, locate, planWithDefaults, compactChannel, expandChannel, describeCuts, itemLabel, intervalSeconds, seamlessPublish, jumpPublish, settleChannel, buildSchedule, normalizeSlots, sortPrograms, placeNewProgram, buildPinnedCycle, pinLines, pinLineId, pinWindow, pinDayIndex, pinEpoch, DAY_MS, PIN_ANCHOR_MS, endMinOf, sameCat } from "./engine.js?v=92";
+import { parseDuration, fmtDuration, youtubeId, facebookUrl, parseLiveLink, buildCycle, cycleLength, locate, planWithDefaults, compactChannel, expandChannel, describeCuts, itemLabel, intervalSeconds, seamlessPublish, jumpPublish, settleChannel, buildSchedule, normalizeSlots, sortPrograms, placeNewProgram, buildPinnedCycle, activePins, pinDays, pinLines, pinLineId, pinWindow, pinDayIndex, pinEpoch, DAY_MS, PIN_ANCHOR_MS, endMinOf, sameCat } from "./engine.js?v=92";
 import { serverNow, startClock } from "./clock.js";
 
 const $ = (id) => document.getElementById(id);
@@ -791,7 +791,7 @@ function renderDayPinned(el, pc) {
   el.dataset.today = view === today ? "1" : "0";
   const slotAt = (min) => { let bi = -1, bo = 1e9; (p.slots || []).forEach((s, i) => { const o = (min - toMin(s.from) + 1440) % 1440; if (o < slotLen(s) && o < bo) { bo = o; bi = i; } }); return bi; };
   const clock = (sec) => clockTxt(sec / 60 + 360), mins = (sec) => Math.round(Math.abs(sec) / 60);
-  let html = pc.K > 1 ? `<div class="day-tabs">${pc.days.map((_, k) => `<button type="button" class="btn small${k === view ? "" : " secondary"}" data-pa="view" data-d="${k}">Día ${k + 1}${k === today ? " · hoy" : ""}</button>`).join("")}</div>` : "";
+  let html = pc.K > 1 ? `<div class="day-tabs">${pc.days.map((_, k) => `<button type="button" class="btn small${k === today ? " is-today" : " secondary"}${k === view ? " is-view" : ""}" data-pa="view" data-d="${k}"${k === today ? ' title="Hoy"' : ""}>Día ${k + 1}${k === today ? " · HOY" : ""}</button>`).join("")}</div><p class="hint day-legend">Azul = el día de hoy${view !== today ? ` · borde blanco = el día que estás viendo (día ${view + 1})` : ""}.</p>` : "";
   const headOf = (si) => { const sl = p.slots?.[si]; return `<div class="day-h"><span>${sl ? `${esc(slotLabel(sl))} · ${esc(sl.cat === "*" ? "Variado" : sl.cat)}` : "Sin franja"}</span><span>${sl ? esc(slotHours(sl)) : ""}${sl ? ` <button class="btn small" data-pa="slotadd" data-si="${si}" type="button">Agregar programa aquí</button>` : ""}</span></div>`; };
   const buckets = new Map();
   for (const r of day.rows) {
@@ -839,15 +839,24 @@ function renderPinTimeInfo() {
   $("pin-time-info").innerHTML = `Se lanza a las ${clockTxt(w.f)}, puede comenzar hasta las ${clockTxt(pinStartBy(d))} y puede extenderse hasta las ${clockTxt(w.t % 1440)} (franja de ${dur})`
     + (ov ? ` · <span class="warn">Se cruza con «${esc(ov.title)}» (${ovTxt(ov)}). Cambia la hora de uno de los dos.</span>` : "") + (bad ? ' · <span class="warn">«Hasta» debe ser después de «Desde»; así llega hasta las 12:00 AM</span>' : "");
 }
+// Qué línea de este fijado sale HOY y cuál mañana (el día de rotación cambia a las 6:00 a. m.).
+function pinRotation(pin) {
+  const n = pin.lines.length; if (!n) return null;
+  const arr = (state.plan.pins || []).filter((x) => x.id !== pin.id).concat([pin]);
+  let act = activePins({ pins: arr }); if (!act.some((x) => x.id === pin.id)) act = act.concat([pin]);
+  const K = pinDays(act), d = pinDayIndex(serverNow(), K);
+  return { K, day: d + 1, n, today: d % n, tomorrow: ((d + 1) % K) % n };
+}
 function renderPinLines() {
-  const ls = pinDraft.lines, el = $("pin-lines");
-  el.innerHTML = ls.length ? ls.map((l, k) => `<div class="pin-line" data-k="${k}">
-    <div class="pin-line-h"><b>Línea ${k + 1}</b><span class="hint">${ls.length > 1 ? `sale el día ${k + 1} de cada ${ls.length}` : "sale todos los días"}</span>${l.fbOk === true ? '<span class="tag ok">✓ Se ve</span>' : l.fbOk === false ? '<span class="tag bad">✗ No se ve</span>' : ""}</div>
+  const ls = pinDraft.lines, el = $("pin-lines"), rot = pinRotation(pinDraft);
+  el.innerHTML = (rot && rot.n > 1 ? `<div class="pin-rot">Hoy es el <b>día ${rot.day} de ${rot.K}</b> de la rotación → hoy sale la <b>línea ${rot.today + 1}</b>. Mañana sale la línea ${rot.tomorrow + 1}.<br><small>Si quieres que otro enlace salga hoy, súbelo o bájalo con ↑ ↓ hasta que quede en la posición ${rot.today + 1}.</small></div>` : "")
+  + (ls.length ? ls.map((l, k) => `<div class="pin-line${rot && k === rot.today ? " today" : ""}" data-k="${k}">
+    <div class="pin-line-h"><b>Línea ${k + 1}</b>${rot && k === rot.today ? '<span class="tag ok">▶ SALE HOY</span>' : rot && rot.n > 1 && k === rot.tomorrow ? '<span class="tag">Sale mañana</span>' : ""}<span class="hint">${ls.length > 1 ? `sale el día ${k + 1} de cada ${ls.length}` : "sale todos los días"}</span>${l.fbOk === true ? '<span class="tag ok">✓ Se ve</span>' : l.fbOk === false ? '<span class="tag bad">✗ No se ve</span>' : ""}</div>
     <input data-lf="title" value="${esc(l.title)}" placeholder="Nombre (opcional)" maxlength="120">
     <input data-lf="url" value="${esc(l.url)}" placeholder="Enlace">
     <div class="pin-line-r"><label>Duración <input data-lf="dur" value="${esc(fmtDuration(l.duration))}" inputmode="numeric" placeholder="1:30:00"></label>
     <span class="pin-line-b"><button class="btn small" data-lp="view" type="button">Ver</button><button class="btn secondary small" data-lp="up" type="button" aria-label="Subir">↑</button><button class="btn secondary small" data-lp="down" type="button" aria-label="Bajar">↓</button><button class="btn danger small" data-lp="del" type="button" aria-label="Quitar línea">✕</button></span></div></div>`).join("")
-    : '<p class="hint">Sin líneas. Agrega al menos una abajo.</p>';
+    : '<p class="hint">Sin líneas. Agrega al menos una abajo.</p>');
 }
 function renderPinTimeSel() {
   const d = pinDraft;

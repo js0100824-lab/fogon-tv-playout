@@ -214,6 +214,20 @@ function stop() {
 }
 
 // Decide qué toca ahora según la hora del servidor y vuelve a decidir justo al terminar el tramo.
+/* ---------- Logo: se desvanece unos segundos antes de la publicidad y vuelve con el programa ---------- */
+const LOGO_LEAD = 4;   // segundos antes de la pausa en que el logo empieza a desvanecerse
+let logoT = 0;
+const isAd = (it) => it?.type === "comercial";
+function logoState(loc) {
+  const lg = $("logo"); if (!lg || !loc || !channel?.items?.length) return;
+  const nx = channel.items[(loc.index + 1) % channel.items.length];
+  lg.classList.toggle("fade", isAd(loc.item) || (isAd(nx) && !isAd(loc.item) && loc.remaining <= LOGO_LEAD));
+}
+function planLogo(loc) {   // programa el momento exacto en que empieza a desvanecerse, sin esperar al reloj de 1 s
+  clearTimeout(logoT); logoState(loc);
+  if (!isAd(loc.item) && isAd(channel.items[(loc.index + 1) % channel.items.length]) && loc.remaining > LOGO_LEAD)
+    logoT = setTimeout(() => { const l = nowLoc(); if (l) logoState(l); }, (loc.remaining - LOGO_LEAD) * 1000 + 30);
+}
 function tick(force) {
   clearTimeout(timer);
   if (liveCfg) return;
@@ -222,6 +236,7 @@ function tick(force) {
   const key = keyOf(loc);
   say("");
   if (force || !current || current.key !== key) begin(loc, key);
+  planLogo(loc);
   timer = setTimeout(() => tick(false), Math.max(80, loc.remaining * 1000 + 25));
   postInfo();
 }
@@ -550,6 +565,7 @@ function watch() {
   const loc = nowLoc(); if (!loc) return;
   if (keyOf(loc) !== current.key) { tick(false); return; }
   exposeOnAir(loc);
+  logoState(loc);
   maybePreload(loc);
   if (studio && (document.hidden || Date.now() < studioGraceUntil)) {   // pestaña en segundo plano o recién vuelta: el video no manda, solo se mantiene en marcha
     try { if (loc.item.src === "file" && active?.el.paused) active.el.play().catch(() => {}); else if (loc.item.src === "youtube" && ytPlayer?.getPlayerState?.() === 2) ytPlayer.playVideo?.(); } catch { /* sin reproductor */ }
