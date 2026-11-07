@@ -7,7 +7,7 @@ import {
   doc, getDoc, setDoc, addDoc, deleteDoc, updateDoc, deleteField, getDocs, collection, query, orderBy, limit, serverTimestamp
 } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore.js";
 import { ref as sRef, uploadBytesResumable, getDownloadURL, deleteObject } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-storage.js";
-import { parseDuration, fmtDuration, youtubeId, facebookUrl, parseLiveLink, buildCycle, cycleLength, locate, planWithDefaults, compactChannel, expandChannel, describeCuts, itemLabel, intervalSeconds, seamlessPublish, jumpPublish, settleChannel, buildSchedule, normalizeSlots, sortPrograms, placeNewProgram, buildPinnedCycle, activePins, pinDays, pinLines, pinLineId, pinWindow, pinDayIndex, pinEpoch, DAY_MS, PIN_ANCHOR_MS, endMinOf, sameCat } from "./engine.js?v=92";
+import { parseDuration, fmtDuration, youtubeId, facebookUrl, parseLiveLink, buildCycle, cycleLength, locate, planWithDefaults, compactChannel, expandChannel, describeCuts, itemLabel, intervalSeconds, seamlessPublish, jumpPublish, settleChannel, buildSchedule, normalizeSlots, sortPrograms, placeNewProgram, buildPinnedCycle, activePins, pinDays, pinGroups, pinLines, pinLineId, pinWindow, pinDayIndex, pinEpoch, DAY_MS, PIN_ANCHOR_MS, endMinOf, sameCat } from "./engine.js?v=93";
 import { serverNow, startClock } from "./clock.js";
 
 const $ = (id) => document.getElementById(id);
@@ -776,7 +776,7 @@ function renderPinList() {
   if (!pins.length) { el.innerHTML = '<p class="hint">Todavía no hay programas fijados. Pulsa «Fijar programa» o el botón «Fijar» de cualquier fila de abajo.</p>'; return; }
   const today = pc && !pc.error ? pinDayIndex(serverNow(), pc.K) : null;
   el.innerHTML = pins.map((p) => {
-    const w = pinWindow(p), n = pinLines(p).length, hoy = today != null && n ? ` · hoy: línea ${(today % n) + 1}` : "";
+    const w = pinWindow(p), n = pinLines(p).length, gs = pinGroups(p), g = gs[(today ?? 0) % (gs.length || 1)], hoy = today != null && n && g ? ` · hoy: ${g.length > 1 ? `líneas ${g[0] + 1} + ${g[1] + 1}` : `línea ${g[0] + 1}`}` : "";
     return `<div class="pin-card${n ? "" : " bad"}"><div class="pin-main"><b>${esc(p.title)}</b><span class="pin-tags"><span>Se lanza a las ${clockTxt(w.f)}</span><span>Puede comenzar hasta las ${clockTxt(pinStartBy(p))}</span>${isShortPin(p) ? `<span>Programa corto: anuncios cada ${state.plan.shortEveryMin || 10} min</span>` : `<span>Puede extenderse hasta las ${clockTxt(w.t % 1440)}</span>`}</span><span class="hint">${n} línea${n === 1 ? "" : "s"}${hoy} · ${p.tolMin > 0 ? `puede salir hasta ${p.tolMin} min antes` : "no sale antes de su hora"}${p.maxExtraMin > 0 && !isShortPin(p) ? ` · máx. ${p.maxExtraMin} min de anuncios extra` : ""}</span>${n ? "" : '<span class="warn">Sin líneas válidas: no se emite.</span>'}</div><div class="pin-btns"><button class="btn small" data-pa="edit" data-pin="${esc(p.id)}" type="button">Líneas y hora</button><button class="btn danger small" data-pa="unpin" data-pin="${esc(p.id)}" type="button">Quitar</button></div></div>`;
   }).join("");
 }
@@ -800,7 +800,7 @@ function renderDayPinned(el, pc) {
       const pin = p.pins.find((x) => x.id === r.pin), late = r.delta > 60, early = r.delta < -60;
       rowH += `<div class="day-row pinrow" data-s="${r.start}" data-e="${r.end}"><span class="day-grip" title="Fijado: no se mueve">Fijo</span>
         <span class="day-t">${esc(clock(r.start))}<small>→ ${esc(clock(r.end))}</small></span>
-        <span class="day-main"><b>${esc(pin?.title || r.title)}</b><span class="day-meta"><span class="tag pin">Debe lanzarse entre ${esc(clock(r.from))} y ${esc(clock(r.by))} · sale ${esc(clock(r.start))}</span>${r.lines > 1 ? `<span class="tag rep">Línea ${r.lineNo} de ${r.lines}</span>` : ""}${r.start > r.by + 60 ? `<span class="tag bad">Sale ${mins(r.start - r.by)} min después de su intervalo (el anterior termina a las ${esc(clock(r.start))}; no se corta)</span><button class="btn small" data-pa="fit" data-pin="${esc(r.pin)}" data-st="${r.start}" type="button">Ampliar el intervalo hasta las ${esc(clock(r.start))}</button>` : ""}${r.start < r.from - 60 ? `<span class="tag off">Sale ${mins(r.from - r.start)} min antes de su intervalo</span>` : ""}${r.pad > 30 ? `<span class="tag off">${mins(r.pad)} min de anuncios de relleno</span>` : ""}${r.ext > 30 ? `<span class="tag off">Se extiende ${mins(r.ext)} min con anuncios</span>` : ""}<span>${esc(r.title === pin?.title ? "" : r.title)}</span></span></span>
+        <span class="day-main"><b>${esc(pin?.title || r.title)}</b><span class="day-meta"><span class="tag pin">Debe lanzarse entre ${esc(clock(r.from))} y ${esc(clock(r.by))} · sale ${esc(clock(r.start))}</span>${r.lines > 1 ? `<span class="tag rep">Línea${r.lineNo2 ? `s ${r.lineNo} + ${r.lineNo2}` : ` ${r.lineNo}`} de ${r.lines}</span>` : ""}${r.start > r.by + 60 ? `<span class="tag bad">Sale ${mins(r.start - r.by)} min después de su intervalo (el anterior termina a las ${esc(clock(r.start))}; no se corta)</span><button class="btn small" data-pa="fit" data-pin="${esc(r.pin)}" data-st="${r.start}" type="button">Ampliar el intervalo hasta las ${esc(clock(r.start))}</button>` : ""}${r.start < r.from - 60 ? `<span class="tag off">Sale ${mins(r.from - r.start)} min antes de su intervalo</span>` : ""}${r.pad > 30 ? `<span class="tag off">${mins(r.pad)} min de anuncios de relleno</span>` : ""}${r.ext > 30 ? `<span class="tag off">Se extiende ${mins(r.ext)} min con anuncios</span>` : ""}<span>${esc(r.title === pin?.title ? "" : r.title)}</span></span></span>
         <span class="day-btns"><button class="btn secondary small" data-pa="edit" data-pin="${esc(r.pin)}" type="button">Líneas</button><button class="btn danger small" data-pa="unpin" data-pin="${esc(r.pin)}" type="button" title="Quitar el fijado">✕</button></span></div>`;
       push(); continue;
     }
@@ -839,23 +839,32 @@ function renderPinTimeInfo() {
   $("pin-time-info").innerHTML = `Se lanza a las ${clockTxt(w.f)}, puede comenzar hasta las ${clockTxt(pinStartBy(d))} y puede extenderse hasta las ${clockTxt(w.t % 1440)} (franja de ${dur})`
     + (ov ? ` · <span class="warn">Se cruza con «${esc(ov.title)}» (${ovTxt(ov)}). Cambia la hora de uno de los dos.</span>` : "") + (bad ? ' · <span class="warn">«Hasta» debe ser después de «Desde»; así llega hasta las 12:00 AM</span>' : "");
 }
-// Qué línea de este fijado sale HOY y cuál mañana (el día de rotación cambia a las 6:00 a. m.).
+// Posiciones (dentro de pin.lines) de las líneas de cada grupo-día: [[0,1],[2]…]. Una pareja = dos líneas que salen el mismo día.
+function pinGroupPos(pin) {
+  const ls = pinLines(pin);
+  return pinGroups(pin).map((g) => g.map((i) => pin.lines.findIndex((x) => x.id === ls[i].id)));
+}
+// Qué línea(s) de este fijado salen HOY y cuáles mañana (el día de rotación cambia a las 6:00 a. m.).
 function pinRotation(pin) {
-  const n = pin.lines.length; if (!n) return null;
+  const gp = pinGroupPos(pin), n = gp.length; if (!n) return null;
   const arr = (state.plan.pins || []).filter((x) => x.id !== pin.id).concat([pin]);
   let act = activePins({ pins: arr }); if (!act.some((x) => x.id === pin.id)) act = act.concat([pin]);
   const K = pinDays(act), d = pinDayIndex(serverNow(), K);
-  return { K, day: d + 1, n, today: d % n, tomorrow: ((d + 1) % K) % n };
+  return { K, day: d + 1, n, today: gp[d % n], tomorrow: gp[((d + 1) % K) % n] };
 }
+const linesTxt = (a) => (a.length > 1 ? `líneas ${a.map((x) => x + 1).join(" + ")}` : `línea ${a[0] + 1}`);
 function renderPinLines() {
-  const ls = pinDraft.lines, el = $("pin-lines"), rot = pinRotation(pinDraft);
-  el.innerHTML = (rot && rot.n > 1 ? `<div class="pin-rot">Hoy es el <b>día ${rot.day} de ${rot.K}</b> de la rotación → hoy sale la <b>línea ${rot.today + 1}</b>. Mañana sale la línea ${rot.tomorrow + 1}.<br><small>Si quieres que otro enlace salga hoy, súbelo o bájalo con ↑ ↓ hasta que quede en la posición ${rot.today + 1}.</small></div>` : "")
-  + (ls.length ? ls.map((l, k) => `<div class="pin-line${rot && k === rot.today ? " today" : ""}" data-k="${k}">
-    <div class="pin-line-h"><b>Línea ${k + 1}</b>${rot && k === rot.today ? '<span class="tag ok">▶ SALE HOY</span>' : rot && rot.n > 1 && k === rot.tomorrow ? '<span class="tag">Sale mañana</span>' : ""}<span class="hint">${ls.length > 1 ? `sale el día ${k + 1} de cada ${ls.length}` : "sale todos los días"}</span>${l.fbOk === true ? '<span class="tag ok">✓ Se ve</span>' : l.fbOk === false ? '<span class="tag bad">✗ No se ve</span>' : ""}</div>
+  const ls = pinDraft.lines, el = $("pin-lines"), rot = pinRotation(pinDraft), gp = pinGroupPos(pinDraft);
+  const grp = (k) => gp.findIndex((g) => g.includes(k));
+  el.innerHTML = (rot && rot.n > 1 ? `<div class="pin-rot">Hoy es el <b>día ${rot.day} de ${rot.K}</b> de la rotación → hoy ${rot.today.length > 1 ? "salen las" : "sale la"} <b>${linesTxt(rot.today)}</b>. Mañana ${rot.tomorrow.length > 1 ? "salen las" : "sale la"} ${linesTxt(rot.tomorrow)}.<br><small>Si quieres que otro enlace salga hoy, súbelo o bájalo con ↑ ↓ hasta que quede en la posición ${rot.today[0] + 1}.</small></div>` : "")
+  + (ls.length ? ls.map((l, k) => { const g = grp(k), isT = rot && rot.today.includes(k), isM = rot && rot.n > 1 && rot.tomorrow.includes(k), pr = g >= 0 ? gp[g] : [k], second = pr.length > 1 && pr[1] === k;
+    return `<div class="pin-line${isT ? " today" : ""}" data-k="${k}">
+    <div class="pin-line-h"><b>Línea ${k + 1}</b>${isT ? '<span class="tag ok">▶ SALE HOY</span>' : isM ? '<span class="tag">Sale mañana</span>' : ""}<span class="hint">${pr.length > 1 ? `sale el día ${g + 1} de cada ${gp.length}, ${second ? `después de la línea ${pr[0] + 1}` : `junto con la línea ${pr[1] + 1}`}` : (gp.length > 1 ? `sale el día ${g + 1} de cada ${gp.length}` : "sale todos los días")}</span>${l.fbOk === true ? '<span class="tag ok">✓ Se ve</span>' : l.fbOk === false ? '<span class="tag bad">✗ No se ve</span>' : ""}</div>
     <input data-lf="title" value="${esc(l.title)}" placeholder="Nombre (opcional)" maxlength="120">
     <input data-lf="url" value="${esc(l.url)}" placeholder="Enlace">
+    <label class="pin-pair"><input type="checkbox" data-lf="pair"${l.pair === true ? " checked" : ""}${k >= ls.length - 1 ? " disabled" : ""}> Sacar dos líneas: esta sale junto con la línea ${k + 2} (completa la hora)${k >= ls.length - 1 ? " <small>(no hay línea siguiente)</small>" : ""}</label>
     <div class="pin-line-r"><label>Duración <input data-lf="dur" value="${esc(fmtDuration(l.duration))}" inputmode="numeric" placeholder="1:30:00"></label>
-    <span class="pin-line-b"><button class="btn small" data-lp="view" type="button">Ver</button><button class="btn secondary small" data-lp="up" type="button" aria-label="Subir">↑</button><button class="btn secondary small" data-lp="down" type="button" aria-label="Bajar">↓</button><button class="btn danger small" data-lp="del" type="button" aria-label="Quitar línea">✕</button></span></div></div>`).join("")
+    <span class="pin-line-b"><button class="btn small" data-lp="view" type="button">Ver</button><button class="btn secondary small" data-lp="up" type="button" aria-label="Subir">↑</button><button class="btn secondary small" data-lp="down" type="button" aria-label="Bajar">↓</button><button class="btn danger small" data-lp="del" type="button" aria-label="Quitar línea">✕</button></span></div></div>`; }).join("")
     : '<p class="hint">Sin líneas. Agrega al menos una abajo.</p>');
 }
 function renderPinTimeSel() {
@@ -891,7 +900,8 @@ async function pinAddLine() {
     toast("Detectando la duración…", "ok"); dur = yt ? await ytDuration(yt) : await detectDuration(url);
   }
   if (!(dur > 0)) { toast("No pude detectar la duración. Escríbela.", "error"); return; }
-  pinDraft.lines.push({ id: newId(), url, duration: dur, title: $("pin-ltitle").value.trim() });
+  pinDraft.lines.push({ id: newId(), url, duration: dur, title: $("pin-ltitle").value.trim(), ...($("pin-lpair").checked ? { pair: true } : {}) });
+  $("pin-lpair").checked = false;
   ["pin-url", "pin-ltitle", "pin-dh", "pin-dm", "pin-ds"].forEach((id) => { $(id).value = ""; });
   renderPinLines(); toast(`Línea ${pinDraft.lines.length} agregada. Pulsa «Ver» para comprobar que se reproduce.`, "ok");
 }
@@ -899,7 +909,7 @@ async function pinAddLine() {
 function pinTodaySig() {
   const pc = getPinned(); if (!pc || pc.error) return "";
   const day = pc.days[pinDayIndex(serverNow(), pc.K)]; if (!day) return "";
-  return JSON.stringify(day.rows.filter((r) => r.kind === "pin").map((r) => { const pin = state.plan.pins.find((x) => x.id === r.pin), l = pin && pinLines(pin).find((x) => pinLineId(pin, x) === r.id); return [r.id, l?.url, l?.duration, l?.title || ""]; }));
+  return JSON.stringify(day.rows.filter((r) => r.kind === "pin").map((r) => { const pin = state.plan.pins.find((x) => x.id === r.pin), find = (id) => pin && pinLines(pin).find((x) => pinLineId(pin, x) === id), l = find(r.id), l2 = r.id2 ? find(r.id2) : null; return [r.id, l?.url, l?.duration, l?.title || "", r.id2 || "", l2?.url, l2?.duration]; }));
 }
 async function pinSave(publishToo) {
   const d = pinDraft; if (!d) return;
@@ -972,6 +982,7 @@ function initPins() {
   $("pin-lines").addEventListener("change", (e) => {
     const t = e.target, row = t.closest(".pin-line"); if (!row || !t.dataset.lf || !pinDraft) return;
     const l = pinDraft.lines[Number(row.dataset.k)]; if (!l) return;
+    if (t.dataset.lf === "pair") { if (t.checked) l.pair = true; else delete l.pair; renderPinLines(); return; }
     if (t.dataset.lf === "title") l.title = t.value.trim();
     else if (t.dataset.lf === "url") { l.url = normUrl(t.value); l.fbOk = undefined; delete l.fbOk; t.value = l.url; renderPinLines(); }
     else { const d = parseDuration(t.value); if (d > 0) { l.duration = Math.round(d); t.value = fmtDuration(l.duration); } else { toast("Duración no válida. Usa 1:30:00 o 45:00.", "error"); t.value = fmtDuration(l.duration); } }

@@ -554,6 +554,14 @@ export function pinLines(pin) {
   const good = ok.filter((l) => l.fbOk !== false);
   return good.length ? good : ok;
 }
+// Grupos de líneas = lo que sale en UN día. Una línea marcada pair:true sale ese mismo día junto con la línea que le sigue
+// en la lista (dos videos seguidos del mismo programa, p. ej. 20 + 20 min para completar la hora). Si es la última, sale sola.
+// Devuelve posiciones dentro de pinLines(pin): [[0,1],[2],[3]]…
+export function pinGroups(pin) {
+  const ls = pinLines(pin), out = [];
+  for (let i = 0; i < ls.length; i++) { if (ls[i].pair === true && i + 1 < ls.length) { out.push([i, i + 1]); i++; } else out.push([i]); }
+  return out;
+}
 // Franja en minutos del día. Si «hasta» no es posterior a «desde» (p. ej. 12:00 AM), la franja llega hasta medianoche.
 export function pinWindow(pin) { const f = hhmm(pin.from), t = endMinOf(hhmm(pin.to)); return { f, t: t > f ? t : 1440 }; }   // «hasta» en :59 = la hora siguiente en punto
 // Fijados válidos y en orden; si dos se pisan, se descarta el que empieza dentro del anterior.
@@ -565,7 +573,7 @@ export function activePins(plan) {
 }
 // Días que dura la rotación: el mínimo común múltiplo del nº de líneas de cada fijado (tope PIN_MAX_DAYS).
 export function pinDays(pins) {
-  const ls = pins.map((p) => pinLines(p).length), mx = Math.max(1, ...ls);
+  const ls = pins.map((p) => pinGroups(p).length), mx = Math.max(1, ...ls);
   let l = 1; for (const n of ls) { l = (l / gcd(l, n)) * n; if (l > PIN_MAX_DAYS) return Math.min(mx, PIN_MAX_DAYS); }
   return l;
 }
@@ -657,6 +665,7 @@ export function renumberParts(items) {
 // Devuelve null si no hay fijados; si no, { items, K, days:[{ items, rows, warn, carry }], error? }.
 // Tiempos en segundos desde las 6:00 a. m. (inicio del ciclo de 24 h). rows de cada día:
 //   { kind:"filler", oi, id, title, start, end } | { kind:"pin", pin, line, lineNo, lines, id, title, start, end, from, to, by, delta, endDelta, pad, ext }
+//   (pareja: si la línea tiene pair:true, la fila trae también lineNo2 e id2 y su fin incluye los dos videos)
 // REGLAS NUEVAS:
 //  (1) FIJAR = INTERVALO DE LANZAMIENTO: el programa debe EMPEZAR dentro de [desde, hasta]; no tiene que empezar ni terminar justo en esos minutos.
 //  (2) NUNCA se corta, recorta ni acelera un programa: cada contenido conserva su duración real y la programación puede pasarse de lo previsto.
@@ -706,9 +715,9 @@ export function buildPinnedCycle(library, rawPlan) {
     const endOf = (o) => cycleLength(build(o));
     const startOf = (o, id) => { let t = 0; for (const it of build(o)) { if (it.id === id && it.type === "programa" && (!it.part || it.part === 1)) return t; t += it.duration; } return t; };
     const dayPins = pins.map((p) => {
-      const ls = pinLines(p), line = ls[d % ls.length], w = pinWindow(p), fm = relMin(w.f), f = fm * 60, t = Math.min(1440, fm + (w.t - w.f)) * 60;
+      const ls = pinLines(p), gs = pinGroups(p), g = gs[d % gs.length], lns = g.map((i) => ls[i]), line = lns[0], w = pinWindow(p), fm = relMin(w.f), f = fm * 60, t = Math.min(1440, fm + (w.t - w.f)) * 60;
       const by = p.startBy ? relMin(hhmm(p.startBy)) * 60 : t;   // sin «puede comenzar hasta»: todo el intervalo vale
-      return { pin: p, line, id: pinLineId(p, line), f, t, early: Math.max(0, Number(p.tolMin) || 0) * 60, late: Math.max(0, Math.min(by >= f ? by : t, t) - f), maxExtra: Math.max(0, Number(p.maxExtraMin) || 0) * 60, lineNo: (d % ls.length) + 1, lines: ls.length };
+      return { pin: p, line, id: pinLineId(p, line), ids: lns.map((l) => pinLineId(p, l)), f, t, early: Math.max(0, Number(p.tolMin) || 0) * 60, late: Math.max(0, Math.min(by >= f ? by : t, t) - f), maxExtra: Math.max(0, Number(p.maxExtraMin) || 0) * 60, lineNo: g[0] + 1, lineNo2: g.length > 1 ? g[1] + 1 : 0, lines: ls.length };
     });
     // Llena el hueco hasta `target` con programas COMPLETOS de la categoría de cada momento. El fijado puede lanzarse entre target-early y target+late.
     // Si nada de la categoría cabe, entra el que se pase menos (el programa nunca se corta); solo si así queda más cerca de la hora que dejando el hueco.
@@ -742,7 +751,7 @@ export function buildPinnedCycle(library, rawPlan) {
       if (fillAds && pad > 0.5) { pads.set(nextId || "END", pad); padAcc += pad; }   // solo con el relleno activado
     };
     for (const dp of dayPins) {
-      fillTo(dp.f, dp.early, dp.late, dp.id); order.push(dp.id); tags.push({ pin: dp }); lastId = dp.id;
+      fillTo(dp.f, dp.early, dp.late, dp.id); dp.ids.forEach((id, n) => { order.push(id); tags.push(n ? { part2: true } : { pin: dp }); }); lastId = dp.ids[dp.ids.length - 1];
       // Extensión con anuncios dentro del fijado: SOLO si el relleno con anuncios está activado.
       if (fillAds && adList.length && !(byId2.get(dp.id)?.cutEvery > 0)) {
         const pinEnd = startOf([...order, "__fin__"], "__fin__") + padAcc, pinStart = startOf(order, dp.id) + padAcc;
@@ -772,10 +781,10 @@ export function buildPinnedCycle(library, rawPlan) {
         if (k < 0) continue;
         let kk = k; const pad = pads.get(dp.id);
         if (pad) { const res = distributePad(items.slice(gapFrom, k), padItems(pad), sessionSec, { minGap: 180 }); items.splice(gapFrom, k - gapFrom, ...res); kk = gapFrom + res.length; }
-        let last = kk; for (let i = kk; i < items.length && !(items[i].type === "programa" && items[i].id !== dp.id); i++) if (items[i].type === "programa") last = i;
+        let last = kk; for (let i = kk; i < items.length && !(items[i].type === "programa" && !dp.ids.includes(items[i].id)); i++) if (items[i].type === "programa") last = i;
         const ext = exts.get(dp.id);
         if (ext) { const res = distributePad(items.slice(kk, last + 1), padItems(ext), sessionSec, { atEnd: false, minGap: 180 }); items.splice(kk, last + 1 - kk, ...res); last = kk + res.length - 1; }
-        let e = last + 1; while (e < items.length && !(items[e].type === "programa" && items[e].id !== dp.id)) e++;
+        let e = last + 1; while (e < items.length && !(items[e].type === "programa" && !dp.ids.includes(items[e].id))) e++;
         gapFrom = e;
       }
       if (pads.get("END")) { const res = distributePad(items.slice(gapFrom), padItems(pads.get("END")), sessionSec, { minGap: 180 }); items.splice(gapFrom, items.length - gapFrom, ...res); }
@@ -791,7 +800,8 @@ export function buildPinnedCycle(library, rawPlan) {
     spans.forEach((sp, k) => {
       const tg = tags[k]; if (!tg) return;
       const st = sp.start + c, en = sp.end + c;
-      if (tg.pin) { const dp = tg.pin; rows.push({ kind: "pin", pin: dp.pin.id, line: dp.line.id, lineNo: dp.lineNo, lines: dp.lines, id: sp.id, title: byId2.get(sp.id)?.title || dp.pin.title, start: st, end: en + sp.tail, from: dp.f, to: dp.t, by: dp.f + dp.late, delta: st - dp.f, endDelta: en + sp.tail - dp.t, pad: pads.get(dp.id) || 0, ext: exts.get(dp.id) || 0, short: byId2.get(sp.id)?.cutEvery > 0 }); }
+      if (tg.part2) { const lr = rows[rows.length - 1]; if (lr?.kind === "pin") { lr.end = en + sp.tail; lr.endDelta = lr.end - lr.to; lr.id2 = sp.id; lr.title2 = byId2.get(sp.id)?.title || ""; } return; }   // segunda línea de la pareja: se une a la misma fila
+      if (tg.pin) { const dp = tg.pin; rows.push({ kind: "pin", pin: dp.pin.id, line: dp.line.id, lineNo: dp.lineNo, lineNo2: dp.lineNo2, lines: dp.lines, id: sp.id, title: byId2.get(sp.id)?.title || dp.pin.title, start: st, end: en + sp.tail, from: dp.f, to: dp.t, by: dp.f + dp.late, delta: st - dp.f, endDelta: en + sp.tail - dp.t, pad: pads.get(dp.id) || 0, ext: exts.get(dp.id) || 0, short: byId2.get(sp.id)?.cutEvery > 0 }); }
       else rows.push({ kind: "filler", oi: tg.oi, id: sp.id, title: byId2.get(sp.id)?.title || "", start: st, end: en });
     });
     days.push({ items, rows, warn, carry: dayCarry, endPad: pads.get("END") || 0 });

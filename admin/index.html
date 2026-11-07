@@ -198,6 +198,7 @@ html,body{max-width:100%;overflow-x:hidden}
 .pin-line input{width:100%}
 .pin-line-h{display:flex;gap:8px;align-items:baseline;flex-wrap:wrap}
 .pin-line.today{border-color:#1fb5c4;box-shadow:0 0 0 1px #1fb5c4 inset;background:rgba(31,181,196,.08)}
+.pin-pair{display:flex;gap:8px;align-items:center;font-size:13px;opacity:.9;cursor:pointer}.pin-pair small{opacity:.7}
 .pin-rot{margin:8px 0;padding:10px 12px;border-radius:10px;background:rgba(31,181,196,.12);border:1px solid rgba(31,181,196,.4);line-height:1.5}.pin-rot small{opacity:.8}
 .pin-line-r{display:flex;gap:8px;align-items:center;justify-content:space-between;flex-wrap:wrap}
 .pin-line-r label{display:flex;gap:6px;align-items:center}.pin-line-r label input{width:9em}
@@ -501,6 +502,7 @@ html,body{max-width:100%;overflow-x:hidden}
     <input id="pin-url" type="text" placeholder="Enlace" autocomplete="off">
     <input id="pin-ltitle" type="text" placeholder="Nombre (opcional)" maxlength="120">
     <div class="row3"><input id="pin-dh" type="number" min="0" placeholder="Horas"><input id="pin-dm" type="number" min="0" placeholder="Minutos"><input id="pin-ds" type="number" min="0" max="59" placeholder="Segundos"></div>
+    <label class="pin-pair"><input id="pin-lpair" type="checkbox"> Sacar dos líneas: esta línea sale el mismo día junto con la línea que agregues después (completa la hora)</label>
     <div class="pin-add-b"><button class="btn secondary" id="pin-test" type="button">Ver</button><button class="btn" id="pin-add" type="button">Agregar línea</button></div>
   </div>
   <div id="pin-view" class="fbv-frame hidden"></div>
@@ -509,6 +511,6 @@ html,body{max-width:100%;overflow-x:hidden}
 </div></div>
 
 <div id="dpick" class="dlg hidden" role="dialog" aria-modal="true" aria-labelledby="dpick-title"><div class="dlg-box dpick-box"><h3 id="dpick-title">Elegir programa</h3><input id="dpick-q" type="search" placeholder="Buscar" autocomplete="off"><select id="dpick-cat" aria-label="Categoría"></select><div id="dpick-list" class="pick-list"></div><div class="dlg-actions"><button class="btn secondary" id="dpick-cancel" type="button">Cancelar</button></div></div></div>
-<script type="module" src="../js/admin.js?v=97"></script>
+<script type="module" src="../js/admin.js?v=98"></script>
 </body>
 </html>

@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import {
   continuousLayout,
   parseDuration, fmtDuration, youtubeId, buildCycle, cycleLength, locate, cutPoints, intervalSeconds,
-  compactChannel, expandChannel, describeCuts, activeAds, itemLabel, toSource, parseLiveLink
+  compactChannel, expandChannel, describeCuts, activeAds, itemLabel, toSource, parseLiveLink, buildPinnedCycle, pinGroups, pinDays
 } from "../js/engine.js";
 import { estimateOffset } from "../js/clock.js";
 
@@ -160,6 +160,21 @@ t("reloj del servidor: la mejor muestra es la de menor redondeo", () => {
   const est = estimateOffset([mk(1e6, 700), mk(1e6 + 300, 120), mk(1e6 + 900, 950), mk(1e6 + 1500, 410)]);
   assert.ok(est <= real && real - est < 150, "error < 150 ms, fue " + (real - est));
   assert.equal(estimateOffset([]), null);
+});
+
+t("fijado con pareja de líneas: dos videos seguidos el mismo día", () => {
+  const mk = (id, min) => ({ id, kind: "programa", title: id, cat: "Z", url: "https://x/" + id, duration: min * 60, active: true });
+  const lib = [mk("F1", 60), mk("F2", 60), mk("F3", 60)];
+  const L = (id, min, pair) => ({ id, url: "https://x/" + id, duration: min * 60, title: id, ...(pair ? { pair: true } : {}) });
+  const pin = { id: "p", title: "Serie", from: "12:00", to: "13:00", tolMin: 0, maxExtraMin: 0, lines: [L("a", 20, true), L("b", 20), L("c", 20)] };
+  assert.deepEqual(pinGroups(pin), [[0, 1], [2]]);                                     // a+b el mismo día, c solo
+  assert.equal(pinDays([pin]), 2);                                                     // 3 líneas, pero la rotación dura 2 días
+  assert.deepEqual(pinGroups({ ...pin, lines: [L("a", 20), L("b", 20, true)] }), [[0], [1]]);   // pair en la última línea: sale sola
+  const pc = buildPinnedCycle(lib, { order: [], slots: [{ from: "06:00", to: "06:00", cat: "*" }], pins: [pin] });
+  const d1 = pc.days[0].items.filter((i) => String(i.id).startsWith("pin_")), r1 = pc.days[0].rows.find((r) => r.kind === "pin");
+  assert.deepEqual(d1.map((i) => i.id), ["pin_p_a", "pin_p_b"]);                       // salen consecutivas
+  assert.equal(r1.lineNo, 1); assert.equal(r1.lineNo2, 2); assert.equal(r1.end - r1.start, 40 * 60);   // una sola fila de 40 min
+  assert.deepEqual(pc.days[1].items.filter((i) => String(i.id).startsWith("pin_")).map((i) => i.id), ["pin_p_c"]);
 });
 
 console.log(`${n} pruebas del motor correctas.`);
