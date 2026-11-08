@@ -176,6 +176,12 @@ async function initPanel() {
   $("publish-btn2").addEventListener("click", publish);
   $("publish-restart").addEventListener("click", () => publish(false, true));
   $("brand-form").addEventListener("submit", async (e) => { e.preventDefault(); await saveBrand(); });
+  $("gfx-form").addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const url = $("g-url").value.trim();
+    if (url && !/^https?:\/\//i.test(url)) { toast("El link debe empezar por https://", "error"); return; }
+    try { await setDoc(doc(db, "public", "graphics"), { url, on: $("g-on").checked }); toast("Publicado.", "ok"); } catch (err) { fail(err); }
+  });
   $("stats-refresh").addEventListener("click", async () => { await loadStats(); toast("Actualizado.", "ok"); });
   $("player-link").href = new URL("../player/", location.href).href;
   try {
@@ -190,6 +196,7 @@ async function initPanel() {
     if (brandSnap.exists()) state.brand = { ...state.brand, ...brandSnap.data() };
     state.channel = chSnap.exists() ? { ...chSnap.data(), items: expandChannel(chSnap.data()) } : null;
   } catch (err) { fail(err); }
+  try { const gs = await getDoc(doc(db, "public", "graphics")); if (gs.exists()) { $("g-url").value = gs.data().url || ""; $("g-on").checked = gs.data().on !== false; } } catch { /* sin datos */ }
   ensureSched();
   renderAll();
   setInterval(renderNow, 1000);

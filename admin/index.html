@@ -334,6 +334,7 @@ html,body{max-width:100%;overflow-x:hidden}
         <li><button data-tab="comercial">Comerciales</button></li>
         <li><button data-tab="envivo">En vivo</button></li>
         <li><button data-tab="personalizacion">Marca</button></li>
+        <li><button data-tab="graficos">Gráficos</button></li>
         <li><button data-tab="estadisticas">Stats</button></li>
         <li><button data-tab="estado">Sistema</button></li>
       </ul>
@@ -445,6 +446,14 @@ html,body{max-width:100%;overflow-x:hidden}
           </form>
         </section>
 
+        <section id="tab-graficos" class="tab hidden">
+          <form id="gfx-form">
+            <label class="field"><span>Link de los gráficos (el mismo de OBS)</span><input id="g-url" type="url" placeholder="https://…/output/index.html"></label>
+            <label class="field"><span><input id="g-on" type="checkbox" checked> Mostrar los gráficos sobre la emisión</span></label>
+            <button class="btn" type="submit">Guardar y publicar</button>
+          </form>
+        </section>
+
         <section id="tab-estadisticas" class="tab hidden">
           <button class="btn secondary small" id="stats-refresh" type="button">Actualizar</button>
           <ul class="status-list" id="stats-summary" style="margin-top:.75rem"></ul>
@@ -511,6 +520,6 @@ html,body{max-width:100%;overflow-x:hidden}
 </div></div>
 
 <div id="dpick" class="dlg hidden" role="dialog" aria-modal="true" aria-labelledby="dpick-title"><div class="dlg-box dpick-box"><h3 id="dpick-title">Elegir programa</h3><input id="dpick-q" type="search" placeholder="Buscar" autocomplete="off"><select id="dpick-cat" aria-label="Categoría"></select><div id="dpick-list" class="pick-list"></div><div class="dlg-actions"><button class="btn secondary" id="dpick-cancel" type="button">Cancelar</button></div></div></div>
-<script type="module" src="../js/admin.js?v=98"></script>
+<script type="module" src="../js/admin.js?v=99"></script>
 </body>
 </html>

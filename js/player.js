@@ -155,6 +155,17 @@ function applyBrand(b) {
   $("name").style.top = b.logoPos === "top-left" ? "auto" : "3%"; $("name").style.bottom = b.logoPos === "top-left" ? "12%" : "auto";
 }
 
+// Gráficos de Agenda TV Graphics: se carga el mismo link que usa OBS, transparente, encima de la emisión.
+let gfxUrl = "";
+function applyGraphics(g) {
+  const url = g.on !== false && /^https?:\/\//i.test(g.url || "") ? g.url : "";
+  if (url === gfxUrl) return; gfxUrl = url;
+  let f = $("gfx");
+  if (!url) { if (f) f.remove(); return; }
+  if (!f) { f = document.createElement("iframe"); f.id = "gfx"; f.setAttribute("allowtransparency", "true"); f.setAttribute("scrolling", "no"); f.tabIndex = -1; $("stage").append(f); }
+  f.src = url;
+}
+
 function lowerThird(item) {
   const el = $("lower");
   if (item.type !== "programa") { clearTimeout(lowerT); el.classList.remove("show"); return; }   // en la publicidad no sale rótulo
@@ -168,6 +179,7 @@ function lowerThird(item) {
 if (!isConfigured) say("Falta configurar Firebase.");
 else {
   onSnapshot(doc(db, "public", "brand"), (s) => applyBrand(s.data() || {}), () => {});
+  onSnapshot(doc(db, "public", "graphics"), (s) => applyGraphics(s.data() || {}), () => {});
   onSnapshot(doc(db, "public", "live"), (s) => {
     const d = s.exists() ? s.data() : null, was = !!liveCfg;
     liveCfg = d && d.on && d.ref ? d : null;
