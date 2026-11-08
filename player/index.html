@@ -38,7 +38,8 @@ body.obs #sound{display:none !important}
 body:hover #fs{opacity:1}
 body.isfs #fs{display:none !important}
 body.embed #fs,body.embed #sound{display:none !important}
-#gfx{position:absolute;inset:0;width:100%;height:100%;border:0;background:transparent;pointer-events:none;z-index:6}
+#gfx{position:absolute;inset:0;width:100%;height:100%;border:0;background:transparent;pointer-events:none;z-index:6;transition:opacity .5s ease}
+#gfx.fade{opacity:0 !important}
 #msg{position:absolute;inset:0;display:grid;place-items:center;text-align:center;padding:32px;font-size:36px;z-index:8;pointer-events:none}
 .hidden{display:none !important}
 </style>
@@ -62,6 +63,6 @@ body.embed #fs,body.embed #sound{display:none !important}
 <script>
 (function(){var r=document.documentElement;function f(){r.style.setProperty("--s",Math.min(innerWidth/1920,innerHeight/1080));}f();addEventListener("resize",f);})();
 </script>
-<script type="module" src="../js/player.js?v=97"></script>
+<script type="module" src="../js/player.js?v=98"></script>
 </body>
 </html>

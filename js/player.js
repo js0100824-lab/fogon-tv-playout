@@ -156,13 +156,13 @@ function applyBrand(b) {
 }
 
 // Gráficos de Agenda TV Graphics: se carga el mismo link que usa OBS, transparente, encima de la emisión.
-let gfxUrl = "";
+let gfxUrl = "", gfxFade = false;   // gfxFade: en los anuncios los gráficos se ocultan
 function applyGraphics(g) {
   const url = g.on !== false && /^https?:\/\//i.test(g.url || "") ? g.url : "";
   if (url === gfxUrl) return; gfxUrl = url;
   let f = $("gfx");
   if (!url) { if (f) f.remove(); return; }
-  if (!f) { f = document.createElement("iframe"); f.id = "gfx"; f.setAttribute("allowtransparency", "true"); f.setAttribute("scrolling", "no"); f.tabIndex = -1; $("stage").append(f); }
+  if (!f) { f = document.createElement("iframe"); f.id = "gfx"; f.setAttribute("allowtransparency", "true"); f.setAttribute("scrolling", "no"); f.tabIndex = -1; f.classList.toggle("fade", gfxFade); $("stage").append(f); }
   f.src = url;
 }
 
@@ -234,6 +234,7 @@ function logoState(loc) {
   const lg = $("logo"); if (!lg || !loc || !channel?.items?.length) return;
   const nx = channel.items[(loc.index + 1) % channel.items.length];
   lg.classList.toggle("fade", isAd(loc.item) || (isAd(nx) && !isAd(loc.item) && loc.remaining <= LOGO_LEAD));
+  gfxFade = isAd(loc.item); $("gfx")?.classList.toggle("fade", gfxFade);   // los gráficos salen solo durante el anuncio y vuelven con el programa
 }
 function planLogo(loc) {   // programa el momento exacto en que empieza a desvanecerse, sin esperar al reloj de 1 s
   clearTimeout(logoT); logoState(loc);
